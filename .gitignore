@@ -70,5 +70,9 @@ crashlytics-build.properties
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
 
+# Build output from the standalone tools in Tools/
+Tools/**/bin/
+Tools/**/obj/
+
 # macOS
 .DS_Store
