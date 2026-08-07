@@ -7,7 +7,8 @@
       "costRaw": "BY",
       "color": "Blue",
       "effect": "After each draft, collect one of the remaining cards at random.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Medicine_Cabinet",
@@ -16,7 +17,8 @@
       "costRaw": "YYRG",
       "color": "Blue",
       "effect": "At the end of the turn, if you took damage, heal 1.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Cult_Leader_s_Parking_Spot",
@@ -25,7 +27,8 @@
       "costRaw": "YYYB",
       "color": "Blue",
       "effect": "At the start of each draft, reserve a card. Nobody else can buy it.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Blocked_by_Games",
@@ -34,7 +37,8 @@
       "costRaw": "BB",
       "color": "Blue",
       "effect": "At the start of each draft, turn over a card. Nobody can buy it.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Standardized_Uniforms",
@@ -43,7 +47,8 @@
       "costRaw": "YYYBBBR",
       "color": "Blue",
       "effect": "Gain one additional die, this roll only activates your units",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Halphas_Wings",
@@ -52,7 +57,8 @@
       "costRaw": "BBB",
       "color": "Blue",
       "effect": "If you take 2 or more damage, take one less. If you deal 2 or more damage, deal one less.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Mindstone",
@@ -61,7 +67,8 @@
       "costRaw": "GYR",
       "color": "Blue",
       "effect": "Reduce one B from the cost of all cards in your hand",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Casino",
@@ -70,7 +77,8 @@
       "costRaw": "YYB",
       "color": "Blue",
       "effect": "When you roll your second auxillary die in a single turn, deal one damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Knowledge_is_Power",
@@ -79,7 +87,8 @@
       "costRaw": "BBR",
       "color": "Blue",
       "effect": "Whevever you draw a card, deal 1 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Overzealous",
@@ -88,7 +97,8 @@
       "costRaw": "BBYY",
       "color": "Blue",
       "effect": "You always draft first",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Try_again",
@@ -97,7 +107,8 @@
       "costRaw": "BBGR",
       "color": "Blue",
       "effect": "You can reroll your die every turn.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Human_Trap",
@@ -106,7 +117,8 @@
       "costRaw": "RB",
       "color": "Blue",
       "effect": "At the start of each draft, select a card. If that card goes undrafted, all opponents take 2 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Siege",
@@ -115,7 +127,8 @@
       "costRaw": "BG",
       "color": "Blue",
       "effect": "All existing blocks are reset and nobody can gain blocks next turn.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Bribery",
@@ -123,8 +136,9 @@
       "type": "Ritual",
       "costRaw": "YYYB",
       "color": "Blue",
-      "effect": "Heal 4 health, you cannot do damage for the next turn after playing this ",
-      "count": 1
+      "effect": "Heal 4 health, you cannot do damage for the next turn after playing this",
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "The_Second_Coming",
@@ -133,7 +147,8 @@
       "costRaw": "BB",
       "color": "Blue",
       "effect": "Return a card from the discard to your hand.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Close_Enough",
@@ -142,7 +157,8 @@
       "costRaw": "BB",
       "color": "Blue",
       "effect": "Shift one die +/- 1. Units only activate for the shifted value.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Virgin_Sacrifice",
@@ -151,7 +167,8 @@
       "costRaw": "BYYR",
       "color": "Blue",
       "effect": "Prevent all damage you would take this turn.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Double_Agent_Japanese_Art",
@@ -160,7 +177,8 @@
       "costRaw": "RRGB",
       "color": "Blue",
       "effect": "[Play Double Agent into an opponent's compound]/nLose 1 follower and take 1 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "It_Who_Consumes",
@@ -169,7 +187,8 @@
       "costRaw": "*",
       "color": "Blue",
       "effect": "[Additional cost, sacrifice a Unit, sacrifice a Blessing, and activate a Ritual (it's effect is null)]\\nYou instantly play the top card of the deck without paying it's cost",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Slanderist",
@@ -178,7 +197,8 @@
       "costRaw": "RG",
       "color": "Blue",
       "effect": "Target opponent loses 1 follower.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Ritualist",
@@ -187,7 +207,8 @@
       "costRaw": "BBRR",
       "color": "Blue",
       "effect": "When you activate a Ritual, add a Ritual counter. Deal damage = 1 + amount of Ritual counters.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Wisdom_Hoarder",
@@ -196,7 +217,8 @@
       "costRaw": "BBR",
       "color": "Blue",
       "effect": "Deal 1 damage. If you have the most cards in your hand, deal 2 instead.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Researcher_of_the_Old_Ways",
@@ -205,7 +227,8 @@
       "costRaw": "BBBR",
       "color": "Blue",
       "effect": "Draw a card and deal 1 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "He_Who_Remembers",
@@ -214,7 +237,8 @@
       "costRaw": "BBBYY",
       "color": "Blue",
       "effect": "Gain B = to the number of times you've drafted.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Hydro_Plant",
@@ -223,7 +247,8 @@
       "costRaw": "BY",
       "color": "Blue",
       "effect": "Gain one B",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Snake_Eyes",
@@ -232,7 +257,10 @@
       "costRaw": "B",
       "color": "Blue",
       "effect": "If two ones are rolled, draw two cards.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": [
+        1
+      ]
     },
     {
       "id": "One_With_the_Children",
@@ -241,7 +269,8 @@
       "costRaw": "BB",
       "color": "Blue",
       "effect": "Remove 1 follower from an opponent",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Baal_The_Manipulator",
@@ -250,7 +279,8 @@
       "costRaw": "BBBBRRY",
       "color": "Blue",
       "effect": "Starts with 1 Scheme counter. You can remove a Scheme counter at any time to change any dice to any number. Effect: +1 Scheme counter.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Propaganda",
@@ -259,7 +289,8 @@
       "costRaw": "YBG",
       "color": "Blue",
       "effect": "Steal a follower from an opponent",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Soul_Swapper",
@@ -268,7 +299,8 @@
       "costRaw": "BBB",
       "color": "Blue",
       "effect": "Starts with 3 swap counters. Effect: +1 swap counter, then you may swap Soul Swapper with any unit that costs less than or equal to num swap counters. (Goes back to 3)",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Worshiper_of_the_Bone_God",
@@ -277,7 +309,8 @@
       "costRaw": "BBBG",
       "color": "Blue",
       "effect": "Take a Ritual from the discard pile and add it to your hand. You cant choose the same Ritual more than once.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Initiate_4",
@@ -286,7 +319,10 @@
       "costRaw": "RRB",
       "color": "Blue",
       "effect": "deal damage = to number of inititiate #4 you own",
-      "count": 3
+      "count": 3,
+      "activationNumbers": [
+        2
+      ]
     },
     {
       "id": "Chief_Sacrificer",
@@ -295,7 +331,8 @@
       "costRaw": "RBB",
       "color": "Blue",
       "effect": "Until the end of your turn, the next Ritual you use activates an additional time.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Star_Eyed",
@@ -304,7 +341,8 @@
       "costRaw": "YGG",
       "color": "Green",
       "effect": "At the end of the turn, if you gained at least 1 follower, gain another follower.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Human_Zoo",
@@ -313,7 +351,8 @@
       "costRaw": "BGG",
       "color": "Green",
       "effect": "At the start of your turn, roll a die. If 1-2: -1 follower, if not +1 follower.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Mongol_Mythology",
@@ -322,7 +361,8 @@
       "costRaw": "RRG",
       "color": "Green",
       "effect": "Gain one follower if you do more then three damage in a turn",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Boon_of",
@@ -331,7 +371,8 @@
       "costRaw": "GGGB",
       "color": "Green",
       "effect": "If a card you've activated would create Block, it instead creates that many Block plus one.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Suffering_from_Success",
@@ -340,7 +381,8 @@
       "costRaw": "GGB",
       "color": "Green",
       "effect": "Play this in a opponent's hand, if they gain two or more follwers in a turn they take 1 damage",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Shieldstone",
@@ -349,7 +391,8 @@
       "costRaw": "GBY",
       "color": "Green",
       "effect": "Reduce one G from the cost of all cards in your hand",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Radical_Tactics",
@@ -358,7 +401,8 @@
       "costRaw": "GG",
       "color": "Green",
       "effect": "Gain 3 followers, lose 2 health",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Compound_Walls",
@@ -367,7 +411,8 @@
       "costRaw": "GG",
       "color": "Green",
       "effect": "Gain 4 shield.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Ascension",
@@ -376,7 +421,8 @@
       "costRaw": "BBBGGG",
       "color": "Green",
       "effect": "Gain 5 followers. If after this you do not win the game, you lose the game.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Intimate_group_connection",
@@ -385,7 +431,8 @@
       "costRaw": "BGG",
       "color": "Green",
       "effect": "Gain Three Followers",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Sermon",
@@ -393,8 +440,9 @@
       "type": "Ritual",
       "costRaw": "GGY",
       "color": "Green",
-      "effect": "Gain two followers ",
-      "count": 1
+      "effect": "Gain two followers",
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Smear_Campaign",
@@ -403,7 +451,8 @@
       "costRaw": "RRY",
       "color": "Green",
       "effect": "Remove 3 followers from an opponent",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Jorm_Trust_Eater",
@@ -412,7 +461,8 @@
       "costRaw": "GGB",
       "color": "Green",
       "effect": "Deal 1 damage. Each player you damage to also loses a follower.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Manipulator_of_the_Masses",
@@ -420,8 +470,9 @@
       "type": "Unit",
       "costRaw": "GGG",
       "color": "Green",
-      "effect": "Deal 1 damage. You can choose to lose up to 6 followers. If you do, you deal 1 plus (that amount of follower / 2 (rounded down)) instead. ",
-      "count": 1
+      "effect": "Deal 1 damage. You can choose to lose up to 6 followers. If you do, you deal 1 plus (that amount of follower / 2 (rounded down)) instead.",
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Meatshield",
@@ -430,7 +481,8 @@
       "costRaw": "GGR",
       "color": "Green",
       "effect": "At the end of each turn, deal damage = leftover shield.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Communist",
@@ -439,7 +491,8 @@
       "costRaw": "BBY",
       "color": "Green",
       "effect": "Everyone gains a follower and loses 1 health",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Wall_Builder",
@@ -447,8 +500,9 @@
       "type": "Unit",
       "costRaw": "GGB",
       "color": "Green",
-      "effect": "Gain 1 Block.  ",
-      "count": 1
+      "effect": "Gain 1 Block.",
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "The_Beastmaster",
@@ -457,7 +511,10 @@
       "costRaw": "GGGBR",
       "color": "Green",
       "effect": "Gain 1 block. Roll another dice, if it's (1-2) repeat this effect.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": [
+        1
+      ]
     },
     {
       "id": "Filipina_Nurse",
@@ -466,7 +523,8 @@
       "costRaw": "GGGB",
       "color": "Green",
       "effect": "Gain 1 health and 1 follower",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Bodyguard",
@@ -475,7 +533,8 @@
       "costRaw": "GGBB",
       "color": "Green",
       "effect": "Gain 2 block",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Titanstopper_Church_of_Walls",
@@ -484,7 +543,8 @@
       "costRaw": "GGGG",
       "color": "Green",
       "effect": "All Block no longer disappears between rounds.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Master_Marketer",
@@ -492,8 +552,9 @@
       "type": "Unit",
       "costRaw": "YYYG",
       "color": "Green",
-      "effect": "Gain 2 followers ",
-      "count": 1
+      "effect": "Gain 2 followers",
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Angry_Drunk_Monkey",
@@ -502,7 +563,8 @@
       "costRaw": "GGR",
       "color": "Green",
       "effect": "Gain 2 followers, take 1 damage",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Feline_Cultist",
@@ -511,7 +573,8 @@
       "costRaw": "GGG",
       "color": "Green",
       "effect": "Gain a follower",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Celebrity",
@@ -520,7 +583,8 @@
       "costRaw": "YYG",
       "color": "Green",
       "effect": "Gain a follower",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Security",
@@ -529,7 +593,8 @@
       "costRaw": "RRRY",
       "color": "Green",
       "effect": "Gain one block and deal one damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Solar_Panels",
@@ -538,7 +603,8 @@
       "costRaw": "YY",
       "color": "Green",
       "effect": "Gain one G",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "The_Allmother",
@@ -547,7 +613,8 @@
       "costRaw": "YYBGG",
       "color": "Green",
       "effect": "Heal two and gain a follower.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Witch_Doctor",
@@ -555,8 +622,9 @@
       "type": "Unit",
       "costRaw": "GGB",
       "color": "Green",
-      "effect": "Heal one damage ",
-      "count": 1
+      "effect": "Heal one damage",
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Shield_Wizard",
@@ -565,7 +633,8 @@
       "costRaw": "GGGB",
       "color": "Green",
       "effect": "Gain 2 block.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Senior_Recruiter",
@@ -574,7 +643,8 @@
       "costRaw": "GGYY",
       "color": "Green",
       "effect": "Gain 2 followers",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Youth_Leader",
@@ -583,7 +653,8 @@
       "costRaw": "GG",
       "color": "Green",
       "effect": "Gain one follower",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Grandma",
@@ -592,7 +663,8 @@
       "costRaw": "BYG",
       "color": "Green",
       "effect": "Heal 1",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Is_he_on_meth",
@@ -601,7 +673,8 @@
       "costRaw": "BG",
       "color": "Green",
       "effect": "You may sacrifice a blessing and gain 3 followers",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Masochism",
@@ -610,7 +683,8 @@
       "costRaw": "GGR",
       "color": "Red",
       "effect": "At the end of the turn, if you took damage, gain 1 follower.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Bloodthirst",
@@ -619,7 +693,8 @@
       "costRaw": "RRRB",
       "color": "Red",
       "effect": "At the end of your turn, if at least 1 opponent took damage, deal 1 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Whore_s_Revenge",
@@ -628,7 +703,8 @@
       "costRaw": "RRR",
       "color": "Red",
       "effect": "At the end of your turn, if you've taken damage, deal 1 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Three_s_a_Crowd",
@@ -637,7 +713,8 @@
       "costRaw": "RYB",
       "color": "Red",
       "effect": "If 3+ units triggered on your turn, deal 1 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Clown_Cult",
@@ -646,7 +723,8 @@
       "costRaw": "BG",
       "color": "Red",
       "effect": "If an effect would cause you to lose followers, you now gain that many instead +1. If you would gain followers, you instead lose that amount +1.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "What_are_you_laughing_at",
@@ -654,8 +732,9 @@
       "type": "Blessing",
       "costRaw": "RBY",
       "color": "Red",
-      "effect": "If you deal three or more damage, deal one damage to a different opponent ",
-      "count": 1
+      "effect": "If you deal three or more damage, deal one damage to a different opponent",
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Pain_Lovers",
@@ -664,7 +743,8 @@
       "costRaw": "RB",
       "color": "Red",
       "effect": "If you deal damage to yourself, draw a card.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Bloodstone",
@@ -673,7 +753,8 @@
       "costRaw": "GBY",
       "color": "Red",
       "effect": "Reduce one R from the cost of all Units in your hand",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Powered_by_the_People",
@@ -682,7 +763,8 @@
       "costRaw": "GGGR",
       "color": "Red",
       "effect": "When you gain followers for the first time each turn, deal 1 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "First_Line_of_Defense",
@@ -691,7 +773,8 @@
       "costRaw": "BRR",
       "color": "Red",
       "effect": "When you take damage, you may choose to instead lose twice that many followers.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Supernatural_Event",
@@ -700,7 +783,8 @@
       "costRaw": "BGRY",
       "color": "Red",
       "effect": "Deal 3 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Chemical_Weapons",
@@ -709,7 +793,8 @@
       "costRaw": "RRRR",
       "color": "Red",
       "effect": "Deal two damage to every opponent",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Equality",
@@ -718,7 +803,8 @@
       "costRaw": "RBG",
       "color": "Red",
       "effect": "Each player chooses to lose half of their followers or half of their health. Round down.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Summon_Gone_Wrong",
@@ -727,7 +813,8 @@
       "costRaw": "RR",
       "color": "Red",
       "effect": "Each player takes 3 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Bloody_Margarita",
@@ -736,7 +823,8 @@
       "costRaw": "RRY",
       "color": "Red",
       "effect": "Heal 2 health",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Assassinate",
@@ -745,7 +833,8 @@
       "costRaw": "RRRBBB",
       "color": "Red",
       "effect": "Kill a enemy unit card",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Revive_the_Forgotten",
@@ -754,7 +843,8 @@
       "costRaw": "BBBR",
       "color": "Red",
       "effect": "Lose one health. Instantly activate any discarded card from the discard pile without paying its cost.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Confused_Man",
@@ -763,7 +853,11 @@
       "costRaw": "R",
       "color": "Red",
       "effect": "1: Take 1 damage.\\n2: Deal 1 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": [
+        1,
+        2
+      ]
     },
     {
       "id": "Questionable_Doctor",
@@ -772,7 +866,11 @@
       "costRaw": "YYRR",
       "color": "Red",
       "effect": "3: Gain 2 health.\\n4: Take 1 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": [
+        3,
+        4
+      ]
     },
     {
       "id": "Axe_Licker",
@@ -781,7 +879,11 @@
       "costRaw": "RRG",
       "color": "Red",
       "effect": "5: Take 1 damage.\\n6: Deal 2 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": [
+        5,
+        6
+      ]
     },
     {
       "id": "Drunken_Follower",
@@ -790,7 +892,8 @@
       "costRaw": "R",
       "color": "Red",
       "effect": "Deal 1 damage to a random player.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "The_Beast",
@@ -799,7 +902,8 @@
       "costRaw": "RRYYG",
       "color": "Red",
       "effect": "Deal 2 damage to a enemy. Roll a die, if its even, deal 1 damage to a different enemy and roll again.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Belle_of_the_Ball",
@@ -808,7 +912,8 @@
       "costRaw": "RRRRRRRR",
       "color": "Red",
       "effect": "Deal 2 damage. Costs 1R less for each unit you own.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Cult_s_Pet_s_Dad",
@@ -817,7 +922,10 @@
       "costRaw": "RRRRRRR",
       "color": "Red",
       "effect": "Deal 3 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": [
+        2
+      ]
     },
     {
       "id": "Cult_s_Pet_s_Pet",
@@ -826,7 +934,10 @@
       "costRaw": "RRRRRRRR",
       "color": "Red",
       "effect": "Deal 4 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": [
+        1
+      ]
     },
     {
       "id": "Asher_Pirozzi",
@@ -834,8 +945,9 @@
       "type": "Unit",
       "costRaw": "RR",
       "color": "Red",
-      "effect": "Deal one damage ",
-      "count": 1
+      "effect": "Deal one damage",
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Arsonist",
@@ -844,7 +956,8 @@
       "costRaw": "RRRRY",
       "color": "Red",
       "effect": "Deal one damage and add two flame counters to the target opponent",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Vampire",
@@ -853,7 +966,8 @@
       "costRaw": "RYYB",
       "color": "Red",
       "effect": "Deal one damage and heal one health.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Beekeeper_Cultist",
@@ -862,7 +976,8 @@
       "costRaw": "GGR",
       "color": "Red",
       "effect": "Deal one damage. If you have 5 or more activated units, deal another (it doesn't have to be to the same player.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Fire_Breather",
@@ -871,7 +986,8 @@
       "costRaw": "RRRR",
       "color": "Red",
       "effect": "Deal one damage. Place a flame counter on any player. On their next turn, they take one damage and remove the flame counter.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Cult_s_Pet_Tiger_for_art",
@@ -880,7 +996,8 @@
       "costRaw": "RRRG",
       "color": "Red",
       "effect": "Deal two damage",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Friend_of_the_Beasts",
@@ -889,7 +1006,8 @@
       "costRaw": "R",
       "color": "Red",
       "effect": "Each player takes one damage",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Pentagram",
@@ -898,7 +1016,8 @@
       "costRaw": "GGR",
       "color": "Red",
       "effect": "Gain 1 follower or deal 1 damage to any player.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Blood_Sacrifice",
@@ -907,7 +1026,8 @@
       "costRaw": "RR",
       "color": "Red",
       "effect": "Gain one R",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Nuclear_Plant",
@@ -915,8 +1035,9 @@
       "type": "Unit",
       "costRaw": "YR",
       "color": "Red",
-      "effect": "Gain one red ",
-      "count": 1
+      "effect": "Gain one red",
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Satanist",
@@ -924,8 +1045,11 @@
       "type": "Unit",
       "costRaw": "RR",
       "color": "Red",
-      "effect": "Only triggers when your roll 3 sixes. Target player goes to 1 hp. ",
-      "count": 1
+      "effect": "Only triggers when your roll 3 sixes. Target player goes to 1 hp.",
+      "count": 1,
+      "activationNumbers": [
+        6
+      ]
     },
     {
       "id": "Kool_Aid",
@@ -934,7 +1058,8 @@
       "costRaw": "RGG",
       "color": "Red",
       "effect": "Pay up to 3 R to heal 1 each",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Blood_Collector",
@@ -943,7 +1068,8 @@
       "costRaw": "RRR",
       "color": "Red",
       "effect": "Starts with 1 Blood Counter. When you take damage, add a Blood Counter. Effect: Gain Blood = num Blood Counters.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Hierophant_s_Favorite",
@@ -952,7 +1078,8 @@
       "costRaw": "RGG",
       "color": "Red",
       "effect": "Take 1 damage, gain 2 followers.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Masochist",
@@ -961,7 +1088,8 @@
       "costRaw": "RR",
       "color": "Red",
       "effect": "This turn, each health you lose, deal 1 damage. Lose 1 health.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Bloody_Mooner",
@@ -970,7 +1098,8 @@
       "costRaw": "RRGG",
       "color": "Red",
       "effect": "This turn, if a card you own would deal damage to you, it does 1 less. All players take 2 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Asmodeus",
@@ -979,7 +1108,8 @@
       "costRaw": "RRRRYG",
       "color": "Red",
       "effect": "When any player takes damage, add a violence counter to Asmodeus. Upon activation, deal violence/2 to all players.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Compound_Landmines",
@@ -988,7 +1118,8 @@
       "costRaw": "GYRR",
       "color": "Red",
       "effect": "Your block goes down to and stays at 1 for a turn. If attacked the attacker takes 2 damage",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Resourceful",
@@ -997,7 +1128,8 @@
       "costRaw": "YYGGBR",
       "color": "Yellow",
       "effect": "Gain one additional resource every turn",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Cthulu_s_Maw",
@@ -1006,7 +1138,8 @@
       "costRaw": "YYBB",
       "color": "Yellow",
       "effect": "If a card you own would gain or give a counter, you can choose to add an additional counter as well.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Cursed_Mindstone",
@@ -1015,7 +1148,8 @@
       "costRaw": "YR",
       "color": "Yellow",
       "effect": "Reduce one B from the cost of all Units in your hand, -1 max health.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Cursed_Shieldstone",
@@ -1024,7 +1158,8 @@
       "costRaw": "BY",
       "color": "Yellow",
       "effect": "Reduce one G from the cost of all Units in your hand, -1 max health.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Cursed_Bloodstone",
@@ -1033,7 +1168,8 @@
       "costRaw": "GG",
       "color": "Yellow",
       "effect": "Reduce one R from the cost of all Units in your hand, -1 max health.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Wealthstone",
@@ -1042,7 +1178,8 @@
       "costRaw": "GBR",
       "color": "Yellow",
       "effect": "Reduce one Y from the cost of all Units in your hand",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Cursed_Wealthstone",
@@ -1051,7 +1188,8 @@
       "costRaw": "BR",
       "color": "Yellow",
       "effect": "Reduce one Y from the cost of all Units in your hand, -1 max health.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Gambling_Problem",
@@ -1060,7 +1198,8 @@
       "costRaw": "YRB",
       "color": "Yellow",
       "effect": "You can reroll each auxillary die once per turn.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Vaccines_for_All",
@@ -1069,7 +1208,8 @@
       "costRaw": "YYYB",
       "color": "Yellow",
       "effect": "Lose 5 followers, gain 5 health.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Bop",
@@ -1078,7 +1218,11 @@
       "costRaw": "free",
       "color": "Yellow",
       "effect": "4: Gain 1 follower.\\n5: Take 1 damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": [
+        4,
+        5
+      ]
     },
     {
       "id": "Cthulu_The_Cosmic",
@@ -1087,7 +1231,8 @@
       "costRaw": "YYBB",
       "color": "Yellow",
       "effect": "Add or remove any counter to/from target card. This counter must already exist within that player's compound.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Almost_a_Vampire",
@@ -1096,7 +1241,8 @@
       "costRaw": "YRG",
       "color": "Yellow",
       "effect": "Deal 1 damage. For each health you've gained this turn, deal an additional damage.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Crystal_Mine",
@@ -1105,7 +1251,8 @@
       "costRaw": "GG",
       "color": "Yellow",
       "effect": "Gain one B",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Money_Tree",
@@ -1114,7 +1261,8 @@
       "costRaw": "YY",
       "color": "Yellow",
       "effect": "Gain one G",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Blood_Diamond_Mine",
@@ -1123,7 +1271,8 @@
       "costRaw": "RR",
       "color": "Yellow",
       "effect": "Gain one R",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Inspired_Fool",
@@ -1132,7 +1281,8 @@
       "costRaw": "YYG",
       "color": "Yellow",
       "effect": "Gain one resource of your choice",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Gold_Mine",
@@ -1141,7 +1291,8 @@
       "costRaw": "BB",
       "color": "Yellow",
       "effect": "Gain one Y",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Wondrous_Blood",
@@ -1150,7 +1301,8 @@
       "costRaw": "YYG",
       "color": "Yellow",
       "effect": "If you'd heal during a turn, instead heal that many health + 1.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Cornucopia",
@@ -1159,7 +1311,8 @@
       "costRaw": "RBGYY",
       "color": "Yellow",
       "effect": "Gain two resources of your choice.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Sacrificial_Lamb",
@@ -1168,7 +1321,8 @@
       "costRaw": "RR",
       "color": "Yellow",
       "effect": "Gain 4 resrouces of your choice. Sacrifice Sacrificial Lamb.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Alternative_Medicine",
@@ -1177,7 +1331,8 @@
       "costRaw": "YYYG",
       "color": "Yellow",
       "effect": "Heal 0 health, gain 2 followers",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Master_Shaman",
@@ -1186,7 +1341,8 @@
       "costRaw": "GGYBB",
       "color": "Yellow",
       "effect": "Heal 2 health and deals a damage",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Ominous_Eye",
@@ -1194,8 +1350,9 @@
       "type": "Unit",
       "costRaw": "BBBR",
       "color": "Yellow",
-      "effect": "Ominous Eye starts with 2 static counters. If a card with a static counter would trigger, it's effect does not happen and the static counter is instead removed. Effect: Put a static counter on an oppenents card. ",
-      "count": 1
+      "effect": "Ominous Eye starts with 2 static counters. If a card with a static counter would trigger, it's effect does not happen and the static counter is instead removed. Effect: Put a static counter on an oppenents card.",
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Suspicious_Chef",
@@ -1204,7 +1361,8 @@
       "costRaw": "YYY",
       "color": "Yellow",
       "effect": "Starts with 1 meal counter. Once a turn, you can pay 3 resources (any color) to add a meal counter. Effect: Deal damage = num meal counters.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Valefar",
@@ -1213,7 +1371,8 @@
       "costRaw": "YYY",
       "color": "Yellow",
       "effect": "Take any resource from a player",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     },
     {
       "id": "Being_of_Hearthlessness",
@@ -1222,7 +1381,8 @@
       "costRaw": "GRBY",
       "color": "Yellow",
       "effect": "[Being of Hearthlessness starts with 1 trash counter. Once per turn, when a card is recycled, add a trash counter to Being of Hearthlessness]\\nGain one gold for every trash counter on Being of Hearthlessness.",
-      "count": 1
+      "count": 1,
+      "activationNumbers": []
     }
   ]
 }

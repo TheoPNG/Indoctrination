@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Indoctrination.Core
 {
@@ -17,6 +18,7 @@ namespace Indoctrination.Core
         public string color;
         public string effect;
         public int count;
+        public int[] activationNumbers;
 
         private CardType? _type;
         private ResourceColor? _color;
@@ -28,6 +30,12 @@ namespace Indoctrination.Core
 
         /// <summary>How many physical copies of this card exist in the deck.</summary>
         public int Count => count;
+
+        /// <summary>
+        /// The die roll values this Unit activates on. Empty for cards whose
+        /// activation number has not been assigned in the design spreadsheet yet.
+        /// </summary>
+        public IReadOnlyList<int> ActivationNumbers => activationNumbers ?? Array.Empty<int>();
 
         public CardType Type => _type ??= Enum.Parse<CardType>(type);
 
