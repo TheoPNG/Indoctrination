@@ -1,0 +1,1228 @@
+{
+  "cards": [
+    {
+      "id": "All_Parts_of_the_Animal",
+      "title": "All Parts of the Animal",
+      "type": "Blessing",
+      "costRaw": "BY",
+      "color": "Blue",
+      "effect": "After each draft, collect one of the remaining cards at random.",
+      "count": 1
+    },
+    {
+      "id": "Medicine_Cabinet",
+      "title": "Medicine Cabinet",
+      "type": "Blessing",
+      "costRaw": "YYRG",
+      "color": "Blue",
+      "effect": "At the end of the turn, if you took damage, heal 1.",
+      "count": 1
+    },
+    {
+      "id": "Cult_Leader_s_Parking_Spot",
+      "title": "Cult Leader's Parking Spot",
+      "type": "Blessing",
+      "costRaw": "YYYB",
+      "color": "Blue",
+      "effect": "At the start of each draft, reserve a card. Nobody else can buy it.",
+      "count": 1
+    },
+    {
+      "id": "Blocked_by_Games",
+      "title": "Blocked by Games",
+      "type": "Blessing",
+      "costRaw": "BB",
+      "color": "Blue",
+      "effect": "At the start of each draft, turn over a card. Nobody can buy it.",
+      "count": 1
+    },
+    {
+      "id": "Standardized_Uniforms",
+      "title": "Standardized Uniforms",
+      "type": "Blessing",
+      "costRaw": "YYYBBBR",
+      "color": "Blue",
+      "effect": "Gain one additional die, this roll only activates your units",
+      "count": 1
+    },
+    {
+      "id": "Halphas_Wings",
+      "title": "Halphas' Wings",
+      "type": "Blessing",
+      "costRaw": "BBB",
+      "color": "Blue",
+      "effect": "If you take 2 or more damage, take one less. If you deal 2 or more damage, deal one less.",
+      "count": 1
+    },
+    {
+      "id": "Mindstone",
+      "title": "Mindstone",
+      "type": "Blessing",
+      "costRaw": "GYR",
+      "color": "Blue",
+      "effect": "Reduce one B from the cost of all cards in your hand",
+      "count": 1
+    },
+    {
+      "id": "Casino",
+      "title": "Casino",
+      "type": "Blessing",
+      "costRaw": "YYB",
+      "color": "Blue",
+      "effect": "When you roll your second auxillary die in a single turn, deal one damage.",
+      "count": 1
+    },
+    {
+      "id": "Knowledge_is_Power",
+      "title": "Knowledge is Power",
+      "type": "Blessing",
+      "costRaw": "BBR",
+      "color": "Blue",
+      "effect": "Whevever you draw a card, deal 1 damage.",
+      "count": 1
+    },
+    {
+      "id": "Overzealous",
+      "title": "Overzealous",
+      "type": "Blessing",
+      "costRaw": "BBYY",
+      "color": "Blue",
+      "effect": "You always draft first",
+      "count": 1
+    },
+    {
+      "id": "Try_again",
+      "title": "Try again",
+      "type": "Blessing",
+      "costRaw": "BBGR",
+      "color": "Blue",
+      "effect": "You can reroll your die every turn.",
+      "count": 1
+    },
+    {
+      "id": "Human_Trap",
+      "title": "Human Trap",
+      "type": "Blessing",
+      "costRaw": "RB",
+      "color": "Blue",
+      "effect": "At the start of each draft, select a card. If that card goes undrafted, all opponents take 2 damage.",
+      "count": 1
+    },
+    {
+      "id": "Siege",
+      "title": "Siege",
+      "type": "Ritual",
+      "costRaw": "BG",
+      "color": "Blue",
+      "effect": "All existing blocks are reset and nobody can gain blocks next turn.",
+      "count": 1
+    },
+    {
+      "id": "Bribery",
+      "title": "Bribery",
+      "type": "Ritual",
+      "costRaw": "YYYB",
+      "color": "Blue",
+      "effect": "Heal 4 health, you cannot do damage for the next turn after playing this ",
+      "count": 1
+    },
+    {
+      "id": "The_Second_Coming",
+      "title": "The Second Coming",
+      "type": "Ritual",
+      "costRaw": "BB",
+      "color": "Blue",
+      "effect": "Return a card from the discard to your hand.",
+      "count": 1
+    },
+    {
+      "id": "Close_Enough",
+      "title": "Close Enough",
+      "type": "Ritual",
+      "costRaw": "BB",
+      "color": "Blue",
+      "effect": "Shift one die +/- 1. Units only activate for the shifted value.",
+      "count": 1
+    },
+    {
+      "id": "Virgin_Sacrifice",
+      "title": "Virgin Sacrifice",
+      "type": "Ritual",
+      "costRaw": "BYYR",
+      "color": "Blue",
+      "effect": "Prevent all damage you would take this turn.",
+      "count": 1
+    },
+    {
+      "id": "Double_Agent_Japanese_Art",
+      "title": "Double Agent (Japanese Art)",
+      "type": "Unit",
+      "costRaw": "RRGB",
+      "color": "Blue",
+      "effect": "[Play Double Agent into an opponent's compound]/nLose 1 follower and take 1 damage.",
+      "count": 1
+    },
+    {
+      "id": "It_Who_Consumes",
+      "title": "It Who Consumes",
+      "type": "Unit",
+      "costRaw": "*",
+      "color": "Blue",
+      "effect": "[Additional cost, sacrifice a Unit, sacrifice a Blessing, and activate a Ritual (it's effect is null)]\\nYou instantly play the top card of the deck without paying it's cost",
+      "count": 1
+    },
+    {
+      "id": "Slanderist",
+      "title": "Slanderist",
+      "type": "Unit",
+      "costRaw": "RG",
+      "color": "Blue",
+      "effect": "Target opponent loses 1 follower.",
+      "count": 1
+    },
+    {
+      "id": "Ritualist",
+      "title": "Ritualist",
+      "type": "Unit",
+      "costRaw": "BBRR",
+      "color": "Blue",
+      "effect": "When you activate a Ritual, add a Ritual counter. Deal damage = 1 + amount of Ritual counters.",
+      "count": 1
+    },
+    {
+      "id": "Wisdom_Hoarder",
+      "title": "Wisdom Hoarder",
+      "type": "Unit",
+      "costRaw": "BBR",
+      "color": "Blue",
+      "effect": "Deal 1 damage. If you have the most cards in your hand, deal 2 instead.",
+      "count": 1
+    },
+    {
+      "id": "Researcher_of_the_Old_Ways",
+      "title": "Researcher of the Old Ways",
+      "type": "Unit",
+      "costRaw": "BBBR",
+      "color": "Blue",
+      "effect": "Draw a card and deal 1 damage.",
+      "count": 1
+    },
+    {
+      "id": "He_Who_Remembers",
+      "title": "He Who Remembers",
+      "type": "Unit",
+      "costRaw": "BBBYY",
+      "color": "Blue",
+      "effect": "Gain B = to the number of times you've drafted.",
+      "count": 1
+    },
+    {
+      "id": "Hydro_Plant",
+      "title": "Hydro Plant",
+      "type": "Unit",
+      "costRaw": "BY",
+      "color": "Blue",
+      "effect": "Gain one B",
+      "count": 1
+    },
+    {
+      "id": "Snake_Eyes",
+      "title": "Snake Eyes",
+      "type": "Unit",
+      "costRaw": "B",
+      "color": "Blue",
+      "effect": "If two ones are rolled, draw two cards.",
+      "count": 1
+    },
+    {
+      "id": "One_With_the_Children",
+      "title": "One With the Children",
+      "type": "Unit",
+      "costRaw": "BB",
+      "color": "Blue",
+      "effect": "Remove 1 follower from an opponent",
+      "count": 1
+    },
+    {
+      "id": "Baal_The_Manipulator",
+      "title": "Baal, The Manipulator",
+      "type": "Unit",
+      "costRaw": "BBBBRRY",
+      "color": "Blue",
+      "effect": "Starts with 1 Scheme counter. You can remove a Scheme counter at any time to change any dice to any number. Effect: +1 Scheme counter.",
+      "count": 1
+    },
+    {
+      "id": "Propaganda",
+      "title": "Propaganda",
+      "type": "Unit",
+      "costRaw": "YBG",
+      "color": "Blue",
+      "effect": "Steal a follower from an opponent",
+      "count": 1
+    },
+    {
+      "id": "Soul_Swapper",
+      "title": "Soul Swapper",
+      "type": "Unit",
+      "costRaw": "BBB",
+      "color": "Blue",
+      "effect": "Starts with 3 swap counters. Effect: +1 swap counter, then you may swap Soul Swapper with any unit that costs less than or equal to num swap counters. (Goes back to 3)",
+      "count": 1
+    },
+    {
+      "id": "Worshiper_of_the_Bone_God",
+      "title": "Worshiper of the Bone God",
+      "type": "Unit",
+      "costRaw": "BBBG",
+      "color": "Blue",
+      "effect": "Take a Ritual from the discard pile and add it to your hand. You cant choose the same Ritual more than once.",
+      "count": 1
+    },
+    {
+      "id": "Initiate_4",
+      "title": "Initiate #4",
+      "type": "Unit",
+      "costRaw": "RRB",
+      "color": "Blue",
+      "effect": "deal damage = to number of inititiate #4 you own",
+      "count": 3
+    },
+    {
+      "id": "Chief_Sacrificer",
+      "title": "Chief Sacrificer",
+      "type": "Unit",
+      "costRaw": "RBB",
+      "color": "Blue",
+      "effect": "Until the end of your turn, the next Ritual you use activates an additional time.",
+      "count": 1
+    },
+    {
+      "id": "Star_Eyed",
+      "title": "Star Eyed",
+      "type": "Blessing",
+      "costRaw": "YGG",
+      "color": "Green",
+      "effect": "At the end of the turn, if you gained at least 1 follower, gain another follower.",
+      "count": 1
+    },
+    {
+      "id": "Human_Zoo",
+      "title": "Human Zoo",
+      "type": "Blessing",
+      "costRaw": "BGG",
+      "color": "Green",
+      "effect": "At the start of your turn, roll a die. If 1-2: -1 follower, if not +1 follower.",
+      "count": 1
+    },
+    {
+      "id": "Mongol_Mythology",
+      "title": "Mongol Mythology",
+      "type": "Blessing",
+      "costRaw": "RRG",
+      "color": "Green",
+      "effect": "Gain one follower if you do more then three damage in a turn",
+      "count": 1
+    },
+    {
+      "id": "Boon_of",
+      "title": "Boon of ____",
+      "type": "Blessing",
+      "costRaw": "GGGB",
+      "color": "Green",
+      "effect": "If a card you've activated would create Block, it instead creates that many Block plus one.",
+      "count": 1
+    },
+    {
+      "id": "Suffering_from_Success",
+      "title": "Suffering from Success",
+      "type": "Blessing",
+      "costRaw": "GGB",
+      "color": "Green",
+      "effect": "Play this in a opponent's hand, if they gain two or more follwers in a turn they take 1 damage",
+      "count": 1
+    },
+    {
+      "id": "Shieldstone",
+      "title": "Shieldstone",
+      "type": "Blessing",
+      "costRaw": "GBY",
+      "color": "Green",
+      "effect": "Reduce one G from the cost of all cards in your hand",
+      "count": 1
+    },
+    {
+      "id": "Radical_Tactics",
+      "title": "Radical Tactics",
+      "type": "Ritual",
+      "costRaw": "GG",
+      "color": "Green",
+      "effect": "Gain 3 followers, lose 2 health",
+      "count": 1
+    },
+    {
+      "id": "Compound_Walls",
+      "title": "Compound Walls",
+      "type": "Ritual",
+      "costRaw": "GG",
+      "color": "Green",
+      "effect": "Gain 4 shield.",
+      "count": 1
+    },
+    {
+      "id": "Ascension",
+      "title": "Ascension",
+      "type": "Ritual",
+      "costRaw": "BBBGGG",
+      "color": "Green",
+      "effect": "Gain 5 followers. If after this you do not win the game, you lose the game.",
+      "count": 1
+    },
+    {
+      "id": "Intimate_group_connection",
+      "title": "Intimate group connection",
+      "type": "Ritual",
+      "costRaw": "BGG",
+      "color": "Green",
+      "effect": "Gain Three Followers",
+      "count": 1
+    },
+    {
+      "id": "Sermon",
+      "title": "Sermon",
+      "type": "Ritual",
+      "costRaw": "GGY",
+      "color": "Green",
+      "effect": "Gain two followers ",
+      "count": 1
+    },
+    {
+      "id": "Smear_Campaign",
+      "title": "Smear Campaign",
+      "type": "Ritual",
+      "costRaw": "RRY",
+      "color": "Green",
+      "effect": "Remove 3 followers from an opponent",
+      "count": 1
+    },
+    {
+      "id": "Jorm_Trust_Eater",
+      "title": "Jorm, Trust Eater",
+      "type": "Unit",
+      "costRaw": "GGB",
+      "color": "Green",
+      "effect": "Deal 1 damage. Each player you damage to also loses a follower.",
+      "count": 1
+    },
+    {
+      "id": "Manipulator_of_the_Masses",
+      "title": "Manipulator of the Masses",
+      "type": "Unit",
+      "costRaw": "GGG",
+      "color": "Green",
+      "effect": "Deal 1 damage. You can choose to lose up to 6 followers. If you do, you deal 1 plus (that amount of follower / 2 (rounded down)) instead. ",
+      "count": 1
+    },
+    {
+      "id": "Meatshield",
+      "title": "Meatshield",
+      "type": "Blessing",
+      "costRaw": "GGR",
+      "color": "Green",
+      "effect": "At the end of each turn, deal damage = leftover shield.",
+      "count": 1
+    },
+    {
+      "id": "Communist",
+      "title": "Communist",
+      "type": "Unit",
+      "costRaw": "BBY",
+      "color": "Green",
+      "effect": "Everyone gains a follower and loses 1 health",
+      "count": 1
+    },
+    {
+      "id": "Wall_Builder",
+      "title": "Wall Builder",
+      "type": "Unit",
+      "costRaw": "GGB",
+      "color": "Green",
+      "effect": "Gain 1 Block.  ",
+      "count": 1
+    },
+    {
+      "id": "The_Beastmaster",
+      "title": "The Beastmaster",
+      "type": "Unit",
+      "costRaw": "GGGBR",
+      "color": "Green",
+      "effect": "Gain 1 block. Roll another dice, if it's (1-2) repeat this effect.",
+      "count": 1
+    },
+    {
+      "id": "Filipina_Nurse",
+      "title": "Filipina Nurse",
+      "type": "Unit",
+      "costRaw": "GGGB",
+      "color": "Green",
+      "effect": "Gain 1 health and 1 follower",
+      "count": 1
+    },
+    {
+      "id": "Bodyguard",
+      "title": "Bodyguard",
+      "type": "Unit",
+      "costRaw": "GGBB",
+      "color": "Green",
+      "effect": "Gain 2 block",
+      "count": 1
+    },
+    {
+      "id": "Titanstopper_Church_of_Walls",
+      "title": "Titanstopper (Church of Walls)",
+      "type": "Blessing",
+      "costRaw": "GGGG",
+      "color": "Green",
+      "effect": "All Block no longer disappears between rounds.",
+      "count": 1
+    },
+    {
+      "id": "Master_Marketer",
+      "title": "Master Marketer",
+      "type": "Unit",
+      "costRaw": "YYYG",
+      "color": "Green",
+      "effect": "Gain 2 followers ",
+      "count": 1
+    },
+    {
+      "id": "Angry_Drunk_Monkey",
+      "title": "Angry Drunk Monkey",
+      "type": "Unit",
+      "costRaw": "GGR",
+      "color": "Green",
+      "effect": "Gain 2 followers, take 1 damage",
+      "count": 1
+    },
+    {
+      "id": "Feline_Cultist",
+      "title": "Feline Cultist",
+      "type": "Unit",
+      "costRaw": "GGG",
+      "color": "Green",
+      "effect": "Gain a follower",
+      "count": 1
+    },
+    {
+      "id": "Celebrity",
+      "title": "Celebrity",
+      "type": "Unit",
+      "costRaw": "YYG",
+      "color": "Green",
+      "effect": "Gain a follower",
+      "count": 1
+    },
+    {
+      "id": "Security",
+      "title": "Security",
+      "type": "Unit",
+      "costRaw": "RRRY",
+      "color": "Green",
+      "effect": "Gain one block and deal one damage.",
+      "count": 1
+    },
+    {
+      "id": "Solar_Panels",
+      "title": "Solar Panels",
+      "type": "Unit",
+      "costRaw": "YY",
+      "color": "Green",
+      "effect": "Gain one G",
+      "count": 1
+    },
+    {
+      "id": "The_Allmother",
+      "title": "The Allmother",
+      "type": "Unit",
+      "costRaw": "YYBGG",
+      "color": "Green",
+      "effect": "Heal two and gain a follower.",
+      "count": 1
+    },
+    {
+      "id": "Witch_Doctor",
+      "title": "Witch Doctor",
+      "type": "Unit",
+      "costRaw": "GGB",
+      "color": "Green",
+      "effect": "Heal one damage ",
+      "count": 1
+    },
+    {
+      "id": "Shield_Wizard",
+      "title": "Shield Wizard",
+      "type": "Unit",
+      "costRaw": "GGGB",
+      "color": "Green",
+      "effect": "Gain 2 block.",
+      "count": 1
+    },
+    {
+      "id": "Senior_Recruiter",
+      "title": "Senior Recruiter",
+      "type": "Unit",
+      "costRaw": "GGYY",
+      "color": "Green",
+      "effect": "Gain 2 followers",
+      "count": 1
+    },
+    {
+      "id": "Youth_Leader",
+      "title": "Youth Leader",
+      "type": "Unit",
+      "costRaw": "GG",
+      "color": "Green",
+      "effect": "Gain one follower",
+      "count": 1
+    },
+    {
+      "id": "Grandma",
+      "title": "Grandma",
+      "type": "Unit",
+      "costRaw": "BYG",
+      "color": "Green",
+      "effect": "Heal 1",
+      "count": 1
+    },
+    {
+      "id": "Is_he_on_meth",
+      "title": "Is he on meth?",
+      "type": "Unit",
+      "costRaw": "BG",
+      "color": "Green",
+      "effect": "You may sacrifice a blessing and gain 3 followers",
+      "count": 1
+    },
+    {
+      "id": "Masochism",
+      "title": "Masochism",
+      "type": "Blessing",
+      "costRaw": "GGR",
+      "color": "Red",
+      "effect": "At the end of the turn, if you took damage, gain 1 follower.",
+      "count": 1
+    },
+    {
+      "id": "Bloodthirst",
+      "title": "Bloodthirst",
+      "type": "Blessing",
+      "costRaw": "RRRB",
+      "color": "Red",
+      "effect": "At the end of your turn, if at least 1 opponent took damage, deal 1 damage.",
+      "count": 1
+    },
+    {
+      "id": "Whore_s_Revenge",
+      "title": "Whore's Revenge",
+      "type": "Blessing",
+      "costRaw": "RRR",
+      "color": "Red",
+      "effect": "At the end of your turn, if you've taken damage, deal 1 damage.",
+      "count": 1
+    },
+    {
+      "id": "Three_s_a_Crowd",
+      "title": "Three's a Crowd",
+      "type": "Blessing",
+      "costRaw": "RYB",
+      "color": "Red",
+      "effect": "If 3+ units triggered on your turn, deal 1 damage.",
+      "count": 1
+    },
+    {
+      "id": "Clown_Cult",
+      "title": "Clown Cult",
+      "type": "Blessing",
+      "costRaw": "BG",
+      "color": "Red",
+      "effect": "If an effect would cause you to lose followers, you now gain that many instead +1. If you would gain followers, you instead lose that amount +1.",
+      "count": 1
+    },
+    {
+      "id": "What_are_you_laughing_at",
+      "title": "What are you laughing at?",
+      "type": "Blessing",
+      "costRaw": "RBY",
+      "color": "Red",
+      "effect": "If you deal three or more damage, deal one damage to a different opponent ",
+      "count": 1
+    },
+    {
+      "id": "Pain_Lovers",
+      "title": "Pain Lovers",
+      "type": "Blessing",
+      "costRaw": "RB",
+      "color": "Red",
+      "effect": "If you deal damage to yourself, draw a card.",
+      "count": 1
+    },
+    {
+      "id": "Bloodstone",
+      "title": "Bloodstone",
+      "type": "Blessing",
+      "costRaw": "GBY",
+      "color": "Red",
+      "effect": "Reduce one R from the cost of all Units in your hand",
+      "count": 1
+    },
+    {
+      "id": "Powered_by_the_People",
+      "title": "Powered by the People",
+      "type": "Blessing",
+      "costRaw": "GGGR",
+      "color": "Red",
+      "effect": "When you gain followers for the first time each turn, deal 1 damage.",
+      "count": 1
+    },
+    {
+      "id": "First_Line_of_Defense",
+      "title": "First Line of Defense",
+      "type": "Blessing",
+      "costRaw": "BRR",
+      "color": "Red",
+      "effect": "When you take damage, you may choose to instead lose twice that many followers.",
+      "count": 1
+    },
+    {
+      "id": "Supernatural_Event",
+      "title": "Supernatural Event",
+      "type": "Ritual",
+      "costRaw": "BGRY",
+      "color": "Red",
+      "effect": "Deal 3 damage.",
+      "count": 1
+    },
+    {
+      "id": "Chemical_Weapons",
+      "title": "Chemical Weapons",
+      "type": "Ritual",
+      "costRaw": "RRRR",
+      "color": "Red",
+      "effect": "Deal two damage to every opponent",
+      "count": 1
+    },
+    {
+      "id": "Equality",
+      "title": "Equality",
+      "type": "Ritual",
+      "costRaw": "RBG",
+      "color": "Red",
+      "effect": "Each player chooses to lose half of their followers or half of their health. Round down.",
+      "count": 1
+    },
+    {
+      "id": "Summon_Gone_Wrong",
+      "title": "Summon Gone Wrong",
+      "type": "Ritual",
+      "costRaw": "RR",
+      "color": "Red",
+      "effect": "Each player takes 3 damage.",
+      "count": 1
+    },
+    {
+      "id": "Bloody_Margarita",
+      "title": "Bloody Margarita",
+      "type": "Ritual",
+      "costRaw": "RRY",
+      "color": "Red",
+      "effect": "Heal 2 health",
+      "count": 1
+    },
+    {
+      "id": "Assassinate",
+      "title": "Assassinate",
+      "type": "Ritual",
+      "costRaw": "RRRBBB",
+      "color": "Red",
+      "effect": "Kill a enemy unit card",
+      "count": 1
+    },
+    {
+      "id": "Revive_the_Forgotten",
+      "title": "Revive the Forgotten",
+      "type": "Ritual",
+      "costRaw": "BBBR",
+      "color": "Red",
+      "effect": "Lose one health. Instantly activate any discarded card from the discard pile without paying its cost.",
+      "count": 1
+    },
+    {
+      "id": "Confused_Man",
+      "title": "Confused Man",
+      "type": "Unit",
+      "costRaw": "R",
+      "color": "Red",
+      "effect": "1: Take 1 damage.\\n2: Deal 1 damage.",
+      "count": 1
+    },
+    {
+      "id": "Questionable_Doctor",
+      "title": "Questionable Doctor",
+      "type": "Unit",
+      "costRaw": "YYRR",
+      "color": "Red",
+      "effect": "3: Gain 2 health.\\n4: Take 1 damage.",
+      "count": 1
+    },
+    {
+      "id": "Axe_Licker",
+      "title": "Axe Licker",
+      "type": "Unit",
+      "costRaw": "RRG",
+      "color": "Red",
+      "effect": "5: Take 1 damage.\\n6: Deal 2 damage.",
+      "count": 1
+    },
+    {
+      "id": "Drunken_Follower",
+      "title": "Drunken Follower",
+      "type": "Unit",
+      "costRaw": "R",
+      "color": "Red",
+      "effect": "Deal 1 damage to a random player.",
+      "count": 1
+    },
+    {
+      "id": "The_Beast",
+      "title": "The Beast",
+      "type": "Unit",
+      "costRaw": "RRYYG",
+      "color": "Red",
+      "effect": "Deal 2 damage to a enemy. Roll a die, if its even, deal 1 damage to a different enemy and roll again.",
+      "count": 1
+    },
+    {
+      "id": "Belle_of_the_Ball",
+      "title": "Belle of the Ball",
+      "type": "Unit",
+      "costRaw": "RRRRRRRR",
+      "color": "Red",
+      "effect": "Deal 2 damage. Costs 1R less for each unit you own.",
+      "count": 1
+    },
+    {
+      "id": "Cult_s_Pet_s_Dad",
+      "title": "Cult's Pet's Dad",
+      "type": "Unit",
+      "costRaw": "RRRRRRR",
+      "color": "Red",
+      "effect": "Deal 3 damage.",
+      "count": 1
+    },
+    {
+      "id": "Cult_s_Pet_s_Pet",
+      "title": "Cult's Pet's Pet",
+      "type": "Unit",
+      "costRaw": "RRRRRRRR",
+      "color": "Red",
+      "effect": "Deal 4 damage.",
+      "count": 1
+    },
+    {
+      "id": "Asher_Pirozzi",
+      "title": "Asher Pirozzi",
+      "type": "Unit",
+      "costRaw": "RR",
+      "color": "Red",
+      "effect": "Deal one damage ",
+      "count": 1
+    },
+    {
+      "id": "Arsonist",
+      "title": "Arsonist",
+      "type": "Unit",
+      "costRaw": "RRRRY",
+      "color": "Red",
+      "effect": "Deal one damage and add two flame counters to the target opponent",
+      "count": 1
+    },
+    {
+      "id": "Vampire",
+      "title": "Vampire",
+      "type": "Unit",
+      "costRaw": "RYYB",
+      "color": "Red",
+      "effect": "Deal one damage and heal one health.",
+      "count": 1
+    },
+    {
+      "id": "Beekeeper_Cultist",
+      "title": "Beekeeper Cultist",
+      "type": "Unit",
+      "costRaw": "GGR",
+      "color": "Red",
+      "effect": "Deal one damage. If you have 5 or more activated units, deal another (it doesn't have to be to the same player.",
+      "count": 1
+    },
+    {
+      "id": "Fire_Breather",
+      "title": "Fire Breather",
+      "type": "Unit",
+      "costRaw": "RRRR",
+      "color": "Red",
+      "effect": "Deal one damage. Place a flame counter on any player. On their next turn, they take one damage and remove the flame counter.",
+      "count": 1
+    },
+    {
+      "id": "Cult_s_Pet_Tiger_for_art",
+      "title": "Cult's Pet (Tiger *for art)",
+      "type": "Unit",
+      "costRaw": "RRRG",
+      "color": "Red",
+      "effect": "Deal two damage",
+      "count": 1
+    },
+    {
+      "id": "Friend_of_the_Beasts",
+      "title": "Friend of the Beasts",
+      "type": "Unit",
+      "costRaw": "R",
+      "color": "Red",
+      "effect": "Each player takes one damage",
+      "count": 1
+    },
+    {
+      "id": "Pentagram",
+      "title": "Pentagram",
+      "type": "Unit",
+      "costRaw": "GGR",
+      "color": "Red",
+      "effect": "Gain 1 follower or deal 1 damage to any player.",
+      "count": 1
+    },
+    {
+      "id": "Blood_Sacrifice",
+      "title": "Blood Sacrifice",
+      "type": "Unit",
+      "costRaw": "RR",
+      "color": "Red",
+      "effect": "Gain one R",
+      "count": 1
+    },
+    {
+      "id": "Nuclear_Plant",
+      "title": "Nuclear Plant",
+      "type": "Unit",
+      "costRaw": "YR",
+      "color": "Red",
+      "effect": "Gain one red ",
+      "count": 1
+    },
+    {
+      "id": "Satanist",
+      "title": "Satanist",
+      "type": "Unit",
+      "costRaw": "RR",
+      "color": "Red",
+      "effect": "Only triggers when your roll 3 sixes. Target player goes to 1 hp. ",
+      "count": 1
+    },
+    {
+      "id": "Kool_Aid",
+      "title": "Kool-Aid",
+      "type": "Unit",
+      "costRaw": "RGG",
+      "color": "Red",
+      "effect": "Pay up to 3 R to heal 1 each",
+      "count": 1
+    },
+    {
+      "id": "Blood_Collector",
+      "title": "Blood Collector",
+      "type": "Unit",
+      "costRaw": "RRR",
+      "color": "Red",
+      "effect": "Starts with 1 Blood Counter. When you take damage, add a Blood Counter. Effect: Gain Blood = num Blood Counters.",
+      "count": 1
+    },
+    {
+      "id": "Hierophant_s_Favorite",
+      "title": "Hierophant's Favorite",
+      "type": "Unit",
+      "costRaw": "RGG",
+      "color": "Red",
+      "effect": "Take 1 damage, gain 2 followers.",
+      "count": 1
+    },
+    {
+      "id": "Masochist",
+      "title": "Masochist",
+      "type": "Unit",
+      "costRaw": "RR",
+      "color": "Red",
+      "effect": "This turn, each health you lose, deal 1 damage. Lose 1 health.",
+      "count": 1
+    },
+    {
+      "id": "Bloody_Mooner",
+      "title": "Bloody Mooner",
+      "type": "Unit",
+      "costRaw": "RRGG",
+      "color": "Red",
+      "effect": "This turn, if a card you own would deal damage to you, it does 1 less. All players take 2 damage.",
+      "count": 1
+    },
+    {
+      "id": "Asmodeus",
+      "title": "Asmodeus",
+      "type": "Unit",
+      "costRaw": "RRRRYG",
+      "color": "Red",
+      "effect": "When any player takes damage, add a violence counter to Asmodeus. Upon activation, deal violence/2 to all players.",
+      "count": 1
+    },
+    {
+      "id": "Compound_Landmines",
+      "title": "Compound Landmines",
+      "type": "Unit",
+      "costRaw": "GYRR",
+      "color": "Red",
+      "effect": "Your block goes down to and stays at 1 for a turn. If attacked the attacker takes 2 damage",
+      "count": 1
+    },
+    {
+      "id": "Resourceful",
+      "title": "Resourceful",
+      "type": "Blessing",
+      "costRaw": "YYGGBR",
+      "color": "Yellow",
+      "effect": "Gain one additional resource every turn",
+      "count": 1
+    },
+    {
+      "id": "Cthulu_s_Maw",
+      "title": "Cthulu's Maw",
+      "type": "Blessing",
+      "costRaw": "YYBB",
+      "color": "Yellow",
+      "effect": "If a card you own would gain or give a counter, you can choose to add an additional counter as well.",
+      "count": 1
+    },
+    {
+      "id": "Cursed_Mindstone",
+      "title": "Cursed Mindstone",
+      "type": "Blessing",
+      "costRaw": "YR",
+      "color": "Yellow",
+      "effect": "Reduce one B from the cost of all Units in your hand, -1 max health.",
+      "count": 1
+    },
+    {
+      "id": "Cursed_Shieldstone",
+      "title": "Cursed Shieldstone",
+      "type": "Blessing",
+      "costRaw": "BY",
+      "color": "Yellow",
+      "effect": "Reduce one G from the cost of all Units in your hand, -1 max health.",
+      "count": 1
+    },
+    {
+      "id": "Cursed_Bloodstone",
+      "title": "Cursed Bloodstone",
+      "type": "Blessing",
+      "costRaw": "GG",
+      "color": "Yellow",
+      "effect": "Reduce one R from the cost of all Units in your hand, -1 max health.",
+      "count": 1
+    },
+    {
+      "id": "Wealthstone",
+      "title": "Wealthstone",
+      "type": "Blessing",
+      "costRaw": "GBR",
+      "color": "Yellow",
+      "effect": "Reduce one Y from the cost of all Units in your hand",
+      "count": 1
+    },
+    {
+      "id": "Cursed_Wealthstone",
+      "title": "Cursed Wealthstone",
+      "type": "Blessing",
+      "costRaw": "BR",
+      "color": "Yellow",
+      "effect": "Reduce one Y from the cost of all Units in your hand, -1 max health.",
+      "count": 1
+    },
+    {
+      "id": "Gambling_Problem",
+      "title": "Gambling Problem",
+      "type": "Blessing",
+      "costRaw": "YRB",
+      "color": "Yellow",
+      "effect": "You can reroll each auxillary die once per turn.",
+      "count": 1
+    },
+    {
+      "id": "Vaccines_for_All",
+      "title": "Vaccines for All",
+      "type": "Ritual",
+      "costRaw": "YYYB",
+      "color": "Yellow",
+      "effect": "Lose 5 followers, gain 5 health.",
+      "count": 1
+    },
+    {
+      "id": "Bop",
+      "title": "Bop",
+      "type": "Unit",
+      "costRaw": "free",
+      "color": "Yellow",
+      "effect": "4: Gain 1 follower.\\n5: Take 1 damage.",
+      "count": 1
+    },
+    {
+      "id": "Cthulu_The_Cosmic",
+      "title": "Cthulu, The Cosmic",
+      "type": "Unit",
+      "costRaw": "YYBB",
+      "color": "Yellow",
+      "effect": "Add or remove any counter to/from target card. This counter must already exist within that player's compound.",
+      "count": 1
+    },
+    {
+      "id": "Almost_a_Vampire",
+      "title": "Almost a Vampire",
+      "type": "Unit",
+      "costRaw": "YRG",
+      "color": "Yellow",
+      "effect": "Deal 1 damage. For each health you've gained this turn, deal an additional damage.",
+      "count": 1
+    },
+    {
+      "id": "Crystal_Mine",
+      "title": "Crystal Mine",
+      "type": "Unit",
+      "costRaw": "GG",
+      "color": "Yellow",
+      "effect": "Gain one B",
+      "count": 1
+    },
+    {
+      "id": "Money_Tree",
+      "title": "Money Tree",
+      "type": "Unit",
+      "costRaw": "YY",
+      "color": "Yellow",
+      "effect": "Gain one G",
+      "count": 1
+    },
+    {
+      "id": "Blood_Diamond_Mine",
+      "title": "Blood Diamond Mine",
+      "type": "Unit",
+      "costRaw": "RR",
+      "color": "Yellow",
+      "effect": "Gain one R",
+      "count": 1
+    },
+    {
+      "id": "Inspired_Fool",
+      "title": "Inspired Fool",
+      "type": "Unit",
+      "costRaw": "YYG",
+      "color": "Yellow",
+      "effect": "Gain one resource of your choice",
+      "count": 1
+    },
+    {
+      "id": "Gold_Mine",
+      "title": "Gold Mine",
+      "type": "Unit",
+      "costRaw": "BB",
+      "color": "Yellow",
+      "effect": "Gain one Y",
+      "count": 1
+    },
+    {
+      "id": "Wondrous_Blood",
+      "title": "Wondrous Blood",
+      "type": "Blessing",
+      "costRaw": "YYG",
+      "color": "Yellow",
+      "effect": "If you'd heal during a turn, instead heal that many health + 1.",
+      "count": 1
+    },
+    {
+      "id": "Cornucopia",
+      "title": "Cornucopia",
+      "type": "Unit",
+      "costRaw": "RBGYY",
+      "color": "Yellow",
+      "effect": "Gain two resources of your choice.",
+      "count": 1
+    },
+    {
+      "id": "Sacrificial_Lamb",
+      "title": "Sacrificial Lamb",
+      "type": "Unit",
+      "costRaw": "RR",
+      "color": "Yellow",
+      "effect": "Gain 4 resrouces of your choice. Sacrifice Sacrificial Lamb.",
+      "count": 1
+    },
+    {
+      "id": "Alternative_Medicine",
+      "title": "Alternative Medicine",
+      "type": "Unit",
+      "costRaw": "YYYG",
+      "color": "Yellow",
+      "effect": "Heal 0 health, gain 2 followers",
+      "count": 1
+    },
+    {
+      "id": "Master_Shaman",
+      "title": "Master Shaman",
+      "type": "Unit",
+      "costRaw": "GGYBB",
+      "color": "Yellow",
+      "effect": "Heal 2 health and deals a damage",
+      "count": 1
+    },
+    {
+      "id": "Ominous_Eye",
+      "title": "Ominous Eye",
+      "type": "Unit",
+      "costRaw": "BBBR",
+      "color": "Yellow",
+      "effect": "Ominous Eye starts with 2 static counters. If a card with a static counter would trigger, it's effect does not happen and the static counter is instead removed. Effect: Put a static counter on an oppenents card. ",
+      "count": 1
+    },
+    {
+      "id": "Suspicious_Chef",
+      "title": "Suspicious Chef",
+      "type": "Unit",
+      "costRaw": "YYY",
+      "color": "Yellow",
+      "effect": "Starts with 1 meal counter. Once a turn, you can pay 3 resources (any color) to add a meal counter. Effect: Deal damage = num meal counters.",
+      "count": 1
+    },
+    {
+      "id": "Valefar",
+      "title": "Valefar",
+      "type": "Unit",
+      "costRaw": "YYY",
+      "color": "Yellow",
+      "effect": "Take any resource from a player",
+      "count": 1
+    },
+    {
+      "id": "Being_of_Hearthlessness",
+      "title": "Being of Hearthlessness",
+      "type": "Unit",
+      "costRaw": "GRBY",
+      "color": "Yellow",
+      "effect": "[Being of Hearthlessness starts with 1 trash counter. Once per turn, when a card is recycled, add a trash counter to Being of Hearthlessness]\\nGain one gold for every trash counter on Being of Hearthlessness.",
+      "count": 1
+    }
+  ]
+}
