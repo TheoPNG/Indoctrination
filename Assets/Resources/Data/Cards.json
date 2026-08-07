@@ -178,7 +178,9 @@
       "color": "Blue",
       "effect": "[Play Double Agent into an opponent's compound]/nLose 1 follower and take 1 damage.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        4
+      ]
     },
     {
       "id": "It_Who_Consumes",
@@ -188,7 +190,9 @@
       "color": "Blue",
       "effect": "[Additional cost, sacrifice a Unit, sacrifice a Blessing, and activate a Ritual (it's effect is null)]\\nYou instantly play the top card of the deck without paying it's cost",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        1
+      ]
     },
     {
       "id": "Slanderist",
@@ -198,7 +202,9 @@
       "color": "Blue",
       "effect": "Target opponent loses 1 follower.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        3
+      ]
     },
     {
       "id": "Ritualist",
@@ -208,7 +214,9 @@
       "color": "Blue",
       "effect": "When you activate a Ritual, add a Ritual counter. Deal damage = 1 + amount of Ritual counters.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        5
+      ]
     },
     {
       "id": "Wisdom_Hoarder",
@@ -218,7 +226,9 @@
       "color": "Blue",
       "effect": "Deal 1 damage. If you have the most cards in your hand, deal 2 instead.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        3
+      ]
     },
     {
       "id": "Researcher_of_the_Old_Ways",
@@ -228,7 +238,9 @@
       "color": "Blue",
       "effect": "Draw a card and deal 1 damage.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        1
+      ]
     },
     {
       "id": "He_Who_Remembers",
@@ -238,7 +250,9 @@
       "color": "Blue",
       "effect": "Gain B = to the number of times you've drafted.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        2
+      ]
     },
     {
       "id": "Hydro_Plant",
@@ -248,7 +262,9 @@
       "color": "Blue",
       "effect": "Gain one B",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        4
+      ]
     },
     {
       "id": "Snake_Eyes",
@@ -270,7 +286,9 @@
       "color": "Blue",
       "effect": "Remove 1 follower from an opponent",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        4
+      ]
     },
     {
       "id": "Baal_The_Manipulator",
@@ -280,7 +298,9 @@
       "color": "Blue",
       "effect": "Starts with 1 Scheme counter. You can remove a Scheme counter at any time to change any dice to any number. Effect: +1 Scheme counter.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        4
+      ]
     },
     {
       "id": "Propaganda",
@@ -290,7 +310,9 @@
       "color": "Blue",
       "effect": "Steal a follower from an opponent",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        6
+      ]
     },
     {
       "id": "Soul_Swapper",
@@ -300,7 +322,9 @@
       "color": "Blue",
       "effect": "Starts with 3 swap counters. Effect: +1 swap counter, then you may swap Soul Swapper with any unit that costs less than or equal to num swap counters. (Goes back to 3)",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        6
+      ]
     },
     {
       "id": "Worshiper_of_the_Bone_God",
@@ -310,7 +334,9 @@
       "color": "Blue",
       "effect": "Take a Ritual from the discard pile and add it to your hand. You cant choose the same Ritual more than once.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        2
+      ]
     },
     {
       "id": "Initiate_4",
@@ -332,7 +358,9 @@
       "color": "Blue",
       "effect": "Until the end of your turn, the next Ritual you use activates an additional time.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        3
+      ]
     },
     {
       "id": "Star_Eyed",
@@ -462,7 +490,9 @@
       "color": "Green",
       "effect": "Deal 1 damage. Each player you damage to also loses a follower.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        6
+      ]
     },
     {
       "id": "Manipulator_of_the_Masses",
@@ -472,7 +502,9 @@
       "color": "Green",
       "effect": "Deal 1 damage. You can choose to lose up to 6 followers. If you do, you deal 1 plus (that amount of follower / 2 (rounded down)) instead.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        2
+      ]
     },
     {
       "id": "Meatshield",
@@ -492,7 +524,9 @@
       "color": "Green",
       "effect": "Everyone gains a follower and loses 1 health",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        3
+      ]
     },
     {
       "id": "Wall_Builder",
@@ -502,7 +536,9 @@
       "color": "Green",
       "effect": "Gain 1 Block.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        2
+      ]
     },
     {
       "id": "The_Beastmaster",
@@ -524,7 +560,9 @@
       "color": "Green",
       "effect": "Gain 1 health and 1 follower",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        3
+      ]
     },
     {
       "id": "Bodyguard",
@@ -534,7 +572,9 @@
       "color": "Green",
       "effect": "Gain 2 block",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        3
+      ]
     },
     {
       "id": "Titanstopper_Church_of_Walls",
@@ -554,7 +594,9 @@
       "color": "Green",
       "effect": "Gain 2 followers",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        4
+      ]
     },
     {
       "id": "Angry_Drunk_Monkey",
@@ -564,7 +606,9 @@
       "color": "Green",
       "effect": "Gain 2 followers, take 1 damage",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        4
+      ]
     },
     {
       "id": "Feline_Cultist",
@@ -574,7 +618,9 @@
       "color": "Green",
       "effect": "Gain a follower",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        6
+      ]
     },
     {
       "id": "Celebrity",
@@ -584,7 +630,9 @@
       "color": "Green",
       "effect": "Gain a follower",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        1
+      ]
     },
     {
       "id": "Security",
@@ -594,7 +642,9 @@
       "color": "Green",
       "effect": "Gain one block and deal one damage.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        2
+      ]
     },
     {
       "id": "Solar_Panels",
@@ -604,7 +654,9 @@
       "color": "Green",
       "effect": "Gain one G",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        6
+      ]
     },
     {
       "id": "The_Allmother",
@@ -614,7 +666,9 @@
       "color": "Green",
       "effect": "Heal two and gain a follower.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        1
+      ]
     },
     {
       "id": "Witch_Doctor",
@@ -624,7 +678,9 @@
       "color": "Green",
       "effect": "Heal one damage",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        5
+      ]
     },
     {
       "id": "Shield_Wizard",
@@ -634,7 +690,9 @@
       "color": "Green",
       "effect": "Gain 2 block.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        2
+      ]
     },
     {
       "id": "Senior_Recruiter",
@@ -644,7 +702,9 @@
       "color": "Green",
       "effect": "Gain 2 followers",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        6
+      ]
     },
     {
       "id": "Youth_Leader",
@@ -654,7 +714,9 @@
       "color": "Green",
       "effect": "Gain one follower",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        3
+      ]
     },
     {
       "id": "Grandma",
@@ -664,7 +726,9 @@
       "color": "Green",
       "effect": "Heal 1",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        6
+      ]
     },
     {
       "id": "Is_he_on_meth",
@@ -674,7 +738,9 @@
       "color": "Green",
       "effect": "You may sacrifice a blessing and gain 3 followers",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        5
+      ]
     },
     {
       "id": "Masochism",
@@ -893,7 +959,9 @@
       "color": "Red",
       "effect": "Deal 1 damage to a random player.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        2
+      ]
     },
     {
       "id": "The_Beast",
@@ -903,7 +971,9 @@
       "color": "Red",
       "effect": "Deal 2 damage to a enemy. Roll a die, if its even, deal 1 damage to a different enemy and roll again.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        6
+      ]
     },
     {
       "id": "Belle_of_the_Ball",
@@ -913,7 +983,9 @@
       "color": "Red",
       "effect": "Deal 2 damage. Costs 1R less for each unit you own.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        5
+      ]
     },
     {
       "id": "Cult_s_Pet_s_Dad",
@@ -947,7 +1019,9 @@
       "color": "Red",
       "effect": "Deal one damage",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        5
+      ]
     },
     {
       "id": "Arsonist",
@@ -957,7 +1031,9 @@
       "color": "Red",
       "effect": "Deal one damage and add two flame counters to the target opponent",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        1
+      ]
     },
     {
       "id": "Vampire",
@@ -967,7 +1043,9 @@
       "color": "Red",
       "effect": "Deal one damage and heal one health.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        6
+      ]
     },
     {
       "id": "Beekeeper_Cultist",
@@ -977,7 +1055,9 @@
       "color": "Red",
       "effect": "Deal one damage. If you have 5 or more activated units, deal another (it doesn't have to be to the same player.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        4
+      ]
     },
     {
       "id": "Fire_Breather",
@@ -987,7 +1067,9 @@
       "color": "Red",
       "effect": "Deal one damage. Place a flame counter on any player. On their next turn, they take one damage and remove the flame counter.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        5
+      ]
     },
     {
       "id": "Cult_s_Pet_Tiger_for_art",
@@ -997,7 +1079,9 @@
       "color": "Red",
       "effect": "Deal two damage",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        3
+      ]
     },
     {
       "id": "Friend_of_the_Beasts",
@@ -1007,7 +1091,9 @@
       "color": "Red",
       "effect": "Each player takes one damage",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        3
+      ]
     },
     {
       "id": "Pentagram",
@@ -1017,7 +1103,9 @@
       "color": "Red",
       "effect": "Gain 1 follower or deal 1 damage to any player.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        4
+      ]
     },
     {
       "id": "Blood_Sacrifice",
@@ -1027,7 +1115,9 @@
       "color": "Red",
       "effect": "Gain one R",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        4
+      ]
     },
     {
       "id": "Nuclear_Plant",
@@ -1037,7 +1127,9 @@
       "color": "Red",
       "effect": "Gain one red",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        2
+      ]
     },
     {
       "id": "Satanist",
@@ -1059,7 +1151,9 @@
       "color": "Red",
       "effect": "Pay up to 3 R to heal 1 each",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        5
+      ]
     },
     {
       "id": "Blood_Collector",
@@ -1069,7 +1163,9 @@
       "color": "Red",
       "effect": "Starts with 1 Blood Counter. When you take damage, add a Blood Counter. Effect: Gain Blood = num Blood Counters.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        5
+      ]
     },
     {
       "id": "Hierophant_s_Favorite",
@@ -1079,7 +1175,9 @@
       "color": "Red",
       "effect": "Take 1 damage, gain 2 followers.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        4
+      ]
     },
     {
       "id": "Masochist",
@@ -1089,7 +1187,9 @@
       "color": "Red",
       "effect": "This turn, each health you lose, deal 1 damage. Lose 1 health.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        2
+      ]
     },
     {
       "id": "Bloody_Mooner",
@@ -1099,7 +1199,9 @@
       "color": "Red",
       "effect": "This turn, if a card you own would deal damage to you, it does 1 less. All players take 2 damage.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        3
+      ]
     },
     {
       "id": "Asmodeus",
@@ -1109,7 +1211,9 @@
       "color": "Red",
       "effect": "When any player takes damage, add a violence counter to Asmodeus. Upon activation, deal violence/2 to all players.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        4
+      ]
     },
     {
       "id": "Compound_Landmines",
@@ -1119,7 +1223,9 @@
       "color": "Red",
       "effect": "Your block goes down to and stays at 1 for a turn. If attacked the attacker takes 2 damage",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        4
+      ]
     },
     {
       "id": "Resourceful",
@@ -1232,7 +1338,9 @@
       "color": "Yellow",
       "effect": "Add or remove any counter to/from target card. This counter must already exist within that player's compound.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        1
+      ]
     },
     {
       "id": "Almost_a_Vampire",
@@ -1242,7 +1350,9 @@
       "color": "Yellow",
       "effect": "Deal 1 damage. For each health you've gained this turn, deal an additional damage.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        1
+      ]
     },
     {
       "id": "Crystal_Mine",
@@ -1252,7 +1362,9 @@
       "color": "Yellow",
       "effect": "Gain one B",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        1
+      ]
     },
     {
       "id": "Money_Tree",
@@ -1262,7 +1374,9 @@
       "color": "Yellow",
       "effect": "Gain one G",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        6
+      ]
     },
     {
       "id": "Blood_Diamond_Mine",
@@ -1272,7 +1386,9 @@
       "color": "Yellow",
       "effect": "Gain one R",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        5
+      ]
     },
     {
       "id": "Inspired_Fool",
@@ -1282,7 +1398,9 @@
       "color": "Yellow",
       "effect": "Gain one resource of your choice",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        6
+      ]
     },
     {
       "id": "Gold_Mine",
@@ -1292,7 +1410,9 @@
       "color": "Yellow",
       "effect": "Gain one Y",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        3
+      ]
     },
     {
       "id": "Wondrous_Blood",
@@ -1312,7 +1432,9 @@
       "color": "Yellow",
       "effect": "Gain two resources of your choice.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        5
+      ]
     },
     {
       "id": "Sacrificial_Lamb",
@@ -1322,7 +1444,9 @@
       "color": "Yellow",
       "effect": "Gain 4 resrouces of your choice. Sacrifice Sacrificial Lamb.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        6
+      ]
     },
     {
       "id": "Alternative_Medicine",
@@ -1332,7 +1456,9 @@
       "color": "Yellow",
       "effect": "Heal 0 health, gain 2 followers",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        3
+      ]
     },
     {
       "id": "Master_Shaman",
@@ -1342,7 +1468,9 @@
       "color": "Yellow",
       "effect": "Heal 2 health and deals a damage",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        1
+      ]
     },
     {
       "id": "Ominous_Eye",
@@ -1352,7 +1480,9 @@
       "color": "Yellow",
       "effect": "Ominous Eye starts with 2 static counters. If a card with a static counter would trigger, it's effect does not happen and the static counter is instead removed. Effect: Put a static counter on an oppenents card.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        1
+      ]
     },
     {
       "id": "Suspicious_Chef",
@@ -1362,7 +1492,9 @@
       "color": "Yellow",
       "effect": "Starts with 1 meal counter. Once a turn, you can pay 3 resources (any color) to add a meal counter. Effect: Deal damage = num meal counters.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        5
+      ]
     },
     {
       "id": "Valefar",
@@ -1372,7 +1504,9 @@
       "color": "Yellow",
       "effect": "Take any resource from a player",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        3
+      ]
     },
     {
       "id": "Being_of_Hearthlessness",
@@ -1382,7 +1516,9 @@
       "color": "Yellow",
       "effect": "[Being of Hearthlessness starts with 1 trash counter. Once per turn, when a card is recycled, add a trash counter to Being of Hearthlessness]\\nGain one gold for every trash counter on Being of Hearthlessness.",
       "count": 1,
-      "activationNumbers": []
+      "activationNumbers": [
+        2
+      ]
     }
   ]
 }

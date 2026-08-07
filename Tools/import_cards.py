@@ -15,6 +15,7 @@ title/type/cost/color/effect are skipped as incomplete designs.
 import argparse
 import datetime
 import json
+import os
 import re
 import sys
 
@@ -22,6 +23,10 @@ import pandas as pd
 
 COLOR_NAMES = {"R": "Red", "G": "Green", "B": "Blue", "Y": "Yellow"}
 DEFAULT_OUTPUT = "Assets/Resources/Data/Cards.json"
+
+# Die numbers filled in by Tools/assign_activation_numbers.py for units that do
+# not have one in the spreadsheet yet. The spreadsheet always takes priority.
+ASSIGNMENTS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_activation_numbers.json")
 
 
 def parse_activation_numbers(value):
@@ -101,6 +106,28 @@ def build_cards(xlsx_path):
     return cards, skipped
 
 
+def apply_generated_numbers(cards):
+    """
+    Fills in die numbers for units the spreadsheet has not assigned yet.
+    Returns how many cards were filled in this way.
+    """
+    if not os.path.exists(ASSIGNMENTS_PATH):
+        return 0
+
+    with open(ASSIGNMENTS_PATH) as f:
+        assignments = json.load(f)["assignments"]
+
+    filled = 0
+    for card in cards:
+        if card["type"] != "Unit" or card["activationNumbers"]:
+            continue
+        if card["id"] in assignments:
+            card["activationNumbers"] = [assignments[card["id"]]]
+            filled += 1
+
+    return filled
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("xlsx", help="Path to the card design spreadsheet")
@@ -109,17 +136,20 @@ def main():
 
     cards, skipped = build_cards(args.xlsx)
 
+    units = [c for c in cards if c["type"] == "Unit"]
+    from_spreadsheet = sum(1 for c in units if c["activationNumbers"])
+    generated = apply_generated_numbers(cards)
+
     with open(args.output, "w") as f:
         json.dump({"cards": cards}, f, indent=2)
         f.write("\n")
 
-    units = [c for c in cards if c["type"] == "Unit"]
     missing_numbers = [c["title"] for c in units if not c["activationNumbers"]]
 
     print(f"Wrote {args.output}")
     print(f"  {len(cards)} card definitions ({sum(c['count'] for c in cards)} physical cards)")
     print(f"  skipped {skipped} incomplete row(s)")
-    print(f"  {len(units) - len(missing_numbers)}/{len(units)} units have die activation numbers")
+    print(f"  die numbers: {from_spreadsheet} from spreadsheet, {generated} generated")
     if missing_numbers:
         print(f"  units still missing numbers: {len(missing_numbers)}", file=sys.stderr)
 
