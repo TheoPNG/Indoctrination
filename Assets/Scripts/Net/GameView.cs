@@ -29,6 +29,19 @@ namespace Indoctrination.Net
         /// <summary>The winner, or -1 while the game is still going.</summary>
         public int winnerPlayerId = -1;
 
+        public bool diceRolled;
+        public bool highRollResourceClaimed;
+
+        /// <summary>Who has pressed Ready. The phase moves on when everyone has.</summary>
+        public int[] playersReady = Array.Empty<int>();
+
+        /// <summary>
+        /// Seconds left before the phase advances without waiting, as of the moment
+        /// this view was sent. Clients count down from here rather than being sent
+        /// a fresh view every second.
+        /// </summary>
+        public float phaseSecondsRemaining;
+
         public CardView[] draftZone = Array.Empty<CardView>();
         public PlayerView[] players = Array.Empty<PlayerView>();
 
@@ -66,6 +79,11 @@ namespace Indoctrination.Net
 
         /// <summary>Always set, so opponents can see how many cards you are holding.</summary>
         public int handCount;
+
+        /// <summary>Whether this player has taken their free resources this turn.</summary>
+        public bool collectedResources;
+
+        public bool isReady;
 
         /// <summary>Only filled in on the holder's own view; empty for everyone else.</summary>
         public CardView[] hand = Array.Empty<CardView>();

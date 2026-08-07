@@ -28,6 +28,9 @@ namespace Indoctrination.Net
 
         private readonly Dictionary<ulong, string> _names = new();
 
+        /// <summary>Time.time when the current phase began, for the timeout.</summary>
+        private float _phaseStartedAt;
+
         // ---------------------------------------------------------- Every machine
         /// <summary>This machine's view of the game, or null before it starts.</summary>
         public GameView View { get; private set; }
@@ -177,6 +180,7 @@ namespace Indoctrination.Net
                 FirstDrafterIndex = new System.Random(seed).Next(names.Count)
             };
             _game.BeginDraft();
+            _phaseStartedAt = Time.time;
 
             BroadcastState();
         }
@@ -220,19 +224,61 @@ namespace Indoctrination.Net
             Apply(rpcParams, playerId => _game.RecycleCard(playerId, cardInstanceId));
         }
 
+        /// <summary>
+        /// Says this player is finished with the current phase. The phase only
+        /// moves on once everyone has said so - one player should not be able to
+        /// skip the table past actions the others have not taken yet.
+        /// </summary>
         [Rpc(SendTo.Server)]
-        public void RequestAdvancePhaseRpc(RpcParams rpcParams = default)
+        public void RequestSetReadyRpc(bool ready, RpcParams rpcParams = default)
         {
-            Apply(rpcParams, _ =>
+            Apply(rpcParams, playerId =>
             {
-                _game.AdvancePhase();
-
-                // A new draft needs its zone dealt before anyone can pick.
-                if (_game.Phase == TurnPhase.Draft && _game.CurrentDrafterId == null)
+                if (_game.SetReady(playerId, ready))
                 {
-                    _game.BeginDraft();
+                    AdvancePhase();
                 }
             });
+        }
+
+        private void AdvancePhase()
+        {
+            _game.AdvancePhase();
+
+            // A new draft needs its zone dealt before anyone can pick.
+            if (_game.Phase == TurnPhase.Draft && _game.CurrentDrafterId == null)
+            {
+                _game.BeginDraft();
+            }
+
+            _phaseStartedAt = Time.time;
+        }
+
+        /// <summary>
+        /// Server-side fallback for a player who has stepped away: after the
+        /// timeout the phase advances whether or not everyone pressed Ready.
+        /// The draft is exempt, since it is one player at a time and skipping a
+        /// pick would leave the zone in a state the rules do not describe.
+        /// </summary>
+        private void Update()
+        {
+            if (!IsServer || _game == null)
+            {
+                return;
+            }
+
+            if (_game.Phase is TurnPhase.Draft or TurnPhase.GameOver)
+            {
+                return;
+            }
+
+            if (Time.time - _phaseStartedAt < GameSettings.PhaseTimeoutSeconds)
+            {
+                return;
+            }
+
+            AdvancePhase();
+            BroadcastState();
         }
 
         /// <summary>
@@ -258,6 +304,9 @@ namespace Indoctrination.Net
                 return;
             }
 
+            var phaseBefore = _game.Phase;
+            var turnBefore = _game.TurnInRound;
+
             try
             {
                 operation(playerId);
@@ -266,6 +315,13 @@ namespace Indoctrination.Net
             {
                 ReportError(exception.Message, senderId);
                 return;
+            }
+
+            // The draft ends by someone taking the last pick rather than by a phase
+            // advance, so the timer has to be restarted from whatever moved it.
+            if (_game.Phase != phaseBefore || _game.TurnInRound != turnBefore)
+            {
+                _phaseStartedAt = Time.time;
             }
 
             BroadcastState();
@@ -330,6 +386,12 @@ namespace Indoctrination.Net
                 discardCount = _game.Discard.Count,
                 currentDrafterId = _game.CurrentDrafterId ?? -1,
                 winnerPlayerId = _game.Winner?.PlayerId ?? -1,
+                diceRolled = _game.DiceRolled,
+                highRollResourceClaimed = _game.HighRollResourceClaimed,
+                playersReady = _game.PlayersReady.ToArray(),
+                phaseSecondsRemaining = _game.Phase is TurnPhase.Draft or TurnPhase.GameOver
+                    ? 0f
+                    : Mathf.Max(0f, GameSettings.PhaseTimeoutSeconds - (Time.time - _phaseStartedAt)),
                 draftZone = _game.DraftZone.Select(ToCardView).ToArray(),
                 players = _game.Players.Select(player => new PlayerView
                 {
@@ -344,6 +406,8 @@ namespace Indoctrination.Net
                     blue = player.Resources[ResourceColor.Blue],
                     yellow = player.Resources[ResourceColor.Yellow],
                     handCount = player.Hand.Count,
+                    collectedResources = _game.HasCollectedResources(player.PlayerId),
+                    isReady = _game.PlayersReady.Contains(player.PlayerId),
                     hand = player.PlayerId == viewerPlayerId
                         ? player.Hand.Select(ToCardView).ToArray()
                         : Array.Empty<CardView>(),

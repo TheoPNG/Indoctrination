@@ -28,6 +28,13 @@ namespace Indoctrination.Core
 
         public const int DieSides = 6;
 
+        /// <summary>
+        /// How long a phase waits for every player to say they are done before it
+        /// moves on regardless. Stops one player who has stepped away from
+        /// stalling the table indefinitely.
+        /// </summary>
+        public const float PhaseTimeoutSeconds = 90f;
+
         /// <summary>How many cards fill the draft zone, based on player count.</summary>
         public static int DraftZoneSize(int playerCount)
         {

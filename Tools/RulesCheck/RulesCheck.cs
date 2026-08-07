@@ -143,6 +143,60 @@ static class RulesCheck
         Check("recycle removes card from hand", pa.Hand.Count == handBefore - 1);
         Check("recycle grants that card's colour", pa.Resources[recycleColor] == 1, recycleColor.ToString());
 
+        Console.WriteLine("\nOnce-per-turn limits:");
+        var g6 = new GameState(new[] { "A", "B" }, cards, randomSeed: 11);
+        g6.BeginDraft();
+        while (g6.CurrentDrafterId is int d6) g6.DraftCard(d6, g6.DraftZone[0].InstanceId);
+
+        var roller = g6.RollPrimaryDice();
+        Check("cannot roll the dice twice", Throws(() => g6.RollPrimaryDice()));
+
+        if (roller != null)
+        {
+            g6.ClaimHighRollResource(roller.PlayerId, ResourceColor.Red);
+            Check("high roll bonus is one resource, not unlimited",
+                  Throws(() => g6.ClaimHighRollResource(roller.PlayerId, ResourceColor.Red)));
+            Check("high roll bonus granted exactly one", roller.Resources.Total == 1,
+                  roller.Resources.ToString());
+        }
+        else
+        {
+            Check("tied roll grants nobody the bonus",
+                  Throws(() => g6.ClaimHighRollResource(0, ResourceColor.Red)));
+        }
+
+        g6.AdvancePhase();                                  // Rolling -> Activation
+        g6.AdvancePhase();                                  // Activation -> Resource
+        var twoReds = new[] { ResourceColor.Red, ResourceColor.Red };
+        g6.CollectResources(0, twoReds);
+        Check("cannot collect free resources twice",
+              Throws(() => g6.CollectResources(0, twoReds)));
+        Check("the other player can still collect", !Throws(() => g6.CollectResources(1, twoReds)));
+        Check("must take exactly two",
+              Throws(() => g6.CollectResources(0, new[] { ResourceColor.Red })));
+
+        Console.WriteLine("\nPhase advances only when everyone is ready:");
+        var g7 = new GameState(new[] { "A", "B", "C" }, cards, randomSeed: 13);
+        g7.BeginDraft();
+        while (g7.CurrentDrafterId is int d7) g7.DraftCard(d7, g7.DraftZone[0].InstanceId);
+
+        Check("one of three ready is not enough", !g7.SetReady(0, true));
+        Check("two of three is not enough", !g7.SetReady(1, true));
+        Check("un-readying takes it back", !g7.SetReady(0, false));
+        Check("re-readying still waits on the third", !g7.SetReady(0, true));
+        Check("all three ready lets it through", g7.SetReady(2, true));
+        var phaseBeforeAdvance = g7.Phase;
+        g7.AdvancePhase();
+        Check("phase moved on", g7.Phase != phaseBeforeAdvance, $"{phaseBeforeAdvance} -> {g7.Phase}");
+        Check("ready flags cleared for the new phase", g7.PlayersReady.Count == 0);
+        Check("a dead player is not waited on", DeadPlayersAreSkipped(cards));
+        Check("the draft has no ready check", Throws(() =>
+        {
+            var g = new GameState(new[] { "A", "B" }, cards, randomSeed: 17);
+            g.BeginDraft();
+            g.SetReady(0, true);
+        }));
+
         Console.WriteLine("\nWin conditions:");
         var g3 = new GameState(new[] { "A", "B" }, cards, randomSeed: 1);
         g3.Players[0].GainFollowers(19);
@@ -169,6 +223,23 @@ static class RulesCheck
 
         Console.WriteLine($"\n{(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED")}");
         Environment.Exit(failures == 0 ? 0 : 1);
+    }
+
+    /// <summary>
+    /// A player who has been knocked out must not hold up the table, so the
+    /// living players alone should be enough to move the phase on.
+    /// </summary>
+    static bool DeadPlayersAreSkipped(List<CardDefinition> cards)
+    {
+        var game = new GameState(new[] { "A", "B", "C" }, cards, randomSeed: 19);
+        game.BeginDraft();
+        while (game.CurrentDrafterId is int drafter)
+            game.DraftCard(drafter, game.DraftZone[0].InstanceId);
+
+        game.Players[2].TakeDamage(GameSettings.StartingHealth);
+
+        game.SetReady(0, true);
+        return game.SetReady(1, true);
     }
 
     static bool Throws(Action action)

@@ -24,6 +24,41 @@ namespace Indoctrination.Net
         private Vector2 _scroll;
         private readonly List<ResourceColor> _pendingResources = new();
 
+        private GameView _lastSeenView;
+        private float _secondsLeft;
+
+        /// <summary>
+        /// Counts the phase timer down locally. The server sends how long is left
+        /// only when something else changes, so ticking it here avoids a stream of
+        /// once-a-second updates just to animate a number.
+        /// </summary>
+        private void Update()
+        {
+            var view = NetworkGameManager.Instance == null ? null : NetworkGameManager.Instance.View;
+
+            if (view == null)
+            {
+                _lastSeenView = null;
+                _secondsLeft = 0f;
+                return;
+            }
+
+            if (!ReferenceEquals(view, _lastSeenView))
+            {
+                // A phase change invalidates a half-finished resource pick.
+                if (_lastSeenView == null || view.phase != _lastSeenView.phase)
+                {
+                    _pendingResources.Clear();
+                }
+
+                _lastSeenView = view;
+                _secondsLeft = view.phaseSecondsRemaining;
+                return;
+            }
+
+            _secondsLeft = Mathf.Max(0f, _secondsLeft - Time.deltaTime);
+        }
+
         private void OnGUI()
         {
             GUILayout.BeginArea(new Rect(10, 10, Screen.width - 20, Screen.height - 20));
@@ -192,7 +227,7 @@ namespace Indoctrination.Net
                     DrawActivation(view);
                     break;
                 case nameof(TurnPhase.Resource):
-                    DrawResourceCollection(manager);
+                    DrawResourceCollection(manager, view);
                     break;
                 case nameof(TurnPhase.Buy):
                     DrawBuy(manager, view);
@@ -202,12 +237,41 @@ namespace Indoctrination.Net
             GUILayout.Space(8);
             DrawHand(view);
             GUILayout.Space(8);
+            DrawReadyCheck(manager, view);
+        }
 
-            if (view.phase != nameof(TurnPhase.Draft) && view.winnerPlayerId < 0
-                && GUILayout.Button("Next Phase", GUILayout.Width(160)))
+        /// <summary>
+        /// The phase only moves on when everyone agrees, so this shows who the
+        /// table is still waiting on and how long until it gives up waiting.
+        /// </summary>
+        private void DrawReadyCheck(NetworkGameManager manager, GameView view)
+        {
+            if (view.phase == nameof(TurnPhase.Draft) || view.winnerPlayerId >= 0)
             {
-                manager.RequestAdvancePhaseRpc();
+                return;
             }
+
+            var you = view.Viewer;
+            if (you == null)
+            {
+                return;
+            }
+
+            var waitingOn = view.players
+                .Where(player => player.isAlive && !player.isReady)
+                .Select(player => player.name)
+                .ToList();
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(you.isReady ? "Not Ready" : "Ready", GUILayout.Width(160)))
+            {
+                manager.RequestSetReadyRpc(!you.isReady);
+            }
+
+            GUILayout.Label(waitingOn.Count > 0
+                ? $"Waiting on: {string.Join(", ", waitingOn)}   ({_secondsLeft:0}s until it moves on anyway)"
+                : "Everyone is ready.");
+            GUILayout.EndHorizontal();
         }
 
         private void DrawScoreboard(GameView view)
@@ -244,13 +308,7 @@ namespace Indoctrination.Net
 
         private void DrawRolling(NetworkGameManager manager, GameView view)
         {
-            var rolled = false;
-            foreach (var player in view.players)
-            {
-                rolled |= player.primaryDie > 0;
-            }
-
-            if (!rolled)
+            if (!view.diceRolled)
             {
                 if (GUILayout.Button("Roll Dice", GUILayout.Width(160)))
                 {
@@ -260,9 +318,22 @@ namespace Indoctrination.Net
                 return;
             }
 
-            if (HighestUniqueRoller(view) != view.viewerPlayerId)
+            if (view.highRollResourceClaimed)
             {
-                GUILayout.Label("Dice are rolled.");
+                GUILayout.Label("The high roll bonus has been taken.");
+                return;
+            }
+
+            var highRoller = HighestUniqueRoller(view);
+            if (highRoller < 0)
+            {
+                GUILayout.Label("The top roll was tied, so nobody takes the bonus resource.");
+                return;
+            }
+
+            if (highRoller != view.viewerPlayerId)
+            {
+                GUILayout.Label($"{FindPlayer(view, highRoller)?.name} rolled highest.");
                 return;
             }
 
@@ -306,8 +377,14 @@ namespace Indoctrination.Net
             }
         }
 
-        private void DrawResourceCollection(NetworkGameManager manager)
+        private void DrawResourceCollection(NetworkGameManager manager, GameView view)
         {
+            if (view.Viewer is { collectedResources: true })
+            {
+                GUILayout.Label("You have taken your resources for this turn.");
+                return;
+            }
+
             GUILayout.Label($"Choose {GameSettings.ResourcesPerTurn} resources: " +
                             $"{string.Join(", ", _pendingResources)}");
 

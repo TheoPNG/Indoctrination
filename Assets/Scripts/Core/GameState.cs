@@ -21,6 +21,13 @@ namespace Indoctrination.Core
         private int _draftPickIndex;
         private List<int> _draftOrder = new();
 
+        // Turn-scoped flags, all cleared by AdvancePhase. Without these a player
+        // can simply ask for the same free resource over and over.
+        private bool _diceRolled;
+        private bool _highRollClaimed;
+        private readonly HashSet<int> _resourcesCollected = new();
+        private readonly HashSet<int> _playersReady = new();
+
         public IReadOnlyList<PlayerState> Players => _players;
         public IReadOnlyList<CardInstance> DraftZone => _draftZone;
         public IReadOnlyList<CardInstance> Discard => _discard;
@@ -170,9 +177,19 @@ namespace Indoctrination.Core
         /// the highest, or null if the highest roll was tied. That player takes one
         /// resource of their choice via <see cref="ClaimHighRollResource"/>.
         /// </summary>
+        /// <summary>Whether this turn's dice have already been rolled.</summary>
+        public bool DiceRolled => _diceRolled;
+
         public PlayerState RollPrimaryDice()
         {
             RequirePhase(TurnPhase.Rolling);
+
+            if (_diceRolled)
+            {
+                throw new InvalidOperationException("The dice have already been rolled this turn.");
+            }
+
+            _diceRolled = true;
 
             foreach (var player in LivingPlayers)
             {
@@ -189,9 +206,22 @@ namespace Indoctrination.Core
             return tiedAtTop.Count == 1 ? tiedAtTop[0] : null;
         }
 
+        /// <summary>Whether the high roller has already taken their bonus resource.</summary>
+        public bool HighRollResourceClaimed => _highRollClaimed;
+
         public void ClaimHighRollResource(int playerId, ResourceColor color)
         {
             RequirePhase(TurnPhase.Rolling);
+
+            if (!_diceRolled)
+            {
+                throw new InvalidOperationException("Nobody has rolled yet.");
+            }
+
+            if (_highRollClaimed)
+            {
+                throw new InvalidOperationException("The high roll bonus has already been taken this turn.");
+            }
 
             var winner = HighestUniqueRoller();
             if (winner == null || winner.PlayerId != playerId)
@@ -199,6 +229,7 @@ namespace Indoctrination.Core
                 throw new InvalidOperationException($"Player {playerId} did not win the roll.");
             }
 
+            _highRollClaimed = true;
             winner.Resources.Add(color);
         }
 
@@ -210,7 +241,10 @@ namespace Indoctrination.Core
 
         // ------------------------------------------------------------- Resources
 
-        /// <summary>Collects the player's free resources for the Resource phase.</summary>
+        /// <summary>Whether this player has already taken their free resources this turn.</summary>
+        public bool HasCollectedResources(int playerId) => _resourcesCollected.Contains(playerId);
+
+        /// <summary>Collects the player's free resources for the Resource phase, once per turn.</summary>
         public void CollectResources(int playerId, IReadOnlyList<ResourceColor> choices)
         {
             RequirePhase(TurnPhase.Resource);
@@ -222,6 +256,12 @@ namespace Indoctrination.Core
             }
 
             var player = GetPlayer(playerId);
+
+            if (!_resourcesCollected.Add(playerId))
+            {
+                throw new InvalidOperationException("You have already collected resources this turn.");
+            }
+
             foreach (var color in choices)
             {
                 player.Resources.Add(color);
@@ -276,9 +316,50 @@ namespace Indoctrination.Core
 
         // ---------------------------------------------------------------- Phases
 
+        /// <summary>Players who have said they are finished with the current phase.</summary>
+        public IReadOnlyCollection<int> PlayersReady => _playersReady;
+
+        /// <summary>
+        /// Whether every living player has finished. Dead players are not waited
+        /// on, and neither is a table where everyone has already moved on.
+        /// </summary>
+        public bool AllPlayersReady =>
+            LivingPlayers.All(player => _playersReady.Contains(player.PlayerId));
+
+        /// <summary>
+        /// Marks a player finished with this phase. Returns true once everyone is,
+        /// which is the caller's cue to <see cref="AdvancePhase"/>. Toggling back to
+        /// not-ready is allowed so a player can undo a misclick.
+        /// </summary>
+        public bool SetReady(int playerId, bool ready)
+        {
+            if (Phase is TurnPhase.Draft or TurnPhase.GameOver)
+            {
+                throw new InvalidOperationException($"The {Phase} phase does not wait on ready checks.");
+            }
+
+            // Confirms the player exists.
+            GetPlayer(playerId);
+
+            if (ready)
+            {
+                _playersReady.Add(playerId);
+            }
+            else
+            {
+                _playersReady.Remove(playerId);
+            }
+
+            return AllPlayersReady;
+        }
+
         /// <summary>
         /// Moves to the next phase, looping Rolling -> Activation -> Resource -> Buy
         /// for three turns before returning to the draft.
+        ///
+        /// Deliberately not gated on <see cref="AllPlayersReady"/>: the caller
+        /// decides whether everyone agreed or the phase timer ran out, and both
+        /// need to land here.
         /// </summary>
         public void AdvancePhase()
         {
@@ -291,6 +372,8 @@ namespace Indoctrination.Core
             {
                 return;
             }
+
+            _playersReady.Clear();
 
             Phase = Phase switch
             {
@@ -305,6 +388,10 @@ namespace Indoctrination.Core
 
         private TurnPhase EndOfTurn()
         {
+            _diceRolled = false;
+            _highRollClaimed = false;
+            _resourcesCollected.Clear();
+
             if (TurnInRound < GameSettings.TurnsPerRound)
             {
                 TurnInRound++;
