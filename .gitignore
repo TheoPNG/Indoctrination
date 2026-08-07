@@ -74,5 +74,13 @@ crashlytics-build.properties
 Tools/**/bin/
 Tools/**/obj/
 
+# The *.csproj rule above is for the IDE projects Unity regenerates. The ones in
+# Tools/ are written by hand and their run.sh scripts do not work without them.
+!Tools/**/*.csproj
+
+# Local editor and assistant settings
+/.vscode/
+/.claude/
+
 # macOS
 .DS_Store

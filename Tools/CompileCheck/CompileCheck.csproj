@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Compiles every game script the way Unity does, but from the command line, so
+    compile errors surface in seconds instead of requiring a trip to the Editor.
+
+    This produces a throwaway DLL; nothing ships from here. Unity still does the
+    real build, including the IL post-processing that generates the RPC plumbing,
+    so a clean run here means "the code compiles", not "the RPCs are wired up".
+  -->
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>disable</Nullable>
+    <!-- Unity has no implicit usings, so neither does this. -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>9.0</LangVersion>
+    <AssemblyName>CompileCheck</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- Unity's assemblies are unsigned and carry XML docs we do not need. -->
+    <NoWarn>$(NoWarn);CS0436;CS1701;CS1702</NoWarn>
+    <DisableImplicitNuGetFallbackFolder>true</DisableImplicitNuGetFallbackFolder>
+
+    <UnityEditorPath>/Applications/Unity/Hub/Editor/6000.5.7f1/Unity.app</UnityEditorPath>
+    <UnityManagedPath>$(UnityEditorPath)/Contents/Resources/Scripting/Managed</UnityManagedPath>
+    <ScriptAssembliesPath>$(MSBuildThisFileDirectory)../../Library/ScriptAssemblies</ScriptAssembliesPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../Assets/Scripts/Core/*.cs" />
+    <Compile Include="../../Assets/Scripts/Net/*.cs" />
+    <Compile Include="../../Assets/Scripts/Editor/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Unity's own API surface. -->
+    <UnityAssembly Include="$(UnityManagedPath)/UnityEngine/*.dll" />
+    <!-- Package assemblies Unity has already compiled, Netcode among them. -->
+    <UnityAssembly Include="$(ScriptAssembliesPath)/*.dll"
+                   Exclude="$(ScriptAssembliesPath)/Assembly-CSharp.dll;$(ScriptAssembliesPath)/Assembly-CSharp-Editor.dll" />
+
+    <!-- A full path as the Include resolves straight to that file, no probing. -->
+    <Reference Include="@(UnityAssembly)">
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

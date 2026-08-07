@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <!-- Off to match Unity, which has no implicit usings. On, this check would
+         compile files that Unity rejects for missing a using directive. -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>RulesCheck</AssemblyName>
+    <RootNamespace>Indoctrination.RulesCheck</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="RulesCheck.cs" />
+    <!--
+      The real game logic is compiled straight from the Unity project, so this
+      check always runs against the live code. CardDatabase is excluded because
+      it loads through UnityEngine's Resources API.
+    -->
+    <Compile Include="../../Assets/Scripts/Core/*.cs" Exclude="../../Assets/Scripts/Core/CardDatabase.cs" />
+  </ItemGroup>
+
+</Project>
