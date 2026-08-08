@@ -2,6 +2,71 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
+## 2026-08-08 — Claude (the draft dead-end and the missing card titles)
+
+### Player report
+
+- Card titles were never visible.
+- The game could not progress past the draft: once everything was drafted it sat
+  static and the dice never rolled.
+
+### Why the existing tests missed both
+
+`Tools/SmokeTest` rendered views into the board by calling `RenderForTesting`
+directly, with a `GameView` built in-process. The real client never does that -
+it receives a view that has been through `JsonUtility`. Every assertion the
+smoke test made was true of a view that never crossed the wire, so it passed
+while the actual game was unusable. Added `Assets/Tests/PlayMode/BoardRenderTests.cs`,
+which drives a live host, a real `BoardUI` running its own `Awake`, and state
+arriving through the network layer. Both bugs reproduced immediately.
+
+### Root causes
+
+- **Nothing past the draft rendered.** `JsonUtility` cannot represent a null
+  nested object: it revives `GameView.pendingChoice` as a blank instance on the
+  client. Every client therefore believed a card was permanently waiting for an
+  answer, took the pending-choice branch in `RefreshActionPanel`, drew one empty
+  label, and never rendered a phase interface again. The draft still worked only
+  because the draft zone is drawn by `RefreshBattlefield`, which does not consult
+  `pendingChoice`.
+- **Titles were sliced off.** Card strips were built `BoardCardView.Height + 6`
+  tall, but had to hold a 250px card plus 8px of content padding. The card
+  overflowed its own scroll viewport upward, and the title sits at the top of the
+  card, so the mask cut it away on every card on the board.
+
+### Edits
+
+- `Assets/Scripts/Net/GameView.cs` — added `hasPendingChoice`, since the
+  reference itself cannot be trusted to be null after serialization.
+- `Assets/Scripts/Net/GameViewBuilder.cs` — sets it.
+- `Assets/Scripts/Net/BoardUI.cs` — every consumer now tests the flag. Card
+  strips are sized from the card plus its padding (`CardStripHeight`), and the
+  hand strip uses the same measurement.
+- `Assets/Scripts/Net/UIFactory.cs` — `ScrollContentPadding` is public so strips
+  can be sized around it; strip content no longer controls child height, which
+  was squeezing cards until they overflowed.
+- `Assets/Scripts/Net/NetworkGameManager.cs` — the draft now has a timeout. It
+  was the one phase with no clock, so a single player who never picked held the
+  table forever with no way out. A pick nobody makes is taken for them, and the
+  rules engine still decides what is legal, so blocked and reserved cards are
+  never handed out by mistake.
+
+### Verification
+
+- `./Tools/PlayModeTests/run.sh` — 11 tests pass, including three new ones that
+  fail without these fixes: titles visible through every mask that clips them,
+  a working ROLL DIE button after the draft, and an abandoned draft that still
+  finishes.
+- `./Tools/CompileCheck/run.sh`, `./Tools/RulesCheck/run.sh`,
+  `./Tools/RulesCheck/run.sh --fuzz 2000`, `./Tools/SmokeTest/run.sh` all pass.
+
+### Note for the next editor
+
+Do not assert against a `GameView` you built in-process. Anything that travels
+to a client goes through `JsonUtility`, which drops nulls and revives them as
+blank objects - test through the network layer or you are testing nothing.
+
+
 ## 2026-08-08 — Claude (fuzzing the rules, and proving the app actually runs)
 
 ### Direction

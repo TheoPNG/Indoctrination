@@ -83,7 +83,21 @@ namespace Indoctrination.Net
         public DraftMarkView[] draftMarks = Array.Empty<DraftMarkView>();
         public PlayerView[] players = Array.Empty<PlayerView>();
 
-        /// <summary>The question a card is waiting on, or null if nothing is pending.</summary>
+        /// <summary>
+        /// Whether a card is actually waiting on an answer.
+        ///
+        /// This exists because <c>pendingChoice</c> cannot be trusted to be null.
+        /// JsonUtility has no way to represent a null nested object: it revives
+        /// the field as a blank instance on the far side, so every client would
+        /// otherwise believe a question was permanently open and refuse to draw
+        /// any phase interface at all. Always test this, never the reference.
+        /// </summary>
+        public bool hasPendingChoice;
+
+        /// <summary>
+        /// The question a card is waiting on. Only meaningful when
+        /// <see cref="hasPendingChoice"/> is set - see the note there.
+        /// </summary>
         public ChoiceView pendingChoice;
 
         /// <summary>What is being described while pendingChoice is resolving, for the whole table to see.</summary>

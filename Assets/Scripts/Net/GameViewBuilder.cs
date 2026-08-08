@@ -46,6 +46,7 @@ namespace Indoctrination.Net
                     cardInstanceId = mark.Value.CardInstanceId,
                     playerId = mark.Value.PlayerId
                 }).ToArray(),
+                hasPendingChoice = game.PendingChoice != null,
                 pendingChoice = ToChoiceView(game.PendingChoice),
                 resolvingDescription = game.ResolvingDescription,
                 players = game.Players.Select(player => new PlayerView

@@ -29,7 +29,15 @@ namespace Indoctrination.Net
         public ushort port = 7777;
 
         private const float DockTopHeight = 82f;
-        private const float BattlefieldRowHeight = BoardCardView.Height + 40f;
+        /// <summary>
+        /// A card strip has to clear the card itself plus the padding inside it.
+        /// Undersizing this clips the top of every card, which is exactly where
+        /// the title sits - the whole board looked title-less because of it.
+        /// </summary>
+        private const float CardStripHeight = BoardCardView.Height + (UIFactory.ScrollContentPadding * 2f) + 6f;
+
+        /// <summary>The strip, plus its header row and the spacing between them.</summary>
+        private const float BattlefieldRowHeight = CardStripHeight + 30f;
         private const int BoardSafeInset = 14;
         private const int DraftZoneLeftInset = 12;
 
@@ -236,7 +244,7 @@ namespace Indoctrination.Net
             }
             else
             {
-                if (view.pendingChoice != null)
+                if (view.hasPendingChoice)
                 {
                     _choiceSecondsLeft = Mathf.Max(0f, _choiceSecondsLeft - Time.deltaTime);
                 }
@@ -250,7 +258,7 @@ namespace Indoctrination.Net
             {
                 _timerText.text = view.isGameOver
                     ? ""
-                    : view.pendingChoice != null
+                    : view.hasPendingChoice
                         ? $"{_choiceSecondsLeft:0}s until the card decides for itself"
                         : view.phase == nameof(TurnPhase.Draft)
                             ? ""
@@ -652,7 +660,7 @@ namespace Indoctrination.Net
             header.fontStyle = FontStyle.Bold;
             AddFixedHeight(header.rectTransform, 20);
 
-            var content = UIFactory.HorizontalScroll("Scroll", row, BoardCardView.Height + 6);
+            var content = UIFactory.HorizontalScroll("Scroll", row, CardStripHeight);
             foreach (var card in cards)
             {
                 var clickable = isClickable != null && isClickable(card);
@@ -731,8 +739,9 @@ namespace Indoctrination.Net
             var expanded = _handExpanded && you != null;
             _handRow.gameObject.SetActive(expanded);
 
-            var canBuy = view.phase == nameof(TurnPhase.Buy) && view.pendingChoice == null;
-            var handRowHeight = expanded ? BoardCardView.Height + (canBuy ? 44 : 6) + 10 : 0;
+            var canBuy = view.phase == nameof(TurnPhase.Buy) && !view.hasPendingChoice;
+            var handStripHeight = CardStripHeight + (canBuy ? 38f : 0f);
+            var handRowHeight = expanded ? handStripHeight + 10f : 0f;
             _handRowPin.preferredHeight = handRowHeight;
             _dockPin.preferredHeight = DockTopHeight + handRowHeight;
 
@@ -741,7 +750,7 @@ namespace Indoctrination.Net
                 return;
             }
 
-            var content = UIFactory.HorizontalScroll("Hand Scroll", _handRow, BoardCardView.Height + (canBuy ? 44 : 6));
+            var content = UIFactory.HorizontalScroll("Hand Scroll", _handRow, handStripHeight);
             UIFactory.Stretch(UIFactory.Child(_handRow, "Hand Scroll"));
 
             foreach (var card in you.hand)
@@ -801,7 +810,7 @@ namespace Indoctrination.Net
                 return;
             }
 
-            if (view.pendingChoice != null)
+            if (view.hasPendingChoice)
             {
                 RenderPendingChoice(manager, view);
                 return;

@@ -184,6 +184,13 @@ namespace Indoctrination.Net
         /// a content strip inside it that grows to fit whatever is added as its
         /// children. Returns the content strip - add children to that.
         /// </summary>
+        /// <summary>
+        /// Vertical padding inside a horizontal strip's content. Public because
+        /// the strip has to be built tall enough to hold its cards plus this, or
+        /// the cards overflow and whatever sits at the top of them is clipped off.
+        /// </summary>
+        public const float ScrollContentPadding = 4f;
+
         public static RectTransform HorizontalScroll(string name, Transform parent, float height)
         {
             var root = Panel(name, parent, Color.clear);
@@ -205,7 +212,16 @@ namespace Indoctrination.Net
             content.anchorMin = new Vector2(0, 0);
             content.anchorMax = new Vector2(0, 1);
             content.pivot = new Vector2(0, 0.5f);
-            HorizontalLayout(content, 8, new RectOffset(4, 4, 4, 4), controlHeight: true);
+
+            var pad = (int)ScrollContentPadding;
+
+            // childControlHeight is deliberately off: the cards carry their own
+            // pinned height, and letting the strip resize them squeezed them
+            // until they overflowed the viewport that clips them.
+            var layout = HorizontalLayout(
+                content, 8, new RectOffset(pad, pad, pad, pad), controlHeight: false);
+            layout.childAlignment = TextAnchor.MiddleLeft;
+
             FitToContent(content);
 
             scroll.viewport = viewport;

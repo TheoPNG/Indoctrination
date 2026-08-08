@@ -384,6 +384,34 @@ namespace Indoctrination.Net
             Apply(rpcParams, playerId => _game.SpendSchemeCounter(playerId, targetPlayerId, dieValue));
         }
 
+        /// <summary>
+        /// Drafts the first card whoever is holding things up could legally have
+        /// taken. The rules engine decides what is legal, so a reserved or
+        /// blocked card is never handed out by mistake.
+        /// </summary>
+        private void TakeDraftPickForAbsentPlayer()
+        {
+            if (_game.CurrentDrafterId is not int drafter)
+            {
+                return;
+            }
+
+            foreach (var card in _game.DraftZone.ToList())
+            {
+                try
+                {
+                    _game.DraftCard(drafter, card.InstanceId);
+                    _phaseStartedAt = Time.time;
+                    BroadcastState();
+                    return;
+                }
+                catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+                {
+                    // Blocked by Games, or somebody else's Parking Spot. Try the next.
+                }
+            }
+        }
+
         private void AdvancePhase()
         {
             // The rules engine deals each new draft itself as the turn loop comes
@@ -394,9 +422,14 @@ namespace Indoctrination.Net
 
         /// <summary>
         /// Server-side fallback for a player who has stepped away: after the
-        /// timeout the phase advances whether or not everyone pressed Ready.
-        /// The draft is exempt, since it is one player at a time and skipping a
-        /// pick would leave the zone in a state the rules do not describe.
+        /// timeout the phase advances whether or not everyone pressed Ready, and
+        /// a draft pick nobody makes is taken for them.
+        ///
+        /// The draft used to be exempt on the grounds that skipping a pick would
+        /// leave the zone in a state the rules could not describe. That left the
+        /// worst kind of stuck: the draft is the one phase with no clock, so a
+        /// single player who never picks holds the whole table forever. Taking
+        /// the pick for them keeps the zone legal and the game moving.
         /// </summary>
         private void Update()
         {
@@ -428,10 +461,20 @@ namespace Indoctrination.Net
 
             _choiceStartedAt = -1f;
 
-            // Draft picks do not time out, but draft-related card choices do.
-            // This check must stay below PendingChoice or those choices reach
-            // zero seconds and can never answer themselves.
-            if (_game.Phase is TurnPhase.Draft or TurnPhase.GameOver)
+            // A draft pick nobody makes is taken for them once the clock runs
+            // out. This check must stay below PendingChoice, or draft-related
+            // card questions reach zero seconds and can never answer themselves.
+            if (_game.Phase == TurnPhase.Draft)
+            {
+                if (Time.time - _phaseStartedAt >= GameSettings.PhaseTimeoutSeconds)
+                {
+                    TakeDraftPickForAbsentPlayer();
+                }
+
+                return;
+            }
+
+            if (_game.Phase == TurnPhase.GameOver)
             {
                 return;
             }
