@@ -2,6 +2,66 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
+## 2026-08-08 — Claude (unreachable buttons, invisible resources, overlapping card text)
+
+### Player report
+
+- Resource management, purchasing, and recycling did not work at all.
+- Card text sometimes overlapped in the hand.
+
+### Why the tests missed it, again
+
+The first pass of these tests looked controls up by name with
+`FindObjectsByType` and pressed them. That finds a button whether or not a
+player could ever reach it, so a board with its buttons laid out beyond the
+edge of the panel that clips them passed a test that clicked those buttons.
+`FindButtonLabelled` now only returns controls that are interactable and fully
+inside every scroll viewport above them, and reports why a control was
+unusable when one is missing. Both purchasing bugs failed immediately after
+that change.
+
+### Root causes
+
+- **Play and Recycle were off-screen.** The wrapper holding a card and its two
+  buttons declared a width but no height. Card strips position children without
+  resizing them, so a `LayoutElement` height is ignored there - the rect itself
+  has to be sized, exactly as `BoardCardView` does. The buttons were laid out
+  below the strip that clips them: built, interactable, and permanently out of
+  reach.
+- **Resources were never displayed anywhere.** Not on the stat bars, not in the
+  action panel. Players could collect them and spend them but never see them, so
+  there was no way to tell what was affordable.
+- **Card text overlapped.** Labels are created set to overflow, so a long effect
+  drew straight over the row beneath it whenever a card was too short to hold
+  everything.
+
+### Edits
+
+- `Assets/Scripts/Net/BoardUI.cs` — hand card wrappers are sized explicitly
+  (`HandCardHeight`), and the hand strip is measured from what it holds.
+- `Assets/Scripts/Net/StatBar.cs` — added a resource row, coloured per resource,
+  shown for every player. `BarHeight` is now the single source of truth for the
+  bar's size and the board sizes its top row and dock from it.
+- `Assets/Scripts/Net/BoardCardView.cs` — card text clips instead of overflowing,
+  and the effect row takes the space the fixed rows leave.
+
+### Verification
+
+- `./Tools/PlayModeTests/run.sh` — 16 tests pass. Five are new and fail without
+  these fixes: pressing colour buttons collects resources, Recycle trades a card
+  for a resource, Play buys a card, your resources are on screen and stay up to
+  date, and no card text row can overflow onto another.
+- `./Tools/CompileCheck/run.sh`, `./Tools/RulesCheck/run.sh`,
+  `./Tools/RulesCheck/run.sh --fuzz 1500`, `./Tools/SmokeTest/run.sh` all pass.
+
+### Note for the next editor
+
+Never assert against a control found by name alone. If the test does not check
+that the control is inside every mask above it, the test is not checking
+anything a player experiences - that mistake has now produced three separate
+rounds of "passing tests, broken game".
+
+
 ## 2026-08-08 — Claude (the draft dead-end and the missing card titles)
 
 ### Player report

@@ -74,6 +74,7 @@ namespace Indoctrination.Net
             // every label claiming a default 100px.
             var layout = UIFactory.VerticalLayout(rect, 2, new RectOffset(8, 8, 8, 8), controlHeight: true);
             layout.childAlignment = TextAnchor.UpperLeft;
+            layout.childForceExpandHeight = false;
 
             // Labels take the card's full inner width so their text wraps against
             // the card edge; without this each one is sized to its own unwrapped
@@ -97,6 +98,16 @@ namespace Indoctrination.Net
 
             foreach (Transform child in transform)
             {
+                // Text is created set to overflow, which lets a long effect draw
+                // straight over the row beneath it when the card is too short to
+                // hold everything. Clipping instead keeps every row inside its own
+                // space, and the card's mask hides whatever does not fit.
+                var text = child.GetComponent<Text>();
+                if (text != null)
+                {
+                    text.verticalOverflow = VerticalWrapMode.Truncate;
+                }
+
                 var element = child.gameObject.AddComponent<LayoutElement>();
                 element.flexibleWidth = 1;
 
@@ -109,6 +120,13 @@ namespace Indoctrination.Net
                 {
                     element.minHeight = 18;
                     element.preferredHeight = 18;
+                }
+                else if (child == _effectText.transform)
+                {
+                    // The effect takes whatever room the fixed rows leave, and
+                    // clips inside it rather than pushing the card out of shape.
+                    element.flexibleHeight = 1;
+                    element.minHeight = 0;
                 }
             }
         }

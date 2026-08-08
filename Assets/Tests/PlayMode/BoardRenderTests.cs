@@ -2,6 +2,7 @@ using System.Collections;
 using System.Linq;
 using System.Reflection;
 using Indoctrination.Core;
+using Indoctrination.Core.Effects;
 using Indoctrination.Net;
 using NUnit.Framework;
 using Unity.Netcode;
@@ -190,7 +191,7 @@ namespace Indoctrination.Tests
             Assert.IsFalse(_manager.View.Viewer.hasRolled, "the player has not rolled yet");
 
             var roll = FindButtonLabelled("ROLL DIE");
-            Assert.IsNotNull(roll, "the player needs a Roll Die button once Rolling begins");
+            Assert.IsNotNull(roll, WhyUnusable("ROLL DIE"));
             Assert.IsTrue(roll.interactable, "and it has to be clickable");
 
             var rect = ((RectTransform)roll.transform).rect;
@@ -241,6 +242,241 @@ namespace Indoctrination.Tests
         }
 
         // ------------------------------------------------------------- Helpers
+
+
+        /// <summary>
+        /// Collecting the turn's free resources, done the way a player does it:
+        /// press a colour, press another, and expect the resources to arrive.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator PressingColourButtonsCollectsResources()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Resource);
+
+            Assert.AreEqual(nameof(TurnPhase.Resource), _manager.View.phase);
+            Assert.IsFalse(_manager.View.Viewer.collectedResources, "nothing collected yet");
+
+            var before = TotalResources(_manager.View.Viewer);
+
+            for (var i = 0; i < GameSettings.ResourcesPerTurn; i++)
+            {
+                var button = FindButtonLabelled("Red");
+                Assert.IsNotNull(button, $"pick {i + 1}: {WhyUnusable("Red")}");
+                Assert.IsTrue(button.interactable, "and it has to be clickable");
+
+                button.onClick.Invoke();
+                yield return WaitForFrames(3);
+            }
+
+            Assert.IsTrue(_manager.View.Viewer.collectedResources,
+                          "picking the full allowance has to collect them");
+            Assert.AreEqual(before + GameSettings.ResourcesPerTurn, TotalResources(_manager.View.Viewer),
+                            "and the resources have to actually arrive");
+        }
+
+        /// <summary>Recycling a card from hand, by pressing the button on it.</summary>
+        [UnityTest]
+        public IEnumerator PressingRecycleTradesACardForAResource()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Buy);
+            yield return ExpandHand();
+
+            var you = _manager.View.Viewer;
+            Assert.Greater(you.hand.Length, 0, "there should be cards in hand to recycle");
+
+            var handBefore = you.hand.Length;
+            var resourcesBefore = TotalResources(you);
+
+            var recycle = FindButtonLabelled("Recycle");
+            Assert.IsNotNull(recycle, WhyUnusable("Recycle"));
+
+            recycle.onClick.Invoke();
+            yield return WaitForFrames(4);
+
+            Assert.AreEqual(handBefore - 1, _manager.View.Viewer.hand.Length,
+                            "recycling has to remove the card from hand");
+            Assert.AreEqual(resourcesBefore + 1, TotalResources(_manager.View.Viewer),
+                            "and pay a resource for it");
+        }
+
+        /// <summary>Buying a card from hand, by pressing the button on it.</summary>
+        [UnityTest]
+        public IEnumerator PressingPlayBuysACardIntoTheCompound()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Buy);
+
+            // Give the player enough of everything that something in hand is affordable.
+            var game = ServerGame();
+            ApplyAsHost(_ =>
+            {
+                foreach (var color in EffectContext.AllColors)
+                {
+                    game.Players[0].Resources.Add(color, 8);
+                }
+            });
+            yield return WaitForFrames(2);
+            yield return ExpandHand();
+
+            var compoundBefore = _manager.View.Viewer.compound.Length;
+            var handBefore = _manager.View.Viewer.hand.Length;
+
+            var play = FindButtonLabelled("Play");
+            Assert.IsNotNull(play, WhyUnusable("Play"));
+
+            play.onClick.Invoke();
+            yield return WaitForFrames(4);
+
+            Assert.AreEqual(handBefore - 1, _manager.View.Viewer.hand.Length,
+                            "playing a card has to take it out of hand");
+            Assert.IsNull(_manager.LastError, $"and not be refused: {_manager.LastError}");
+
+            // Rituals resolve and go to the discard; everything else stays in play.
+            var landed = _manager.View.Viewer.compound.Length > compoundBefore
+                         || _manager.View.discardCount > 0;
+            Assert.IsTrue(landed, "the card has to go somewhere - the compound or the discard");
+        }
+
+        /// <summary>
+        /// Text rows inside a card must not sit on top of each other. Long effect
+        /// text overflowing its own row draws straight over the row beneath it.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator CardTextRowsDoNotOverlapEachOther()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Buy);
+            yield return ExpandHand();
+
+            Canvas.ForceUpdateCanvases();
+
+            var cards = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None);
+            Assert.Greater(cards.Length, 0, "there should be cards on screen");
+
+            foreach (var card in cards)
+            {
+                var rows = card.GetComponentsInChildren<Text>()
+                    .Where(t => t.gameObject.activeInHierarchy && !string.IsNullOrEmpty(t.text))
+                    .OrderByDescending(t => WorldRect(t.rectTransform).yMax)
+                    .ToList();
+
+                foreach (var row in rows)
+                {
+                    // Text set to overflow draws outside its own rect and lands on
+                    // the row beneath. Clipping is what keeps rows apart, so no row
+                    // may be allowed to spill in the first place.
+                    Assert.AreNotEqual(VerticalWrapMode.Overflow, row.verticalOverflow,
+                        $"'{row.text}' can overflow its row and draw over the next one");
+                }
+
+                for (var i = 0; i + 1 < rows.Count; i++)
+                {
+                    var above = WorldRect(rows[i].rectTransform);
+                    var below = WorldRect(rows[i + 1].rectTransform);
+
+                    Assert.LessOrEqual(below.yMax, above.yMin + 0.5f,
+                        $"'{rows[i + 1].text}' overlaps '{rows[i].text}' on card " +
+                        $"'{rows.First().text}' (rows {above} and {below})");
+                }
+            }
+        }
+
+        /// <summary>
+        /// A player has to be able to see what they are holding, or they cannot
+        /// tell what they can afford and resource management is guesswork.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator YourResourcesAreShownOnScreenAndKeepUpToDate()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Resource);
+            Canvas.ForceUpdateCanvases();
+
+            var row = FindVisibleResourceRow();
+            Assert.IsNotNull(row, "your own resources have to be visible somewhere on the board");
+            StringAssert.Contains("R", WithoutMarkup(row.text), "and name each colour");
+
+            // Collect a known amount and watch the row follow.
+            var game = ServerGame();
+            ApplyAsHost(_ => game.CollectResources(
+                0, Enumerable.Repeat(ResourceColor.Green, GameSettings.ResourcesPerTurn).ToList()));
+            yield return WaitForFrames(3);
+            Canvas.ForceUpdateCanvases();
+
+            var updated = FindVisibleResourceRow();
+            Assert.IsNotNull(updated, "the row must still be on screen after collecting");
+            var shown = WithoutMarkup(updated.text);
+            StringAssert.Contains($"G {GameSettings.ResourcesPerTurn}", shown,
+                                  $"the row should show the collected Green. It reads: '{shown}'");
+        }
+
+        /// <summary>The text as a player reads it, with the colour markup taken out.</summary>
+        private static string WithoutMarkup(string text) =>
+            System.Text.RegularExpressions.Regex.Replace(text, "<.*?>", "");
+
+        /// <summary>The viewer's own resource row, if a player could actually see it.</summary>
+        private Text FindVisibleResourceRow()
+        {
+            return Object.FindObjectsByType<StatBar>(FindObjectsSortMode.None)
+                .Where(bar => (bar.GetComponentInChildren<Text>()?.text ?? "").Contains("(you)"))
+                .SelectMany(bar => bar.GetComponentsInChildren<Text>())
+                .FirstOrDefault(text => text.name == "Resources"
+                                        && text.gameObject.activeInHierarchy
+                                        && IsFullyVisibleThroughEveryMask(text));
+        }
+
+        private static int TotalResources(PlayerView player) =>
+            player.red + player.green + player.blue + player.yellow;
+
+        /// <summary>Opens the hand tray if it is collapsed, the way its button does.</summary>
+        private IEnumerator ExpandHand()
+        {
+            var toggle = Object.FindObjectsByType<Button>(FindObjectsSortMode.None)
+                .FirstOrDefault(b => (b.GetComponentInChildren<Text>()?.text ?? "").StartsWith("Hand ("));
+
+            if (toggle != null && (toggle.GetComponentInChildren<Text>()?.text ?? "").Contains("[show]"))
+            {
+                toggle.onClick.Invoke();
+            }
+
+            yield return WaitForFrames(3);
+            Canvas.ForceUpdateCanvases();
+        }
+
+        /// <summary>
+        /// Walks the server's game forward to a phase, finishing the draft and
+        /// rolling for everybody, so a test can start from the phase it cares about.
+        /// </summary>
+        private IEnumerator AdvanceTo(TurnPhase target)
+        {
+            var game = ServerGame();
+            var guard = 0;
+
+            while (game.Phase != target && guard++ < 60)
+            {
+                if (game.Phase == TurnPhase.Draft)
+                {
+                    var drafter = game.CurrentDrafterId.Value;
+                    var card = game.DraftZone[0].InstanceId;
+                    ApplyAsHost(_ => game.DraftCard(drafter, card));
+                }
+                else if (game.Phase == TurnPhase.Rolling && !game.DiceRolled)
+                {
+                    ApplyAsHost(_ => game.RollPrimaryDice());
+                }
+                else
+                {
+                    ApplyAsHost(_ => game.AdvancePhase());
+                }
+
+                yield return WaitForFrames(2);
+            }
+
+            Assert.AreEqual(target, game.Phase, $"could not reach {target}");
+            yield return WaitForFrames(2);
+        }
 
         /// <summary>
         /// Whether a graphic reaches the screen whole. Every RectMask2D above it
@@ -303,14 +539,51 @@ namespace Indoctrination.Tests
             return titleTransform == null ? null : titleTransform.GetComponent<Text>();
         }
 
+        /// <summary>
+        /// A button the player could actually press: on screen, not clipped away
+        /// by any scroll viewport above it, and interactable. Looking a button up
+        /// by name alone finds controls sitting outside the visible panel, which
+        /// is how a board the player cannot use passes a test that clicks it.
+        /// </summary>
         private static Button FindButtonLabelled(string label)
         {
             return Object.FindObjectsByType<Button>(FindObjectsSortMode.None)
-                .FirstOrDefault(button =>
-                {
-                    var text = button.GetComponentInChildren<Text>();
-                    return text != null && text.text == label;
-                });
+                .FirstOrDefault(button => LabelOf(button) == label
+                                          && button.interactable
+                                          && button.targetGraphic is Graphic graphic
+                                          && IsFullyVisibleThroughEveryMask(graphic));
+        }
+
+        /// <summary>The same lookup ignoring visibility, for reporting what went wrong.</summary>
+        private static Button FindButtonAnywhere(string label)
+        {
+            return Object.FindObjectsByType<Button>(FindObjectsSortMode.None)
+                .FirstOrDefault(button => LabelOf(button) == label);
+        }
+
+        private static string LabelOf(Button button) =>
+            button.GetComponentInChildren<Text>(includeInactive: true)?.text ?? "";
+
+        /// <summary>Explains why a control the test needed was not usable.</summary>
+        private static string WhyUnusable(string label)
+        {
+            var anywhere = FindButtonAnywhere(label);
+            if (anywhere == null)
+            {
+                return $"no '{label}' button was built at all";
+            }
+
+            if (!anywhere.interactable)
+            {
+                return $"'{label}' exists but is not interactable";
+            }
+
+            var graphic = anywhere.targetGraphic;
+            var rect = WorldRect(((RectTransform)anywhere.transform));
+            var masks = string.Join(" ", anywhere.GetComponentsInParent<RectMask2D>()
+                .Select(m => $"{m.name}{WorldRect(m.rectTransform)}"));
+
+            return $"'{label}' exists at {rect} but is clipped away by a scroll viewport. Masks: {masks}";
         }
 
         private IEnumerator StartGame()

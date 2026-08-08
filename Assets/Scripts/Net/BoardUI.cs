@@ -28,7 +28,7 @@ namespace Indoctrination.Net
 
         public ushort port = 7777;
 
-        private const float DockTopHeight = 82f;
+        private const float DockTopHeight = StatBar.BarHeight + 4f;
         /// <summary>
         /// A card strip has to clear the card itself plus the padding inside it.
         /// Undersizing this clips the top of every card, which is exactly where
@@ -38,6 +38,12 @@ namespace Indoctrination.Net
 
         /// <summary>The strip, plus its header row and the spacing between them.</summary>
         private const float BattlefieldRowHeight = CardStripHeight + 30f;
+
+        /// <summary>Height of the Play/Recycle row under a card in hand.</summary>
+        private const float HandCardButtonHeight = 28f;
+
+        /// <summary>A card in hand plus the buttons beneath it, and the gap between.</summary>
+        private const float HandCardHeight = BoardCardView.Height + 4f + HandCardButtonHeight;
         private const int BoardSafeInset = 14;
         private const int DraftZoneLeftInset = 12;
 
@@ -408,7 +414,8 @@ namespace Indoctrination.Net
             // Opponents across the top of the board. This row scrolls rather than
             // shrinking or clipping stat bars when several players share a small
             // Multiplayer Player window.
-            _topBar = UIFactory.HorizontalScroll("Top Bar", root, 84);
+            _topBar = UIFactory.HorizontalScroll(
+                "Top Bar", root, StatBar.BarHeight + (UIFactory.ScrollContentPadding * 2f) + 4f);
             _topBar.GetComponent<HorizontalLayoutGroup>().childAlignment = TextAnchor.MiddleCenter;
 
             // Battlefield + action panel share the flexible middle area. Both are
@@ -740,7 +747,9 @@ namespace Indoctrination.Net
             _handRow.gameObject.SetActive(expanded);
 
             var canBuy = view.phase == nameof(TurnPhase.Buy) && !view.hasPendingChoice;
-            var handStripHeight = CardStripHeight + (canBuy ? 38f : 0f);
+            var handStripHeight = canBuy
+                ? HandCardHeight + (UIFactory.ScrollContentPadding * 2f) + 6f
+                : CardStripHeight;
             var handRowHeight = expanded ? handStripHeight + 10f : 0f;
             _handRowPin.preferredHeight = handRowHeight;
             _dockPin.preferredHeight = DockTopHeight + handRowHeight;
@@ -763,22 +772,33 @@ namespace Indoctrination.Net
 
                 var wrapper = UIFactory.Group("Hand Card", content);
                 var wrapperLayout = UIFactory.VerticalLayout(wrapper, 4, new RectOffset(0, 0, 0, 0), controlHeight: true);
+                wrapperLayout.childAlignment = TextAnchor.UpperLeft;
+
+                // The strip positions its children without resizing them, so the
+                // wrapper's own rect has to be the right size up front - exactly
+                // as BoardCardView sizes itself. A LayoutElement alone is ignored
+                // here, which left the buttons laid out below the strip that
+                // clips them: present, but permanently out of the player's reach.
+                UIFactory.SetSize(wrapper, BoardCardView.Width, HandCardHeight);
+
                 var wrapperPin = wrapper.gameObject.AddComponent<LayoutElement>();
                 wrapperPin.preferredWidth = BoardCardView.Width;
                 wrapperPin.minWidth = BoardCardView.Width;
+                wrapperPin.preferredHeight = HandCardHeight;
+                wrapperPin.minHeight = HandCardHeight;
 
                 BoardCardView.Create(wrapper).Populate(card, null, null);
 
                 var buttons = UIFactory.Group("Buttons", wrapper);
-                AddFixedHeight(buttons, 30);
+                AddFixedHeight(buttons, HandCardButtonHeight);
                 UIFactory.HorizontalLayout(buttons, 4, new RectOffset(0, 0, 0, 0));
                 var instanceId = card.instanceId;
                 UIFactory.ButtonWithLabel("Play", buttons, "Play",
                     () => NetworkGameManager.Instance?.RequestBuyRpc(instanceId),
-                    new Color(0.2f, 0.4f, 0.2f), BoardCardView.Width / 2 - 3, 28);
+                    new Color(0.2f, 0.4f, 0.2f), BoardCardView.Width / 2 - 3, HandCardButtonHeight);
                 UIFactory.ButtonWithLabel("Recycle", buttons, "Recycle",
                     () => NetworkGameManager.Instance?.RequestRecycleRpc(instanceId),
-                    new Color(0.4f, 0.35f, 0.15f), BoardCardView.Width / 2 - 3, 28);
+                    new Color(0.4f, 0.35f, 0.15f), BoardCardView.Width / 2 - 3, HandCardButtonHeight);
             }
         }
 
