@@ -64,6 +64,29 @@ namespace Indoctrination.Core
             }
         }
 
+        /// <summary>
+        /// This cost with some of one colour knocked off, never below zero. The
+        /// stone Blessings stack, so each returns a fresh cost for the next to
+        /// work on rather than editing the card's printed cost.
+        /// </summary>
+        public CardCost Reduced(ResourceColor color, int amount)
+        {
+            if (IsSpecial || amount <= 0 || Amounts.GetValueOrDefault(color) == 0)
+            {
+                return this;
+            }
+
+            var reduced = Amounts.ToDictionary(kv => kv.Key, kv => kv.Value);
+            reduced[color] = Math.Max(0, reduced[color] - amount);
+
+            if (reduced[color] == 0)
+            {
+                reduced.Remove(color);
+            }
+
+            return new CardCost(false, reduced);
+        }
+
         public override string ToString()
         {
             return IsSpecial

@@ -3,6 +3,28 @@ using System;
 namespace Indoctrination.Net
 {
     /// <summary>
+    /// A card's question, waiting on an answer. Mirrors <see cref="Indoctrination.Core.Effects.ChoiceRequest"/>,
+    /// which cannot be sent as-is: it carries no default constructor and its
+    /// setters are private, both of which JsonUtility needs to deserialize.
+    /// </summary>
+    [Serializable]
+    public class ChoiceView
+    {
+        public string kind;
+        public string prompt;
+        public int askedOfPlayerId;
+
+        public int[] playerOptions = Array.Empty<int>();
+        public int[] cardOptions = Array.Empty<int>();
+        public int[] colorOptions = Array.Empty<int>();
+        public string[] options = Array.Empty<string>();
+
+        public int minAmount;
+        public int maxAmount;
+    }
+
+
+    /// <summary>
     /// What one player is allowed to see of the game. The server builds a separate
     /// GameView per player and sends each one only to its owner, so opponents never
     /// receive the contents of a hand they are not holding.
@@ -43,7 +65,14 @@ namespace Indoctrination.Net
         public float phaseSecondsRemaining;
 
         public CardView[] draftZone = Array.Empty<CardView>();
+        public DraftMarkView[] draftMarks = Array.Empty<DraftMarkView>();
         public PlayerView[] players = Array.Empty<PlayerView>();
+
+        /// <summary>The question a card is waiting on, or null if nothing is pending.</summary>
+        public ChoiceView pendingChoice;
+
+        /// <summary>What is being described while pendingChoice is resolving, for the whole table to see.</summary>
+        public string resolvingDescription;
 
         public PlayerView Viewer
         {
@@ -101,6 +130,19 @@ namespace Indoctrination.Net
     {
         public int instanceId;
         public string definitionId;
+    }
+
+    /// <summary>
+    /// One of the three draft Blessings' marks on a card in the draft zone. All
+    /// public information, so every viewer's copy of the game gets the same list.
+    /// </summary>
+    [Serializable]
+    public class DraftMarkView
+    {
+        /// <summary>Name of a Core.DraftMarker value: Reserved, Blocked, or Trapped.</summary>
+        public string marker;
+        public int cardInstanceId;
+        public int playerId;
     }
 
     /// <summary>Who is in the room before the game starts.</summary>

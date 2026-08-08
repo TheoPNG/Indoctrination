@@ -28,9 +28,34 @@ namespace Indoctrination.Core
 
         public int GetCounter(string name) => _counters.GetValueOrDefault(name);
 
+        /// <summary>Counter types currently on this card, for Cthulu, the Cosmic to pick from.</summary>
+        public IEnumerable<string> CounterNames =>
+            _counters.Where(entry => entry.Value > 0).Select(entry => entry.Key);
+
         public void AddCounter(string name, int amount = 1)
         {
-            _counters[name] = GetCounter(name) + amount;
+            SetCounter(name, GetCounter(name) + amount);
+        }
+
+        public void RemoveCounter(string name, int amount = 1)
+        {
+            SetCounter(name, GetCounter(name) - amount);
+        }
+
+        /// <summary>
+        /// Counters never go negative, and a counter at zero is dropped rather
+        /// than kept as a zero - <see cref="CounterNames"/> answers "what is on
+        /// this card", and a spent counter is not on it any more.
+        /// </summary>
+        public void SetCounter(string name, int value)
+        {
+            if (value <= 0)
+            {
+                _counters.Remove(name);
+                return;
+            }
+
+            _counters[name] = value;
         }
 
         /// <summary>Whether this Unit activates on the given die value.</summary>

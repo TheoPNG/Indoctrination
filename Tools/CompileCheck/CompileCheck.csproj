@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <Compile Include="../../Assets/Scripts/Core/*.cs" />
+    <Compile Include="../../Assets/Scripts/Core/Effects/*.cs" />
     <Compile Include="../../Assets/Scripts/Net/*.cs" />
     <Compile Include="../../Assets/Scripts/Editor/*.cs" />
   </ItemGroup>

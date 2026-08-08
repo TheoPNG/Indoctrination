@@ -28,12 +28,28 @@ namespace Indoctrination.Core
 
         public const int DieSides = 6;
 
+        /// <summary>Damage every opponent takes when Human Trap's card goes undrafted.</summary>
+        public const int HumanTrapDamage = 2;
+
+        /// <summary>Resources of any colour Suspicious Chef charges for a meal counter.</summary>
+        public const int MealCounterCost = 3;
+
+        /// <summary>Swap counters Soul Swapper starts with, and drops back to after a swap.</summary>
+        public const int SoulSwapperBaseCounters = 3;
+
         /// <summary>
         /// How long a phase waits for every player to say they are done before it
         /// moves on regardless. Stops one player who has stepped away from
         /// stalling the table indefinitely.
         /// </summary>
         public const float PhaseTimeoutSeconds = 90f;
+
+        /// <summary>
+        /// A ceiling on how much work one batch of card effects may do. Two cards
+        /// that retaliate against each other would otherwise trade blows forever;
+        /// this stops the server hanging on a board nobody expected.
+        /// </summary>
+        public const int MaxEffectStepsPerResolution = 500;
 
         /// <summary>How many cards fill the draft zone, based on player count.</summary>
         public static int DraftZoneSize(int playerCount)

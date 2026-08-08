@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Indoctrination.Core;
+using Indoctrination.Core.Effects;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -241,6 +242,61 @@ namespace Indoctrination.Net
             });
         }
 
+        [Rpc(SendTo.Server)]
+        public void RequestAnswerPlayerRpc(int chosenPlayerId, RpcParams rpcParams = default)
+        {
+            Apply(rpcParams, playerId => _game.AnswerPlayerChoice(playerId, chosenPlayerId));
+        }
+
+        [Rpc(SendTo.Server)]
+        public void RequestAnswerCardRpc(int chosenCardInstanceId, RpcParams rpcParams = default)
+        {
+            Apply(rpcParams, playerId => _game.AnswerCardChoice(playerId, chosenCardInstanceId));
+        }
+
+        [Rpc(SendTo.Server)]
+        public void RequestAnswerColorRpc(int color, RpcParams rpcParams = default)
+        {
+            Apply(rpcParams, playerId => _game.AnswerColorChoice(playerId, (ResourceColor)color));
+        }
+
+        [Rpc(SendTo.Server)]
+        public void RequestAnswerYesNoRpc(bool yes, RpcParams rpcParams = default)
+        {
+            Apply(rpcParams, playerId => _game.AnswerYesNo(playerId, yes));
+        }
+
+        [Rpc(SendTo.Server)]
+        public void RequestAnswerAmountRpc(int amount, RpcParams rpcParams = default)
+        {
+            Apply(rpcParams, playerId => _game.AnswerAmount(playerId, amount));
+        }
+
+        [Rpc(SendTo.Server)]
+        public void RequestAnswerOptionRpc(string option, RpcParams rpcParams = default)
+        {
+            Apply(rpcParams, playerId => _game.AnswerOptionChoice(playerId, option));
+        }
+
+        [Rpc(SendTo.Server)]
+        public void RequestRerollRpc(RpcParams rpcParams = default)
+        {
+            Apply(rpcParams, playerId => _game.RerollPrimaryDie(playerId));
+        }
+
+        [Rpc(SendTo.Server)]
+        public void RequestBuyMealCounterRpc(int cardInstanceId, int[] colors, RpcParams rpcParams = default)
+        {
+            Apply(rpcParams, playerId =>
+                _game.BuyMealCounter(playerId, cardInstanceId, colors.Select(c => (ResourceColor)c).ToList()));
+        }
+
+        [Rpc(SendTo.Server)]
+        public void RequestSpendSchemeCounterRpc(int targetPlayerId, int dieValue, RpcParams rpcParams = default)
+        {
+            Apply(rpcParams, playerId => _game.SpendSchemeCounter(playerId, targetPlayerId, dieValue));
+        }
+
         private void AdvancePhase()
         {
             _game.AdvancePhase();
@@ -269,6 +325,15 @@ namespace Indoctrination.Net
 
             if (_game.Phase is TurnPhase.Draft or TurnPhase.GameOver)
             {
+                return;
+            }
+
+            if (_game.PendingChoice != null)
+            {
+                // A card question is not something a decision-blocked player can
+                // act against, so the clock does not run while one is open. The
+                // player who is asked gets the full timeout once they can answer.
+                _phaseStartedAt = Time.time;
                 return;
             }
 
@@ -306,6 +371,7 @@ namespace Indoctrination.Net
 
             var phaseBefore = _game.Phase;
             var turnBefore = _game.TurnInRound;
+            var hadPendingChoice = _game.PendingChoice != null;
 
             try
             {
@@ -318,8 +384,11 @@ namespace Indoctrination.Net
             }
 
             // The draft ends by someone taking the last pick rather than by a phase
-            // advance, so the timer has to be restarted from whatever moved it.
-            if (_game.Phase != phaseBefore || _game.TurnInRound != turnBefore)
+            // advance, so the timer has to be restarted from whatever moved it. An
+            // answered choice restarts it too - the player should not lose time to
+            // a question a card interrupted them with.
+            if (_game.Phase != phaseBefore || _game.TurnInRound != turnBefore
+                || (hadPendingChoice && _game.PendingChoice == null))
             {
                 _phaseStartedAt = Time.time;
             }
@@ -393,6 +462,14 @@ namespace Indoctrination.Net
                     ? 0f
                     : Mathf.Max(0f, GameSettings.PhaseTimeoutSeconds - (Time.time - _phaseStartedAt)),
                 draftZone = _game.DraftZone.Select(ToCardView).ToArray(),
+                draftMarks = _game.DraftMarks.Select(kv => new DraftMarkView
+                {
+                    marker = kv.Key.ToString(),
+                    cardInstanceId = kv.Value.CardInstanceId,
+                    playerId = kv.Value.PlayerId
+                }).ToArray(),
+                pendingChoice = ToChoiceView(_game.PendingChoice),
+                resolvingDescription = _game.ResolvingDescription,
                 players = _game.Players.Select(player => new PlayerView
                 {
                     playerId = player.PlayerId,
@@ -421,6 +498,32 @@ namespace Indoctrination.Net
         private static CardView ToCardView(CardInstance card)
         {
             return new CardView { instanceId = card.InstanceId, definitionId = card.Definition.Id };
+        }
+
+        /// <summary>
+        /// Mirrors a <see cref="ChoiceRequest"/> into something JsonUtility can send.
+        /// Every viewer gets the same copy - the asker's identity is already public,
+        /// and legal-option lists (e.g. which opponents can be hit) are not secret.
+        /// </summary>
+        private static ChoiceView ToChoiceView(ChoiceRequest request)
+        {
+            if (request == null)
+            {
+                return null;
+            }
+
+            return new ChoiceView
+            {
+                kind = request.Kind.ToString(),
+                prompt = request.Prompt,
+                askedOfPlayerId = request.AskedOfPlayerId,
+                playerOptions = request.PlayerOptions.ToArray(),
+                cardOptions = request.CardOptions.ToArray(),
+                colorOptions = request.ColorOptions.Select(c => (int)c).ToArray(),
+                options = request.Options.ToArray(),
+                minAmount = request.MinAmount,
+                maxAmount = request.MaxAmount
+            };
         }
     }
 }
