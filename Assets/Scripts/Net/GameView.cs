@@ -79,6 +79,26 @@ namespace Indoctrination.Net
         /// </summary>
         public float choiceSecondsRemaining;
 
+        /// <summary>
+        /// The discard pile, oldest first. Public information - anyone may count
+        /// and read it - and the game is much harder to plan without seeing it.
+        /// </summary>
+        public CardView[] discardPile = Array.Empty<CardView>();
+
+        /// <summary>
+        /// The Ritual that most recently resolved, for the board to show. Rituals
+        /// happen and are gone in the same instant; without this the only trace a
+        /// player gets is the board being different.
+        /// </summary>
+        public string lastRitualId;
+
+        /// <summary>
+        /// Counts up each time a Ritual resolves. The id alone cannot distinguish
+        /// the same Ritual being played twice in a row from a view that simply has
+        /// not changed.
+        /// </summary>
+        public int ritualCount;
+
         public CardView[] draftZone = Array.Empty<CardView>();
         public DraftMarkView[] draftMarks = Array.Empty<DraftMarkView>();
         public PlayerView[] players = Array.Empty<PlayerView>();

@@ -2,6 +2,59 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
+## 2026-08-08 — Claude (thirteen refinements; one deferred)
+
+### Edits
+
+- **Rules.** Health now caps at 20 (a point of headroom above the starting 19),
+  and followers floor at 1 - the follower track is a race to twenty, not a second
+  health bar. `GameSettings.MaxHealth` and `MinFollowers`.
+- **Board sizing.** `RefreshBattlefield` plans every row it will show, then sizes
+  them all together against the height available, so the draft and every
+  compound are on screen at once. Units are ordered by activation number.
+- **Ready control.** Disabled while the player still owes the phase something
+  ("Roll your die first"), and pulsing when readying is their only remaining
+  move. Taking the high roll bonus already finished the phase; that was in the
+  previous pass and is covered by a test now.
+- **Motion.** Shake only fires when a card that actually deals damage activates.
+  Activation glow is coloured by what the card does - red damage, green
+  followers, blue draw, yellow healing - via `BoardArt.ColorOfCategory`, reusing
+  the `ActivationCategory` the rules engine already computes. Health losses send
+  motes into the bar they emptied.
+- **Bars.** Real tracks with a dark bed and a coloured fill, labelled over the top.
+- **Hand.** Now a canvas-level overlay sized to the cards it holds, sitting above
+  the dock. It used to be a full-width opaque block that shoved the battlefield
+  upward every time it opened.
+- **Rituals.** A resolving Ritual is thrown up over the board for a beat and then
+  falls to the discard. `GameView` carries `lastRitualId` and a `ritualCount`,
+  because the id alone cannot distinguish the same Ritual twice from a view that
+  has not changed.
+- **Discard.** Now a real place: public in the view, opened as a board row.
+- **Win screen.** A large verdict, a subtitle explaining how it ended, and a
+  scoreboard drawing each leader's final followers and health as bars.
+
+### Deferred, deliberately
+
+Instant-speed Rituals - playing Close Enough after the dice land but before they
+resolve - is not implemented. The effect engine resolves a queue to completion
+and has no notion of a window in which a player may respond, so this is a
+priority/response system rather than a card fix. Flagged as understood, not done.
+
+### One trap worth recording
+
+`CardPreview.FlashRitual` started a coroutine on an inactive GameObject, which
+Unity refuses outright. The panel is now shown before the coroutine starts. The
+smoke test caught it because it fails on any logged error, not just a throw.
+
+### Verification
+
+- `./Tools/PlayModeTests/run.sh` — 23 tests pass; three new ones cover every
+  compound being on screen, Ready being disabled until the phase is dealt with,
+  and the discard opening.
+- `./Tools/CompileCheck/run.sh`, `./Tools/RulesCheck/run.sh`,
+  `./Tools/RulesCheck/run.sh --fuzz 2000`, `./Tools/SmokeTest/run.sh` all pass.
+
+
 ## 2026-08-08 — Claude (presentation pass: sizing, preview, fewer confirms, motion)
 
 ### Direction from playtest

@@ -694,8 +694,17 @@ namespace Indoctrination.Core
         /// still an activation - Ritualist counts it - so the effect is what gets
         /// suppressed rather than the whole act of playing it.
         /// </summary>
+        /// <summary>The Ritual that resolved most recently, for the board to show.</summary>
+        public CardInstance LastRitualPlayed { get; private set; }
+
+        /// <summary>How many Rituals have resolved this game.</summary>
+        public int RitualsPlayed { get; private set; }
+
         public void PlayRitual(CardInstance ritual, PlayerState player, bool runEffect = true)
         {
+            LastRitualPlayed = ritual;
+            RitualsPlayed++;
+
             foreach (var ritualist in player.Compound.Where(c => c.Definition.Id == CardIds.Ritualist).ToList())
             {
                 ritualist.AddCounter(Counters.Ritual, EffectModifiers.ModifyCounterGain(this, player, 1));

@@ -85,7 +85,6 @@ namespace Indoctrination.Net
         private Text _readyLabel;
         private Text _waitingLabel;
         private RectTransform _handRow;
-        private LayoutElement _handRowPin;
         private LayoutElement _dockPin;
         private Button _handToggleButton;
         private Text _handToggleLabel;
@@ -107,6 +106,20 @@ namespace Indoctrination.Net
 
         /// <summary>Set when a card that deals damage fired, which is what earns a shake.</summary>
         private bool _somethingHitThisRefresh;
+
+        /// <summary>
+        /// Health as of the last refresh, so a drop can be shown travelling into
+        /// the bar rather than the number simply being different next time you look.
+        /// </summary>
+        private readonly Dictionary<int, int> _healthLastSeen = new();
+
+        /// <summary>Each player's bar, for damage to fly into.</summary>
+        private readonly Dictionary<int, StatBar> _statBars = new();
+
+        /// <summary>Rituals seen resolve, so a new one can be told from a repeated view.</summary>
+        private int _ritualsSeen = -1;
+
+        private Button _discardButton;
 
         private readonly List<ResourceColor> _pendingResources = new();
         private readonly List<ResourceColor> _pendingMealPayment = new();
@@ -546,6 +559,11 @@ namespace Indoctrination.Net
                 new Color(0.8f, 0.8f, 0.7f));
             AddFlexibleWidth(_waitingLabel.rectTransform);
 
+            // The discard is public information and Rituals fly into it, so it is
+            // a real place on the board rather than a number in the status line.
+            _discardButton = UIFactory.ButtonWithLabel(
+                "Discard", dockTop, "Discard", ShowDiscard, new Color(0.24f, 0.2f, 0.26f), 130, 36);
+
             // Pips in flight are drawn above everything, so one crossing the board
             // is never hidden behind a panel it passes over.
             var flightLayer = UIFactory.Group("Flight Layer", root.parent);
@@ -553,9 +571,14 @@ namespace Indoctrination.Net
             flightLayer.SetAsLastSibling();
             BoardEffects.Instance.SetFlightLayer(flightLayer);
 
-            _handRow = UIFactory.Group("Hand Row", dock);
-            _handRowPin = _handRow.gameObject.AddComponent<LayoutElement>();
-            _handRowPin.flexibleWidth = 1;
+            // The hand floats over the board instead of living in the dock. It
+            // used to be a full-width opaque block that shoved the battlefield
+            // upward every time it opened; now it is just the cards, sitting above
+            // the dock, and the board underneath stays exactly where it was.
+            _handRow = UIFactory.Group("Hand Row", root.parent);
+            _handRow.anchorMin = new Vector2(0.5f, 0f);
+            _handRow.anchorMax = new Vector2(0.5f, 0f);
+            _handRow.pivot = new Vector2(0.5f, 0f);
 
             return root;
         }
@@ -674,6 +697,8 @@ namespace Indoctrination.Net
             RefreshBattlefield(manager, view);
             RefreshActionPanel(manager, view);
             RefreshReadyControl(view);
+            ShowHealthLosses(view);
+            ShowRitualIfOneJustResolved(view);
 
             // Shaken only for a blow that actually landed, so the board is still
             // when nothing happened and the jolt means something when it comes.
@@ -691,9 +716,87 @@ namespace Indoctrination.Net
         private void RefreshTopBar(GameView view)
         {
             UIFactory.DestroyChildren(_topBar);
+            _statBars.Clear();
+
             foreach (var player in view.players.Where(p => p.playerId != view.viewerPlayerId))
             {
-                StatBar.Create(_topBar).Populate(player, isViewer: false);
+                var bar = StatBar.Create(_topBar);
+                bar.Populate(player, isViewer: false);
+                _statBars[player.playerId] = bar;
+            }
+        }
+
+        /// <summary>
+        /// Sends a mote into the health bar of anybody who just lost health, from
+        /// the middle of the board, so a hit is something you watch land.
+        /// Deliberately after the bars are rebuilt, so their positions are current.
+        /// </summary>
+        /// <summary>
+        /// Puts a Ritual up over the board when one resolves. Counted rather than
+        /// compared by name, so the same Ritual twice in a row still reads as two
+        /// events.
+        /// </summary>
+        private void ShowRitualIfOneJustResolved(GameView view)
+        {
+            if (_ritualsSeen < 0)
+            {
+                // First view of the game: catch up silently rather than replaying
+                // whatever happened before this client was looking.
+                _ritualsSeen = view.ritualCount;
+                return;
+            }
+
+            if (view.ritualCount == _ritualsSeen || string.IsNullOrEmpty(view.lastRitualId))
+            {
+                return;
+            }
+
+            _ritualsSeen = view.ritualCount;
+
+            if (CardDatabase.Instance.TryGet(view.lastRitualId, out var definition))
+            {
+                CardPreview.FlashRitual(definition, _discardButton.transform.position);
+            }
+        }
+
+        private void ShowHealthLosses(GameView view)
+        {
+            foreach (var player in view.players)
+            {
+                if (!_healthLastSeen.TryGetValue(player.playerId, out var before))
+                {
+                    _healthLastSeen[player.playerId] = player.health;
+                    continue;
+                }
+
+                _healthLastSeen[player.playerId] = player.health;
+
+                var lost = before - player.health;
+                if (lost <= 0)
+                {
+                    continue;
+                }
+
+                var bar = player.playerId == view.viewerPlayerId
+                    ? _viewerStatBar
+                    : _statBars.GetValueOrDefault(player.playerId);
+
+                if (bar == null)
+                {
+                    continue;
+                }
+
+                // One mote per point, briefly staggered, so three damage reads as
+                // three hits rather than one bigger blob.
+                for (var i = 0; i < Mathf.Min(lost, 6); i++)
+                {
+                    BoardEffects.Instance.FlyPip(
+                        _battlefield.position, bar.HealthBarPosition,
+                        BoardArt.ColorOfCategory(ActivationCategory.Damage),
+                        delay: i * 0.07f, size: 22f);
+                }
+
+                _somethingHitThisRefresh = true;
             }
         }
 
@@ -741,6 +844,15 @@ namespace Indoctrination.Net
                 {
                     Label = $"You ({you.compound.Length})",
                     Cards = OrderedForBoard(you.compound)
+                });
+            }
+
+            if (_discardOpen && view.discardPile.Length > 0)
+            {
+                rows.Add(new PlannedRow
+                {
+                    Label = $"Discard ({view.discardPile.Length})",
+                    Cards = view.discardPile.Reverse().ToArray()
                 });
             }
 
@@ -1000,18 +1112,29 @@ namespace Indoctrination.Net
             var expanded = _handExpanded && you != null;
             _handRow.gameObject.SetActive(expanded);
 
-            var canBuy = view.phase == nameof(TurnPhase.Buy) && !view.hasPendingChoice;
-            var handStripHeight = canBuy
-                ? HandCardHeight + (UIFactory.ScrollContentPadding * 2f) + 6f
-                : CardStripHeight;
-            var handRowHeight = expanded ? handStripHeight + 10f : 0f;
-            _handRowPin.preferredHeight = handRowHeight;
-            _dockPin.preferredHeight = DockTopHeight + handRowHeight;
+            // The dock keeps its own height whatever the hand is doing, so opening
+            // the hand never resizes the board behind it.
+            _dockPin.preferredHeight = DockTopHeight;
 
             if (!expanded)
             {
                 return;
             }
+
+            var canBuy = view.phase == nameof(TurnPhase.Buy) && !view.hasPendingChoice;
+            var handStripHeight = canBuy
+                ? HandCardHeight + (UIFactory.ScrollContentPadding * 2f) + 6f
+                : CardStripHeight;
+
+            // Sized to the cards it holds and no wider, so the board stays visible
+            // either side of it. It sits just above the dock.
+            var handWidth = Mathf.Min(
+                _gameRoot.rect.width - 40f,
+                (you.hand.Length * (BoardCardView.Width + CardGap)) + 24f);
+
+            UIFactory.SetSize(_handRow, Mathf.Max(220f, handWidth), handStripHeight);
+            _handRow.anchoredPosition = new Vector2(0f, DockTopHeight + BoardSafeInset);
+            _handRow.SetAsLastSibling();
 
             var content = UIFactory.HorizontalScroll("Hand Scroll", _handRow, handStripHeight);
             UIFactory.Stretch(UIFactory.Child(_handRow, "Hand Scroll"));
@@ -1123,22 +1246,45 @@ namespace Indoctrination.Net
         /// host's offer of another one. Without this the table is left staring at
         /// a board nothing will ever change again.
         /// </summary>
+        /// <summary>
+        /// The end of the game, given the room it deserves: who won and how, then
+        /// a real scoreboard with each leader's final followers and health drawn
+        /// as bars, and the host's offer of another game.
+        /// </summary>
         private void RenderGameOver(NetworkGameManager manager, GameView view)
         {
-            ActionLabel(GameOverHeadline(view), 17);
+            var winner = view.isDraw ? null : FindPlayer(view, view.winnerPlayerId);
+            var youWon = winner != null && winner.playerId == view.viewerPlayerId;
 
-            var standings = view.players
-                .OrderByDescending(p => p.followers)
-                .ThenByDescending(p => p.health)
-                .Select(p => $"{p.name}: {p.followers} followers, {p.health} HP{(p.isAlive ? "" : "  (out)")}");
+            var banner = ActionLabel(
+                view.isDraw ? "DRAW" : youWon ? "YOU WIN" : "DEFEATED", 34);
+            banner.alignment = TextAnchor.MiddleCenter;
+            banner.fontStyle = FontStyle.Bold;
+            banner.color = view.isDraw
+                ? new Color(0.8f, 0.8f, 0.85f)
+                : youWon
+                    ? new Color(0.45f, 0.85f, 0.45f)
+                    : new Color(0.9f, 0.4f, 0.4f);
+            SetRowHeight(banner.rectTransform, 48);
 
-            ActionLabel(string.Join("\n", standings), 14);
+            var subtitle = ActionLabel(GameOverHeadline(view), 15);
+            subtitle.alignment = TextAnchor.MiddleCenter;
+            subtitle.color = new Color(0.85f, 0.85f, 0.85f);
+            SetRowHeight(subtitle.rectTransform, 40);
+
+            foreach (var player in view.players
+                         .OrderByDescending(p => p.followers)
+                         .ThenByDescending(p => p.health))
+            {
+                BuildFinalStanding(player, player.playerId == view.winnerPlayerId,
+                                   player.playerId == view.viewerPlayerId);
+            }
 
             var network = NetworkManager.Singleton;
             if (network != null && network.IsHost)
             {
                 UIFactory.ButtonWithLabel("Play Again", _actionPanel, "Play Again",
-                    () => manager.RequestPlayAgainRpc(), new Color(0.2f, 0.4f, 0.2f), 200, 38);
+                    () => manager.RequestPlayAgainRpc(), new Color(0.2f, 0.45f, 0.22f), 220, 44);
             }
             else
             {
@@ -1146,7 +1292,54 @@ namespace Indoctrination.Net
             }
 
             UIFactory.ButtonWithLabel("Leave", _actionPanel, "Leave",
-                () => NetworkManager.Singleton?.Shutdown(), new Color(0.4f, 0.2f, 0.2f), 200, 32);
+                () => NetworkManager.Singleton?.Shutdown(), new Color(0.4f, 0.2f, 0.2f), 220, 34);
+        }
+
+        /// <summary>One leader's final line: name, and their two tracks as bars.</summary>
+        private void BuildFinalStanding(PlayerView player, bool won, bool isViewer)
+        {
+            var row = UIFactory.Panel($"Standing {player.playerId}", _actionPanel,
+                won ? new Color(0.18f, 0.28f, 0.18f, 0.9f) : new Color(1f, 1f, 1f, 0.05f));
+            SetRowHeight(row, 62);
+
+            var layout = UIFactory.VerticalLayout(row, 2, new RectOffset(8, 8, 5, 5), controlHeight: true);
+            layout.childAlignment = TextAnchor.UpperLeft;
+            layout.childForceExpandWidth = true;
+
+            var name = UIFactory.Label("Name", row, 
+                $"{(won ? "★ " : "")}{player.name}{(isViewer ? " (you)" : "")}"
+                + $"{(player.isAlive ? "" : "  -  out")}",
+                14, TextAnchor.MiddleLeft);
+            name.fontStyle = FontStyle.Bold;
+            SetRowHeight(name.rectTransform, 18);
+
+            FinalBar(row, "Followers", player.followers, GameSettings.FollowersToWin,
+                     new Color(0.75f, 0.6f, 0.2f));
+            FinalBar(row, "Health", player.health, GameSettings.MaxHealth,
+                     new Color(0.8f, 0.25f, 0.25f));
+        }
+
+        private void FinalBar(Transform parent, string label, int value, int max, Color color)
+        {
+            var track = UIFactory.Panel(label, parent, new Color(0f, 0f, 0f, 0.5f));
+            SetRowHeight(track, 14);
+
+            var fill = UIFactory.FillBar($"{label} Fill", track, color);
+            UIFactory.Stretch(fill.rectTransform);
+            fill.fillAmount = Mathf.Clamp01((float)value / max);
+
+            var text = UIFactory.Label($"{label} Text", track, $"{value} {label.ToLowerInvariant()}",
+                                       11, TextAnchor.MiddleCenter);
+            UIFactory.Stretch(text.rectTransform);
+        }
+
+        private static void SetRowHeight(RectTransform rect, float height)
+        {
+            var element = rect.gameObject.GetComponent<LayoutElement>()
+                          ?? rect.gameObject.AddComponent<LayoutElement>();
+            element.minHeight = height;
+            element.preferredHeight = height;
+            element.flexibleWidth = 1;
         }
 
         private Text ActionLabel(string text, int fontSize = 15)
@@ -1315,6 +1508,40 @@ namespace Indoctrination.Net
             }
         }
 
+        /// <summary>
+        /// What this player still has to do before readying up makes sense, or
+        /// null when readying is the only move left to them.
+        /// </summary>
+        private static string WhatThePhaseStillWants(GameView view, PlayerView you)
+        {
+            if (view.phase == nameof(TurnPhase.Rolling) && !you.hasRolled)
+            {
+                return "Roll your die first";
+            }
+
+            if (view.phase == nameof(TurnPhase.Resource) && !you.collectedResources)
+            {
+                return "Take your resources first";
+            }
+
+            return null;
+        }
+
+        /// <summary>Opens the discard pile for reading. Everything in it is public.</summary>
+        private void ShowDiscard()
+        {
+            var view = NetworkGameManager.Instance?.View;
+            if (view == null)
+            {
+                return;
+            }
+
+            _discardOpen = !_discardOpen;
+            RefreshGame(NetworkGameManager.Instance, view);
+        }
+
+        private bool _discardOpen;
+
         private void ToggleReady()
         {
             var view = NetworkGameManager.Instance?.View;
@@ -1349,15 +1576,28 @@ namespace Indoctrination.Net
                 return;
             }
 
+            // Greyed out while the player still owes the phase something, so the
+            // button never invites a press that would be refused - and pulsing
+            // when it is the only move left, so it is obvious the table is on them.
+            var owes = WhatThePhaseStillWants(view, you);
+            var actionable = owes == null && !you.isReady;
+
+            _readyButton.interactable = owes == null;
             _readyLabel.text = you.isReady ? "Not Ready" : "Ready";
-            _readyButton.targetGraphic.color = you.isReady
-                ? new Color(0.4f, 0.3f, 0.15f)
-                : new Color(0.2f, 0.4f, 0.2f);
+            _readyLabel.color = owes == null ? Color.white : new Color(1f, 1f, 1f, 0.45f);
+
+            _readyButton.targetGraphic.color = owes != null
+                ? new Color(0.22f, 0.22f, 0.24f)
+                : you.isReady
+                    ? new Color(0.4f, 0.3f, 0.15f)
+                    : new Color(0.2f, 0.4f, 0.2f);
+
+            BoardEffects.Instance.SetPulsing(_readyButton.targetGraphic, actionable);
 
             var waitingOn = view.players.Where(p => p.isAlive && !p.isReady).Select(p => p.name).ToList();
-            _waitingLabel.text = waitingOn.Count > 0
+            _waitingLabel.text = owes ?? (waitingOn.Count > 0
                 ? $"Waiting on {string.Join(", ", waitingOn)}"
-                : "Everyone ready.";
+                : "Everyone ready.");
         }
 
         // -------------------------------------------------------- Pending choice

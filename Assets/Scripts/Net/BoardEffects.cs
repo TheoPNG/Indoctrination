@@ -174,15 +174,26 @@ namespace Indoctrination.Net
         /// </summary>
         public void FlyResource(Vector3 fromWorld, Vector3 toWorld, ResourceColor color, float delay = 0f)
         {
+            FlyPip(fromWorld, toWorld, BoardArt.ColorOf(color), delay);
+        }
+
+        /// <summary>
+        /// Throws a coloured mote across the board. Damage travelling from the
+        /// card that dealt it into the bar it empties makes the number changing
+        /// something you can follow, rather than something you notice afterwards.
+        /// </summary>
+        public void FlyPip(Vector3 fromWorld, Vector3 toWorld, Color color, float delay = 0f, float size = 30f)
+        {
             if (_flightLayer == null)
             {
                 return;
             }
 
-            StartCoroutine(FlyRoutine(fromWorld, toWorld, color, delay));
+            StartCoroutine(FlyRoutine(fromWorld, toWorld, color, delay, size));
         }
 
-        private IEnumerator FlyRoutine(Vector3 fromWorld, Vector3 toWorld, ResourceColor color, float delay)
+        private IEnumerator FlyRoutine(
+            Vector3 fromWorld, Vector3 toWorld, Color color, float delay, float size)
         {
             if (delay > 0f)
             {
@@ -194,15 +205,15 @@ namespace Indoctrination.Net
                 yield break;
             }
 
-            var pipObject = new GameObject($"{color} In Flight", typeof(RectTransform), typeof(Image));
+            var pipObject = new GameObject("Pip In Flight", typeof(RectTransform), typeof(Image));
             var pip = (RectTransform)pipObject.transform;
             pip.SetParent(_flightLayer, worldPositionStays: false);
-            pip.sizeDelta = new Vector2(30f, 30f);
+            pip.sizeDelta = new Vector2(size, size);
             pip.position = fromWorld;
 
             var image = pipObject.GetComponent<Image>();
             image.sprite = BoardArt.Disc;
-            image.color = BoardArt.ColorOf(color);
+            image.color = color;
             image.raycastTarget = false;
 
             const float duration = 0.5f;
@@ -227,6 +238,68 @@ namespace Indoctrination.Net
             if (pipObject != null)
             {
                 Destroy(pipObject);
+            }
+        }
+
+        // ------------------------------------------------------------- Pulsing
+
+        private readonly Dictionary<Graphic, Coroutine> _pulsing = new();
+
+        /// <summary>
+        /// Breathes a control in and out while it is the only move a player has
+        /// left, and stops cleanly when it is not. Idempotent, so calling it every
+        /// refresh neither stacks pulses nor restarts the one already running.
+        /// </summary>
+        public void SetPulsing(Graphic graphic, bool pulsing)
+        {
+            if (graphic == null)
+            {
+                return;
+            }
+
+            if (!pulsing)
+            {
+                if (_pulsing.TryGetValue(graphic, out var running))
+                {
+                    if (running != null)
+                    {
+                        StopCoroutine(running);
+                    }
+
+                    // Put the colour back, or the control keeps whatever shade the
+                    // pulse happened to be passing through when it stopped.
+                    if (_pulseBaseColors.TryGetValue(graphic, out var restore))
+                    {
+                        graphic.color = restore;
+                        _pulseBaseColors.Remove(graphic);
+                    }
+
+                    _pulsing.Remove(graphic);
+                }
+
+                return;
+            }
+
+            if (_pulsing.ContainsKey(graphic))
+            {
+                return;
+            }
+
+            _pulseBaseColors[graphic] = graphic.color;
+            _pulsing[graphic] = StartCoroutine(PulseRoutine(graphic));
+        }
+
+        private readonly Dictionary<Graphic, Color> _pulseBaseColors = new();
+
+        private IEnumerator PulseRoutine(Graphic graphic)
+        {
+            var baseColor = graphic.color;
+
+            while (graphic != null)
+            {
+                var wave = (Mathf.Sin(Time.time * 4f) + 1f) * 0.5f;
+                graphic.color = Color.Lerp(baseColor, Color.Lerp(baseColor, Color.white, 0.45f), wave);
+                yield return null;
             }
         }
 

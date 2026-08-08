@@ -40,6 +40,9 @@ namespace Indoctrination.Net
                 phaseSecondsRemaining = phaseSecondsRemaining,
                 choiceSecondsRemaining = choiceSecondsRemaining,
                 draftZone = game.DraftZone.Select(ToCardView).ToArray(),
+                discardPile = game.Discard.Select(ToCardView).ToArray(),
+                lastRitualId = game.LastRitualPlayed?.Definition.Id,
+                ritualCount = game.RitualsPlayed,
                 draftMarks = game.DraftMarks.Select(mark => new DraftMarkView
                 {
                     marker = mark.Key.ToString(),

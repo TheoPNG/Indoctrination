@@ -18,10 +18,13 @@ namespace Indoctrination.Net
     public class StatBar : MonoBehaviour
     {
         /// <summary>Name, health, followers, and the resource row.</summary>
-        public const float BarHeight = 104f;
+        public const float BarHeight = 112f;
 
         /// <summary>Size of one resource disc.</summary>
         public const float PipDiameter = 26f;
+
+        /// <summary>Height of the health and follower bars.</summary>
+        private const float BarRowHeight = 22f;
 
         private Text _nameText;
         private Image _healthFill;
@@ -87,19 +90,36 @@ namespace Indoctrination.Net
             }
         }
 
+        /// <summary>
+        /// A real bar: a dark track with a coloured fill that grows and shrinks
+        /// across it, and the number laid over the top so the exact value is
+        /// readable without counting pixels.
+        /// </summary>
         private (Image Fill, Text Label) MakeBar(string name, Color color)
         {
-            var track = UIFactory.Panel(name, transform, new Color(1, 1, 1, 0.12f));
-            SizeRow(track, 18);
+            var track = UIFactory.Panel(name, transform, new Color(0f, 0f, 0f, 0.55f));
+            SizeRow(track, BarRowHeight);
 
             var fill = UIFactory.FillBar($"{name} Fill", track, color);
             UIFactory.Stretch(fill.rectTransform);
+            fill.rectTransform.offsetMin = new Vector2(2f, 2f);
+            fill.rectTransform.offsetMax = new Vector2(-2f, -2f);
 
-            var label = UIFactory.Label($"{name} Label", track, "", 12, TextAnchor.MiddleCenter);
+            var label = UIFactory.Label($"{name} Label", track, "", 13, TextAnchor.MiddleCenter);
+            label.fontStyle = FontStyle.Bold;
             UIFactory.Stretch(label.rectTransform);
+
+            var outline = label.gameObject.AddComponent<Outline>();
+            outline.effectColor = new Color(0f, 0f, 0f, 0.9f);
+            outline.effectDistance = new Vector2(1f, -1f);
 
             return (fill, label);
         }
+
+        /// <summary>Where the health bar sits on screen, for damage flying into it.</summary>
+        public Vector3 HealthBarPosition => _healthFill != null
+            ? _healthFill.rectTransform.position
+            : transform.position;
 
         /// <summary>Where a resource pip sits on screen, for pips flying into it.</summary>
         public Vector3 PipPosition(ResourceColor color) =>
@@ -121,7 +141,7 @@ namespace Indoctrination.Net
 
             // The bars slide to their new value rather than jumping, so damage
             // and recruitment are visible as they happen.
-            _healthText.text = $"{player.health} HP";
+            _healthText.text = $"{player.health} / {GameSettings.MaxHealth} HP";
             BoardEffects.Instance.FillTo(
                 _healthFill, (float)player.health / GameSettings.MaxHealth);
 

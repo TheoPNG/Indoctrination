@@ -553,6 +553,108 @@ namespace Indoctrination.Tests
                                + "with no separate confirmation step");
         }
 
+
+        /// <summary>
+        /// Every compound has to be on screen at once, not just the draft. Planning
+        /// against an opponent's board is impossible if you cannot see it.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator EveryCompoundIsOnScreenAtOnce()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Buy);
+
+            // Put a real spread of cards into both compounds.
+            var game = ServerGame();
+            ApplyAsHost(_ =>
+            {
+                foreach (var player in game.Players)
+                {
+                    foreach (var card in player.Hand.ToList())
+                    {
+                        player.Hand.Remove(card);
+                        player.Compound.Add(card);
+                    }
+                }
+            });
+
+            yield return WaitForFrames(3);
+            Canvas.ForceUpdateCanvases();
+
+            var expected = _manager.View.players.Sum(p => p.compound.Length);
+            Assert.Greater(expected, 0, "both compounds should hold cards");
+
+            var onScreen = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None)
+                .Count(card => IsFullyVisibleThroughEveryMask(card.GetComponent<Image>()));
+
+            Assert.GreaterOrEqual(onScreen, expected,
+                $"only {onScreen} of {expected} compound cards are fully on screen");
+        }
+
+        /// <summary>
+        /// The Ready button must not invite a press that the rules would refuse.
+        /// While the player still owes the phase something, it is disabled.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ReadyIsDisabledUntilThePhaseHasBeenDealtWith()
+        {
+            yield return StartGame();
+
+            var game = ServerGame();
+            while (game.Phase == TurnPhase.Draft)
+            {
+                var drafter = game.CurrentDrafterId.Value;
+                var card = game.DraftZone[0].InstanceId;
+                ApplyAsHost(_ => game.DraftCard(drafter, card));
+                yield return WaitForFrames(2);
+            }
+
+            Assert.AreEqual(nameof(TurnPhase.Rolling), _manager.View.phase);
+            Assert.IsFalse(_manager.View.Viewer.hasRolled);
+
+            var ready = FindButtonAnywhere("Ready");
+            Assert.IsNotNull(ready, "the Ready control should be present during play");
+            Assert.IsFalse(ready.interactable, "and disabled while the player still has to roll");
+
+            FindButtonLabelled("ROLL DIE").onClick.Invoke();
+            yield return WaitForFrames(4);
+
+            Assert.IsTrue(FindButtonAnywhere("Ready").interactable,
+                          "and enabled once there is nothing left to do but agree");
+        }
+
+        /// <summary>
+        /// The discard is public information and Rituals fly into it, so it has to
+        /// be somewhere a player can actually look.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheDiscardPileCanBeOpenedAndRead()
+        {
+            yield return StartGame();
+
+            var game = ServerGame();
+            while (game.Phase == TurnPhase.Draft)
+            {
+                var drafter = game.CurrentDrafterId.Value;
+                var card = game.DraftZone[0].InstanceId;
+                ApplyAsHost(_ => game.DraftCard(drafter, card));
+                yield return WaitForFrames(2);
+            }
+
+            // The draft leaves its three undrafted cards in the discard.
+            Assert.Greater(_manager.View.discardPile.Length, 0, "the discard should not be empty");
+
+            var before = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None).Length;
+
+            var discard = FindButtonLabelled("Discard");
+            Assert.IsNotNull(discard, WhyUnusable("Discard"));
+            discard.onClick.Invoke();
+            yield return WaitForFrames(3);
+
+            var after = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None).Length;
+            Assert.Greater(after, before, "opening the discard should put its cards on the board");
+        }
+
         private static int TotalResources(PlayerView player) =>
             player.red + player.green + player.blue + player.yellow;
 

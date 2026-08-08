@@ -279,9 +279,13 @@ namespace Indoctrination.EditorTools
                             $"viewport y {viewportRect.yMin:0}..{viewportRect.yMax:0}, " +
                             $"button y {rollBounds.min.y:0}..{rollBounds.max.y:0}");
 
-                var handRow = gameRoot?.Find("Bottom Dock/Hand Row");
+                // The hand floats over the board as a canvas-level overlay rather
+                // than living in the dock, so that opening it no longer resizes
+                // the battlefield underneath.
+                var handRow = gameRoot?.parent?.Find("Hand Row");
                 Check($"player {player.PlayerId} enters Rolling with the hand collapsed",
-                      handRow != null && !handRow.gameObject.activeSelf);
+                      handRow != null && !handRow.gameObject.activeSelf,
+                      handRow == null ? "hand row not found" : "still showing");
             }
         }
 

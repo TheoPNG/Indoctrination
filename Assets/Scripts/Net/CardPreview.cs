@@ -46,6 +46,65 @@ namespace Indoctrination.Net
             }
         }
 
+        /// <summary>
+        /// Throws a Ritual up over the whole board for a moment, then lets it fall
+        /// away to the discard. A Ritual resolves and is gone in the same instant;
+        /// without this the only trace a player gets is the board being different.
+        /// </summary>
+        public static void FlashRitual(CardDefinition ritual, Vector3 discardPosition)
+        {
+            if (_instance == null || ritual == null)
+            {
+                return;
+            }
+
+            // The panel has to be showing before the coroutine starts: Unity
+            // refuses to run one on an inactive object, so a flash asked for while
+            // the preview was closed would simply never happen.
+            _instance.ShowDefinition(ritual, "Ritual");
+
+            if (!Application.isPlaying)
+            {
+                // No frames outside play mode, so there is nothing to animate.
+                _instance.gameObject.SetActive(false);
+                return;
+            }
+
+            _instance.StartCoroutine(_instance.RitualRoutine(ritual, discardPosition));
+        }
+
+        private System.Collections.IEnumerator RitualRoutine(CardDefinition ritual, Vector3 discardPosition)
+        {
+            ShowDefinition(ritual, "Ritual");
+            _actionRow.gameObject.SetActive(false);
+
+            var start = _panel.position;
+            var startScale = _panel.localScale;
+
+            // Held long enough to read, since a Ritual is often the biggest thing
+            // that happens in a turn and there is nothing left on the board to
+            // show for it afterwards.
+            yield return new WaitForSeconds(1.15f);
+
+            const float fall = 0.45f;
+            var elapsed = 0f;
+
+            while (elapsed < fall)
+            {
+                elapsed += Time.deltaTime;
+                var t = Mathf.SmoothStep(0f, 1f, elapsed / fall);
+
+                _panel.position = Vector3.Lerp(start, discardPosition, t);
+                _panel.localScale = startScale * (1f - (0.75f * t));
+                yield return null;
+            }
+
+            _panel.position = start;
+            _panel.localScale = startScale;
+            _actionRow.gameObject.SetActive(true);
+            gameObject.SetActive(false);
+        }
+
         public static void Hide()
         {
             if (_instance != null)
@@ -114,14 +173,31 @@ namespace Indoctrination.Net
             element.flexibleWidth = 1;
         }
 
+        /// <summary>Fills the panel from a card definition. Shared by the preview and the Ritual flash.</summary>
+        private void ShowDefinition(CardDefinition definition, string banner)
+        {
+            gameObject.SetActive(true);
+            transform.SetAsLastSibling();
+
+            _titleText.text = definition.Title;
+            _accent.color = BoardArt.ColorOf(definition.Color);
+
+            var cost = definition.Cost.IsSpecial ? "special" : definition.costRaw;
+            var activates = definition.Type == CardType.Unit && definition.ActivationNumbers.Count > 0
+                ? $"\nActivates on {string.Join(", ", definition.ActivationNumbers)}"
+                : "";
+
+            var lead = string.IsNullOrEmpty(banner) ? "" : $"{banner.ToUpperInvariant()}   ";
+            _metaText.text = $"{lead}{definition.Color} {definition.Type}    Cost: {cost}{activates}";
+            _effectText.text = definition.Effect;
+        }
+
         private void Display(BoardCardView card)
         {
             gameObject.SetActive(true);
             transform.SetAsLastSibling();
 
-            var definition = card.Definition;
-
-            if (definition == null)
+            if (card.Definition == null)
             {
                 _titleText.text = card.Card?.definitionId ?? "Unknown card";
                 _metaText.text = "";
@@ -130,18 +206,10 @@ namespace Indoctrination.Net
             }
             else
             {
-                _titleText.text = definition.Title;
-                _accent.color = BoardArt.ColorOf(definition.Color);
-
-                var cost = definition.Cost.IsSpecial ? "special" : definition.costRaw;
-                var activates = definition.Type == CardType.Unit && definition.ActivationNumbers.Count > 0
-                    ? $"\nActivates on {string.Join(", ", definition.ActivationNumbers)}"
-                    : "";
-
-                _metaText.text = $"{definition.Color} {definition.Type}    Cost: {cost}{activates}";
-                _effectText.text = definition.Effect;
+                ShowDefinition(card.Definition, null);
             }
 
+            _actionRow.gameObject.SetActive(true);
             UIFactory.DestroyChildren(_actionRow);
 
             if (card.Action != null)
