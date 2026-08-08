@@ -34,8 +34,15 @@ namespace Indoctrination.Tools
             var totalCopies = cards.Sum(c => c.Count);
             var failures = new List<string>();
             var completed = 0;
-            var wins = 0;
             var longest = 0;
+
+            // How games actually end, which is worth knowing on its own: a win
+            // condition that never fires in fifty thousand games is a design
+            // problem the rules checks would never notice.
+            var byFollowers = 0;
+            var byElimination = 0;
+            var draws = 0;
+            var totalTurns = 0;
 
             for (var i = 0; i < games; i++)
             {
@@ -44,13 +51,22 @@ namespace Indoctrination.Tools
 
                 try
                 {
-                    var steps = PlayOneGame(cards, players, seed, totalCopies);
-                    longest = Math.Max(longest, steps);
+                    var outcome = PlayOneGame(cards, players, seed, totalCopies);
+                    longest = Math.Max(longest, outcome.Steps);
+                    totalTurns += outcome.Drafts;
                     completed++;
 
-                    if (steps < MaxStepsPerGame)
+                    if (outcome.Draw)
                     {
-                        wins++;
+                        draws++;
+                    }
+                    else if (outcome.WonByFollowers)
+                    {
+                        byFollowers++;
+                    }
+                    else
+                    {
+                        byElimination++;
                     }
                 }
                 catch (Exception e)
@@ -62,6 +78,15 @@ namespace Indoctrination.Tools
 
             Console.WriteLine($"\nFuzz ({games} games, seeds {startingSeed}-{startingSeed + games - 1}):");
             Console.WriteLine($"  {completed}/{games} played to a finish, longest {longest} actions");
+
+            if (completed > 0)
+            {
+                Console.WriteLine(
+                    $"  ended by followers {Percent(byFollowers, completed)}, " +
+                    $"by elimination {Percent(byElimination, completed)}, " +
+                    $"drawn {Percent(draws, completed)}; " +
+                    $"{(double)totalTurns / completed:0.0} drafts per game");
+            }
 
             if (failures.Count == 0)
             {
@@ -82,11 +107,30 @@ namespace Indoctrination.Tools
             return false;
         }
 
+        private static string Percent(int part, int whole) => $"{100.0 * part / whole:0.0}%";
+
+        /// <summary>How one game finished, for the summary at the end of a run.</summary>
+        private readonly struct Outcome
+        {
+            public Outcome(int steps, int drafts, bool draw, bool wonByFollowers)
+            {
+                Steps = steps;
+                Drafts = drafts;
+                Draw = draw;
+                WonByFollowers = wonByFollowers;
+            }
+
+            public int Steps { get; }
+            public int Drafts { get; }
+            public bool Draw { get; }
+            public bool WonByFollowers { get; }
+        }
+
         private static string Describe(Exception e) =>
             e is FuzzFailure ? e.Message : $"{e.GetType().Name}: {e.Message}";
 
-        /// <summary>Plays one game to its end, returning how many actions it took.</summary>
-        private static int PlayOneGame(List<CardDefinition> cards, int playerCount, int seed, int totalCopies)
+        /// <summary>Plays one game to its end and reports how it finished.</summary>
+        private static Outcome PlayOneGame(List<CardDefinition> cards, int playerCount, int seed, int totalCopies)
         {
             var random = new Random(seed);
             var names = Enumerable.Range(0, playerCount).Select(i => $"P{i}").ToList();
@@ -122,7 +166,11 @@ namespace Indoctrination.Tools
                 throw new FuzzFailure("game reported GameOver with no winner and no draw");
             }
 
-            return steps;
+            return new Outcome(
+                steps,
+                game.DraftNumber,
+                game.IsDraw,
+                game.Winner is { Followers: >= GameSettings.FollowersToWin });
         }
 
         // ------------------------------------------------------------- Choices

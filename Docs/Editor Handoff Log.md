@@ -2,6 +2,83 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
+## 2026-08-08 — Claude (fuzzing the rules, and proving the app actually runs)
+
+### Direction
+
+Take the game to a bare-bones but fully playable alpha, prioritising logic
+correctness over appearance. The Unity Editor was closed for this session, so
+batchmode was available throughout.
+
+### What was missing
+
+Nothing had ever verified that the game *ran*. CompileCheck type-checks and
+RulesCheck exercises the rules engine, but neither can construct a Canvas,
+start a NetworkManager, or play a game to its end. Several whole-game states
+had therefore never been reached even once.
+
+### Edits
+
+- `Tools/RulesCheck/Fuzz.cs` (new), run via `./Tools/RulesCheck/run.sh --fuzz N`
+  - Plays complete games with random legal moves across 2-4 player tables,
+    checking after every action that every card is in exactly one place, stats
+    are in range, and any open question is answerable by a living player.
+  - Reports how games end, which is design feedback the rules checks cannot give.
+- `Assets/Scripts/Core/GameState.cs` — six rules faults the fuzzer found:
+  - The engine could not deal a new draft by itself; only NetworkGameManager
+    knew to call `BeginDraft`, so any other driver deadlocked after three turns.
+  - Players dying together left no winner, no survivors, and no way to end.
+    That is now a draw (`IsDraw`).
+  - An effect could kill the player it was about to question, then wait forever.
+  - Dead leaders stayed in the draft order and could still buy and collect.
+  - End-of-turn damage resolves after the draft order is built, so a flame
+    counter could take out someone already in the running order.
+  - A long four-player game can exhaust 138 cards; running dry crashed.
+- `Assets/Scripts/Net/GameViewBuilder.cs` (new) — the per-player view filter,
+  pulled out of the NetworkBehaviour and made Unity-free so RulesCheck can prove
+  no view carries another player's hand.
+- `Tools/SmokeTest/run.sh` + `Assets/Scripts/Editor/AlphaSmokeTest.cs` (new) —
+  runs inside real Unity; found that BoardUI, StatBar and BoardCardView all
+  built themselves in `Awake`, which Unity does not call outside play mode, and
+  that `DestroyChildren` used `Object.Destroy`, which never runs without a frame.
+- `Assets/Scripts/{Core,Net,Editor}/*.asmdef` (new) — three assemblies, so a
+  test assembly can reference the game at all.
+- `Tools/PlayModeTests/run.sh` + `Assets/Tests/PlayMode/MultiplayerTests.cs`
+  (new) — a real NetworkManager with RPCs over the wire.
+- `Assets/Scripts/Net/NetworkGameManager.cs`
+  - Seats are now a seat rather than a client id, so a connection can come and
+    go without the board going with it. A player who dropped can rejoin and
+    reclaim their seat; previously the code claimed this worked but did not.
+  - Game-over is a real state: standings, and the host can start another game.
+  - A question whose player has gone quiet answers itself after a timeout,
+    rather than stopping the table for good.
+
+### Verification
+
+- `./Tools/CompileCheck/run.sh` — clean.
+- `./Tools/RulesCheck/run.sh` — all checks pass, including new sections for the
+  nine settled cards, activation order, end states, and per-player views.
+- `./Tools/RulesCheck/run.sh --fuzz` — 100,000 games clean before the per-seat
+  rolling change, then 50,000 clean after it.
+- `./Tools/SmokeTest/run.sh` — 28 checks pass in a real Unity process.
+- `./Tools/PlayModeTests/run.sh` — 8 tests pass.
+
+### Design note
+
+Across 5,000 random games: 20% ended on followers, 76% by elimination, 4% drawn,
+averaging 6.9 drafts. Both win conditions are reachable and games terminate at a
+sensible length. This is random play, not skilled play - a real table pursuing
+the follower win deliberately should reach it more often than 20%.
+
+### Incomplete work
+
+- Players cannot set their own name; seats are "Leader 1", "Leader 2" in order.
+- A reconnecting player claims the first empty seat rather than being recognised
+  as themselves. Netcode issues a fresh client id per connection, so telling
+  them apart needs a connection-approval token. Fine for a friends playtest,
+  not for strangers.
+
+
 ## 2026-08-07 — Codex (responsive flex layout and visible Rolling action)
 
 ### Player report
