@@ -148,6 +148,115 @@ namespace Indoctrination.Core.Effects
         }
 
         /// <summary>
+        /// Which of the five <see cref="ActivationCategory"/> buckets a Unit's
+        /// activation belongs in, so the whole table's activating Units can be
+        /// resolved category-by-category instead of seat by seat.
+        ///
+        /// A handful of cards touch more than one category in the same body (Vampire
+        /// deals damage, then heals). Splitting a routine mid-body across categories
+        /// would mean rewriting every effect as several independently-queueable
+        /// pieces, so instead each card is filed under the single earliest category
+        /// (in <see cref="ActivationCategory"/> order) it touches at all. That still
+        /// gets the invariant that actually matters right - a card that grants any
+        /// Block is always in the Block bucket, so it is never resolved after Damage
+        /// it was meant to reduce.
+        /// </summary>
+        public static ActivationCategory CategoryFor(string definitionId, int dieValue)
+        {
+            switch (definitionId)
+            {
+                // ------------------------------------------------- Blue Units
+                case CardIds.DoubleAgentJapaneseArt: return ActivationCategory.Followers;
+                case CardIds.ItWhoConsumes: return ActivationCategory.Other;
+                case CardIds.Slanderist: return ActivationCategory.Followers;
+                case CardIds.Ritualist: return ActivationCategory.Damage;
+                case CardIds.WisdomHoarder: return ActivationCategory.Damage;
+                case CardIds.ResearcherOfTheOldWays: return ActivationCategory.Draw;
+                case CardIds.HeWhoRemembers: return ActivationCategory.Other;
+                case CardIds.HydroPlant: return ActivationCategory.Other;
+                case CardIds.SnakeEyes: return ActivationCategory.Draw;
+                case CardIds.OneWithTheChildren: return ActivationCategory.Followers;
+                case CardIds.BaalTheManipulator: return ActivationCategory.Other;
+                case CardIds.Propaganda: return ActivationCategory.Followers;
+                case CardIds.WorshiperOfTheBoneGod: return ActivationCategory.Draw;
+                case CardIds.Initiate4: return ActivationCategory.Damage;
+                case CardIds.ChiefSacrificer: return ActivationCategory.Other;
+                case CardIds.SoulSwapper: return ActivationCategory.Other;
+
+                // ------------------------------------------------ Green Units
+                case CardIds.JormTrustEater: return ActivationCategory.Damage;
+                case CardIds.ManipulatorOfTheMasses: return ActivationCategory.Followers;
+                case CardIds.Communist: return ActivationCategory.Followers;
+                case CardIds.WallBuilder: return ActivationCategory.Block;
+                case CardIds.TheBeastmaster: return ActivationCategory.Block;
+                case CardIds.FilipinaNurse: return ActivationCategory.Followers;
+                case CardIds.Bodyguard: return ActivationCategory.Block;
+                case CardIds.ShieldWizard: return ActivationCategory.Block;
+                case CardIds.MasterMarketer: return ActivationCategory.Followers;
+                case CardIds.AngryDrunkMonkey: return ActivationCategory.Followers;
+                case CardIds.FelineCultist: return ActivationCategory.Followers;
+                case CardIds.Celebrity: return ActivationCategory.Followers;
+                case CardIds.YouthLeader: return ActivationCategory.Followers;
+                case CardIds.SeniorRecruiter: return ActivationCategory.Followers;
+                case CardIds.Security: return ActivationCategory.Block;
+                case CardIds.SolarPanels: return ActivationCategory.Other;
+                case CardIds.TheAllmother: return ActivationCategory.Followers;
+                case CardIds.WitchDoctor: return ActivationCategory.Health;
+                case CardIds.Grandma: return ActivationCategory.Health;
+                case CardIds.IsHeOnMeth: return ActivationCategory.Followers;
+
+                // -------------------------------------------------- Red Units
+                case CardIds.ConfusedMan: return ActivationCategory.Damage;
+                case CardIds.QuestionableDoctor: return dieValue == 3 ? ActivationCategory.Health : ActivationCategory.Damage;
+                case CardIds.AxeLicker: return ActivationCategory.Damage;
+                case CardIds.DrunkenFollower: return ActivationCategory.Damage;
+                case CardIds.TheBeast: return ActivationCategory.Damage;
+                case CardIds.BelleOfTheBall: return ActivationCategory.Damage;
+                case CardIds.CultSPetTigerForArt: return ActivationCategory.Damage;
+                case CardIds.CultSPetSDad: return ActivationCategory.Damage;
+                case CardIds.CultSPetSPet: return ActivationCategory.Damage;
+                case CardIds.AsherPirozzi: return ActivationCategory.Damage;
+                case CardIds.Arsonist: return ActivationCategory.Damage;
+                case CardIds.Vampire: return ActivationCategory.Damage;
+                case CardIds.BeekeeperCultist: return ActivationCategory.Damage;
+                case CardIds.FireBreather: return ActivationCategory.Damage;
+                case CardIds.FriendOfTheBeasts: return ActivationCategory.Damage;
+                case CardIds.Pentagram: return ActivationCategory.Followers;
+                case CardIds.BloodSacrifice: return ActivationCategory.Other;
+                case CardIds.NuclearPlant: return ActivationCategory.Other;
+                case CardIds.Satanist: return ActivationCategory.Damage;
+                case CardIds.KoolAid: return ActivationCategory.Health;
+                case CardIds.BloodCollector: return ActivationCategory.Other;
+                case CardIds.HierophantSFavorite: return ActivationCategory.Followers;
+                case CardIds.Masochist: return ActivationCategory.Damage;
+                case CardIds.BloodyMooner: return ActivationCategory.Damage;
+                case CardIds.Asmodeus: return ActivationCategory.Damage;
+                case CardIds.CompoundLandmines: return ActivationCategory.Block;
+
+                // ----------------------------------------------- Yellow Units
+                case CardIds.Bop: return dieValue == 4 ? ActivationCategory.Followers : ActivationCategory.Damage;
+                case CardIds.AlmostAVampire: return ActivationCategory.Damage;
+                case CardIds.CrystalMine: return ActivationCategory.Other;
+                case CardIds.MoneyTree: return ActivationCategory.Other;
+                case CardIds.BloodDiamondMine: return ActivationCategory.Other;
+                case CardIds.GoldMine: return ActivationCategory.Other;
+                case CardIds.InspiredFool: return ActivationCategory.Other;
+                case CardIds.Cornucopia: return ActivationCategory.Other;
+                case CardIds.SacrificialLamb: return ActivationCategory.Other;
+                case CardIds.AlternativeMedicine: return ActivationCategory.Followers;
+                case CardIds.MasterShaman: return ActivationCategory.Damage;
+                case CardIds.OminousEye: return ActivationCategory.Other;
+                case CardIds.SuspiciousChef: return ActivationCategory.Damage;
+                case CardIds.Valefar: return ActivationCategory.Other;
+                case CardIds.BeingOfHearthlessness: return ActivationCategory.Other;
+                case CardIds.CthuluTheCosmic: return ActivationCategory.Other;
+
+                // Nothing here activates off a die - filed last rather than guessed.
+                default: return ActivationCategory.Other;
+            }
+        }
+
+        /// <summary>
         /// What a card does the moment it hits the table - starting counters, the
         /// cursed stones' health penalty, and Double Agent walking off to somebody
         /// else's compound. Returns null for the cards that just sit there.

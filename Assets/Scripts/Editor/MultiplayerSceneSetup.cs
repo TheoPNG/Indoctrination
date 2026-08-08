@@ -68,12 +68,12 @@ namespace Indoctrination.EditorTools
 
         private static void EnsureUI()
         {
-            if (Object.FindAnyObjectByType<NetworkUI>() != null)
+            if (Object.FindAnyObjectByType<BoardUI>() != null)
             {
                 return;
             }
 
-            new GameObject("Game UI").AddComponent<NetworkUI>();
+            new GameObject("Game UI").AddComponent<BoardUI>();
         }
     }
 }

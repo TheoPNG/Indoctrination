@@ -409,9 +409,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 563334705}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b1fa10b17f89949aab7a15e44a785dc5, type: 3}
+  m_Script: {fileID: 11500000, guid: 45b458e05d5a942d6b2a4ee25286449a, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Indoctrination.Net.NetworkUI
+  m_EditorClassIdentifier: Assembly-CSharp::Indoctrination.Net.BoardUI
   address: 127.0.0.1
   port: 7777
 --- !u!4 &563334707

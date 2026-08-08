@@ -1383,26 +1383,44 @@ namespace Indoctrination.Core
         /// units answer to every primary die, so a 4 rolled by two people fires
         /// matching units twice. Private dice from Standardized Uniforms only ever
         /// wake their owner's units.
+        ///
+        /// Everyone's activating Units are gathered first and then queued in a
+        /// fixed order - Draw, Block, Followers, Damage, Health, then everything
+        /// else - rather than seat by seat, so a Block granted by one unit is on
+        /// the board before Damage from another unit this same round can be
+        /// reduced by it. See <see cref="ActivationCategory"/>.
         /// </summary>
         private void QueueActivations()
         {
             var shared = LivingPlayers.Select(p => p.PrimaryDie).ToList();
+            var activating = new List<(PlayerState Player, CardInstance Unit, int DieValue)>();
 
             foreach (var player in LivingPlayers.ToList())
             {
                 foreach (var value in shared)
                 {
-                    QueueUnitsMatching(player, value);
+                    CollectActivating(player, value, activating);
                 }
 
                 foreach (var value in player.PrivateDice.ToList())
                 {
-                    QueueUnitsMatching(player, value);
+                    CollectActivating(player, value, activating);
                 }
+            }
+
+            // OrderBy is a stable sort, so within a category units still queue in
+            // the same seat-then-die order they were collected in.
+            foreach (var entry in activating.OrderBy(
+                         e => (int)CardEffects.CategoryFor(e.Unit.Definition.Id, e.DieValue)))
+            {
+                entry.Player.UnitsTriggeredThisTurn++;
+                EnqueueEffect(entry.Unit, entry.Player,
+                    CardEffects.For(entry.Unit.Definition.Id, entry.DieValue), entry.Unit.Title);
             }
         }
 
-        private void QueueUnitsMatching(PlayerState player, int dieValue)
+        private static void CollectActivating(
+            PlayerState player, int dieValue, List<(PlayerState Player, CardInstance Unit, int DieValue)> activating)
         {
             foreach (var unit in player.UnitsActivatingOn(dieValue).ToList())
             {
@@ -1413,8 +1431,7 @@ namespace Indoctrination.Core
                     continue;
                 }
 
-                player.UnitsTriggeredThisTurn++;
-                EnqueueEffect(unit, player, CardEffects.For(unit.Definition.Id, dieValue), unit.Title);
+                activating.Add((player, unit, dieValue));
             }
         }
 

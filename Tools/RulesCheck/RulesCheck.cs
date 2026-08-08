@@ -226,6 +226,7 @@ static class RulesCheck
         CheckCardCoverage(cards);
         CheckEffectResolution(cards);
         CheckSettledCards(cards);
+        CheckActivationOrder(cards);
 
         Console.WriteLine($"\n{(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED")}");
         Environment.Exit(failures == 0 ? 0 : 1);
@@ -574,6 +575,55 @@ static class RulesCheck
         Check("and the eaten Ritual's effect never fires",
               consume.Players[0].Followers == GameSettings.StartingFollowers,
               $"{consume.Players[0].Followers} followers");
+    }
+
+    /// <summary>
+    /// Two Units belonging to different players, activating on the same die
+    /// roll: one grants Block, the other deals damage aimed (by the house rule)
+    /// at whoever its controller chooses. If the table resolved seat by seat,
+    /// whichever player went second would have their Block queued after the
+    /// damage that was supposed to be reduced by it. Grouping by
+    /// ActivationCategory instead means Block always lands first.
+    /// </summary>
+    static void CheckActivationOrder(List<CardDefinition> cards)
+    {
+        Console.WriteLine("\nActivation order (Block before Damage, same roll):");
+
+        CardDefinition ActivatingOn(string id, int face) => new()
+        {
+            id = id,
+            title = id,
+            type = "Unit",
+            costRaw = "R",
+            color = "Red",
+            effect = "test",
+            count = 1,
+            activationNumbers = new[] { face }
+        };
+
+        var game = new GameState(new[] { "A", "B" }, cards, randomSeed: 40);
+        FinishDraft(game);
+
+        // A deals damage, aimed by the house rule at its only opponent, B - who
+        // holds the Block. Seat order alone would resolve A (seat 0) before B
+        // (seat 1), so if the table only grouped by category and not truly
+        // across seats, this is the arrangement that would still let the damage
+        // through first. Both players roll the same face, so each Unit fires
+        // twice (RolledValues has two 3s), doubling the stakes if the order is wrong.
+        game.Players[0].Compound.Add(new CardInstance(-30, ActivatingOn(CardIds.AsherPirozzi, 3)));
+        game.Players[1].Compound.Add(new CardInstance(-31, ActivatingOn(CardIds.WallBuilder, 3)));
+
+        game.RollPrimaryDice();
+        game.SetPrimaryDie(game.Players[0], 3);
+        game.SetPrimaryDie(game.Players[1], 3);
+        game.AdvancePhase();   // Rolling -> Activation, queues and resolves both
+
+        Check("nothing was left waiting on a choice",
+              game.PendingChoice == null,
+              game.PendingChoice?.Prompt ?? "none");
+        Check("Block absorbed both hits rather than letting them through",
+              game.Players[1].Health == GameSettings.StartingHealth && game.Players[1].Block == 0,
+              $"{game.Players[1].Health} health, {game.Players[1].Block} block");
     }
 
     /// <summary>Runs a whole draft off, leaving the game in the Rolling phase.</summary>
