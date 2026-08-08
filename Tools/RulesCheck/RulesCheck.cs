@@ -224,6 +224,17 @@ static class RulesCheck
             g.SetReady(0, true);
         }));
 
+        Console.WriteLine("\nHealth and follower limits:");
+        var limits = new GameState(new[] { "A", "B" }, cards, randomSeed: 51);
+        limits.Heal(limits.Players[0], 50);
+        Check($"healing stops at {GameSettings.MaxHealth}",
+              limits.Players[0].Health == GameSettings.MaxHealth, $"{limits.Players[0].Health}");
+        limits.ChangeFollowers(limits.Players[0], -50);
+        Check($"followers never fall below {GameSettings.MinFollowers}",
+              limits.Players[0].Followers == GameSettings.MinFollowers, $"{limits.Players[0].Followers}");
+        limits.DealDamage(null, limits.Players[1], 500);
+        Check("health still floors at zero", limits.Players[1].Health == 0);
+
         Console.WriteLine("\nWin conditions:");
         var g3 = new GameState(new[] { "A", "B" }, cards, randomSeed: 1);
         g3.Players[0].GainFollowers(19);
@@ -373,8 +384,9 @@ static class RulesCheck
         clowns.Players[0].Compound.Add(
             new CardInstance(-4, cards.First(c => c.id == CardIds.ClownCult)));
         clowns.ChangeFollowers(clowns.Players[0], 2);
-        Check("gaining 2 followers under Clown Cult loses 3",
-              clowns.Players[0].Followers == Math.Max(0, GameSettings.StartingFollowers - 3),
+        Check("gaining 2 followers under Clown Cult loses 3, down to the floor of one",
+              clowns.Players[0].Followers
+              == Math.Max(GameSettings.MinFollowers, GameSettings.StartingFollowers - 3),
               $"{clowns.Players[0].Followers} followers");
 
         // Block soaks damage before health does.

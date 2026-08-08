@@ -214,6 +214,20 @@ namespace Indoctrination.Net
         }
 
         /// <summary>
+        /// Gives the card a standing highlight, for a unit the dice have already
+        /// promised to wake. Coloured by what the card will do, so the board says
+        /// what is coming without needing a list beside it.
+        /// </summary>
+        public void SetDueToActivate(Color tint)
+        {
+            _background.color = Color.Lerp(new Color(0.15f, 0.15f, 0.17f), tint, 0.28f);
+
+            var edge = gameObject.GetComponent<Outline>() ?? gameObject.AddComponent<Outline>();
+            edge.effectColor = new Color(tint.r, tint.g, tint.b, 0.9f);
+            edge.effectDistance = new Vector2(2.5f, -2.5f);
+        }
+
+        /// <summary>
         /// Scales the card to fit the space available. The card is laid out once
         /// at its natural size and then scaled, so every card shrinks by the same
         /// amount and the text keeps its proportions instead of reflowing into a

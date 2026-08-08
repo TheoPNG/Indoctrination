@@ -53,6 +53,12 @@ namespace Indoctrination.Net
         /// <summary>Diameter of a resource-picker disc.</summary>
         private const float ResourceButtonSize = 44f;
 
+        /// <summary>The small caption above each row of cards.</summary>
+        private const float RowHeaderHeight = 16f;
+
+        /// <summary>Breathing room between one row of the board and the next.</summary>
+        private const float RowGap = 8f;
+
         private const int BoardSafeInset = 14;
         private const int DraftZoneLeftInset = 12;
 
@@ -98,6 +104,9 @@ namespace Indoctrination.Net
 
         /// <summary>Set for the one refresh that enters the Activation phase.</summary>
         private bool _pulseActivationsThisRefresh;
+
+        /// <summary>Set when a card that deals damage fired, which is what earns a shake.</summary>
+        private bool _somethingHitThisRefresh;
 
         private readonly List<ResourceColor> _pendingResources = new();
         private readonly List<ResourceColor> _pendingMealPayment = new();
@@ -649,6 +658,8 @@ namespace Indoctrination.Net
                                      && previousPhase != nameof(TurnPhase.Activation);
 
             _pulseActivationsThisRefresh = enteringActivation;
+            _somethingHitThisRefresh = false;
+
             if (enteringActivation)
             {
                 _rolledThisTurn.Clear();
@@ -657,13 +668,19 @@ namespace Indoctrination.Net
                     _rolledThisTurn.Add(player.primaryDie);
                 }
 
-                BoardEffects.Instance.Shake(_gameRoot);
             }
 
             RefreshTopBar(view);
             RefreshBattlefield(manager, view);
             RefreshActionPanel(manager, view);
             RefreshReadyControl(view);
+
+            // Shaken only for a blow that actually landed, so the board is still
+            // when nothing happened and the jolt means something when it comes.
+            if (_somethingHitThisRefresh)
+            {
+                BoardEffects.Instance.Shake(_gameRoot);
+            }
             // Dynamic phase contents replace the old children in-place. Always
             // return the scroll position to the primary action at the top.
             _actionPanel.anchoredPosition = new Vector2(_actionPanel.anchoredPosition.x, 0f);
@@ -682,119 +699,204 @@ namespace Indoctrination.Net
 
         // ------------------------------------------------------- Battlefield
 
+        /// <summary>
+        /// Rebuilds the whole board. Every row that will be shown is worked out
+        /// first, then they are all sized together against the height available:
+        /// seeing your own and every opponent's compound at once is what the game
+        /// is played on, so nothing here is allowed to scroll out of sight.
+        /// </summary>
         private void RefreshBattlefield(NetworkGameManager manager, GameView view)
         {
             UIFactory.DestroyChildren(_battlefield);
 
+            var rows = new List<PlannedRow>();
+
             if (view.phase == nameof(TurnPhase.Draft))
             {
                 var isMyPick = view.currentDrafterId == view.viewerPlayerId;
-                BuildCardRow(
-                    _battlefield, $"Draft Zone ({view.draftZone.Length})", view.draftZone,
-                    card => isMyPick && IsDraftable(view, card),
-                    card => manager.RequestDraftRpc(card.instanceId),
-                    card => DraftMarkTag(view, card),
-                    actionLabel: "Draft this card",
-                    leftInset: DraftZoneLeftInset);
+                rows.Add(new PlannedRow
+                {
+                    Label = $"Draft Zone ({view.draftZone.Length})",
+                    Cards = view.draftZone,
+                    IsClickable = card => isMyPick && IsDraftable(view, card),
+                    OnClick = card => manager.RequestDraftRpc(card.instanceId),
+                    TagFor = card => DraftMarkTag(view, card),
+                    ActionLabel = "Draft this card"
+                });
             }
 
             foreach (var player in view.players.Where(p => p.playerId != view.viewerPlayerId))
             {
-                BuildCardRow(
-                    _battlefield, $"{player.name}'s compound ({player.compound.Length})",
-                    player.compound, null, null, null);
+                rows.Add(new PlannedRow
+                {
+                    Label = $"{player.name} ({player.compound.Length})",
+                    Cards = OrderedForBoard(player.compound)
+                });
             }
 
             var you = view.Viewer;
             if (you != null)
             {
-                BuildCardRow(_battlefield, $"Your compound ({you.compound.Length})", you.compound, null, null, null);
+                rows.Add(new PlannedRow
+                {
+                    Label = $"You ({you.compound.Length})",
+                    Cards = OrderedForBoard(you.compound)
+                });
             }
+
+            var cardWidth = CardWidthForBoard(rows);
+
+            foreach (var row in rows)
+            {
+                BuildCardRow(_battlefield, row, cardWidth, view);
+            }
+        }
+
+        /// <summary>One row of the board, planned before anything is built.</summary>
+        private class PlannedRow
+        {
+            public string Label;
+            public CardView[] Cards;
+            public Func<CardView, bool> IsClickable;
+            public Action<CardView> OnClick;
+            public Func<CardView, string> TagFor;
+            public string ActionLabel;
         }
 
         /// <summary>
-        /// Lays a set of cards out so that all of them are on screen at once,
-        /// shrinking them to fit rather than scrolling them out of sight. A player
-        /// has to be able to see the whole draft to choose from it, and the whole
-        /// board to plan against it; a card too small to read is opened by
-        /// clicking it, which is what <see cref="CardPreview"/> is for.
+        /// Units in the order the dice will wake them, so a glance down a
+        /// compound reads as "what happens on a 1, then a 2, then a 3". Blessings
+        /// have no number and sit at the end.
         /// </summary>
-        private void BuildCardRow(
-            Transform parent, string label, CardView[] cards,
-            Func<CardView, bool> isClickable, Action<CardView> onClick, Func<CardView, string> tagFor,
-            string actionLabel = null, int leftInset = 0)
+        private static CardView[] OrderedForBoard(CardView[] cards)
         {
-            var row = UIFactory.Group(label, parent);
-            var rowLayout = UIFactory.VerticalLayout(
-                row, 4, new RectOffset(leftInset, 0, 0, 0), controlHeight: true);
-            rowLayout.childAlignment = TextAnchor.UpperLeft;
+            return cards
+                .OrderBy(card =>
+                {
+                    var definition = DefinitionOf(card);
+                    if (definition == null || definition.ActivationNumbers.Count == 0)
+                    {
+                        return int.MaxValue;
+                    }
 
-            var header = UIFactory.Label("Header", row, label, 14, TextAnchor.MiddleLeft);
-            header.fontStyle = FontStyle.Bold;
-            AddFixedHeight(header.rectTransform, 18);
-
-            var cellWidth = CardWidthThatFits(cards.Length, leftInset);
-            var cellHeight = cellWidth * (BoardCardView.Height / BoardCardView.Width);
-
-            var grid = UIFactory.Group("Cards", row);
-            var gridLayout = grid.gameObject.AddComponent<GridLayoutGroup>();
-            gridLayout.cellSize = new Vector2(cellWidth, cellHeight);
-            gridLayout.spacing = new Vector2(CardGap, CardGap);
-            gridLayout.childAlignment = TextAnchor.UpperLeft;
-            gridLayout.padding = new RectOffset(0, 0, 2, 2);
-
-            var rows = Mathf.Max(1, Mathf.CeilToInt(cards.Length / (float)Mathf.Max(1, ColumnsThatFit(cellWidth, leftInset))));
-            var gridHeight = (rows * cellHeight) + ((rows - 1) * CardGap) + 4f;
-            AddFixedHeight(grid, gridHeight);
-
-            var rowPin = row.gameObject.AddComponent<LayoutElement>();
-            rowPin.preferredHeight = gridHeight + 22f;
-            rowPin.minHeight = gridHeight + 22f;
-            rowPin.flexibleWidth = 1;
-
-            foreach (var card in cards)
-            {
-                // The grid sizes each cell; the card is laid out at its natural
-                // size inside and scaled down to match.
-                var cell = UIFactory.Group("Cell", grid);
-                var cardView = BoardCardView.Create(cell);
-                var cardRect = (RectTransform)cardView.transform;
-                cardRect.anchorMin = cardRect.anchorMax = new Vector2(0.5f, 0.5f);
-                cardRect.pivot = new Vector2(0.5f, 0.5f);
-
-                var clickable = isClickable != null && isClickable(card);
-                cardView.Populate(card, tagFor?.Invoke(card), clickable ? () => onClick(card) : null);
-                cardView.SetAction(clickable ? actionLabel : null, clickable ? () => onClick(card) : null);
-                cardView.ScaleTo(cellWidth);
-
-                RegisterForActivationPulse(cardView);
-            }
+                    return definition.ActivationNumbers.Min();
+                })
+                .ThenBy(card => DefinitionOf(card)?.Title ?? card.definitionId)
+                .ToArray();
         }
 
-        /// <summary>How wide each card can be and still fit every one of them on screen.</summary>
-        private float CardWidthThatFits(int count, int leftInset)
+        private static CardDefinition DefinitionOf(CardView card) =>
+            CardDatabase.Instance.TryGet(card.definitionId, out var definition) ? definition : null;
+
+        /// <summary>
+        /// The largest card width at which every row fits in the space available,
+        /// both across and down. Cards shrink rather than the board scrolling,
+        /// because a compound you cannot see is a compound you cannot plan against.
+        /// </summary>
+        private float CardWidthForBoard(List<PlannedRow> rows)
         {
-            var available = Mathf.Max(200f, _battlefield.rect.width - leftInset - 12f);
+            var width = Mathf.Max(200f, _battlefield.rect.width - 12f);
+            var height = Mathf.Max(200f, _actionViewport.rect.height - 8f);
 
-            // Try progressively more rows until the cards are a workable size.
-            for (var rows = 1; rows <= 4; rows++)
+            for (var candidate = BoardCardView.Width; candidate >= MinCardWidth; candidate -= 4f)
             {
-                var perRow = Mathf.CeilToInt(count / (float)rows);
-                var width = (available - ((perRow - 1) * CardGap)) / Mathf.Max(1, perRow);
+                var cardHeight = candidate * (BoardCardView.Height / BoardCardView.Width);
+                var perRow = Mathf.Max(1, Mathf.FloorToInt((width + CardGap) / (candidate + CardGap)));
 
-                if (width >= MinCardWidth || rows == 4)
+                var total = 0f;
+                foreach (var row in rows)
                 {
-                    return Mathf.Clamp(width, MinCardWidth, BoardCardView.Width);
+                    var lines = Mathf.Max(1, Mathf.CeilToInt(row.Cards.Length / (float)perRow));
+                    total += (lines * cardHeight) + ((lines - 1) * CardGap) + RowHeaderHeight + RowGap;
+                }
+
+                if (total <= height)
+                {
+                    return candidate;
                 }
             }
 
             return MinCardWidth;
         }
 
-        private int ColumnsThatFit(float cellWidth, int leftInset)
+        /// <summary>
+        /// Builds one planned row at the width the whole board agreed on, so
+        /// every row uses the same card size and the board reads as one table
+        /// rather than a stack of differently-scaled shelves.
+        /// </summary>
+        private void BuildCardRow(
+            Transform parent, PlannedRow plan, float cardWidth, GameView view, float availableWidth = 0f)
         {
-            var available = Mathf.Max(200f, _battlefield.rect.width - leftInset - 12f);
-            return Mathf.Max(1, Mathf.FloorToInt((available + CardGap) / (cellWidth + CardGap)));
+            var row = UIFactory.Group(plan.Label, parent);
+            var rowLayout = UIFactory.VerticalLayout(row, 2, new RectOffset(0, 0, 0, 0), controlHeight: true);
+            rowLayout.childAlignment = TextAnchor.UpperLeft;
+
+            var header = UIFactory.Label("Header", row, plan.Label, 13, TextAnchor.MiddleLeft,
+                new Color(0.75f, 0.75f, 0.8f));
+            header.fontStyle = FontStyle.Bold;
+            AddFixedHeight(header.rectTransform, RowHeaderHeight);
+
+            var cardHeight = cardWidth * (BoardCardView.Height / BoardCardView.Width);
+            var available = availableWidth > 0f
+                ? availableWidth
+                : Mathf.Max(200f, _battlefield.rect.width - 12f);
+            var perRow = Mathf.Max(1, Mathf.FloorToInt((available + CardGap) / (cardWidth + CardGap)));
+            var lines = Mathf.Max(1, Mathf.CeilToInt(plan.Cards.Length / (float)perRow));
+
+            var grid = UIFactory.Group("Cards", row);
+            var gridLayout = grid.gameObject.AddComponent<GridLayoutGroup>();
+            gridLayout.cellSize = new Vector2(cardWidth, cardHeight);
+            gridLayout.spacing = new Vector2(CardGap, CardGap);
+            gridLayout.childAlignment = TextAnchor.UpperLeft;
+
+            var gridHeight = (lines * cardHeight) + ((lines - 1) * CardGap);
+            AddFixedHeight(grid, gridHeight);
+
+            var rowPin = row.gameObject.AddComponent<LayoutElement>();
+            rowPin.preferredHeight = gridHeight + RowHeaderHeight + RowGap;
+            rowPin.minHeight = gridHeight + RowHeaderHeight + RowGap;
+            rowPin.flexibleWidth = 1;
+
+            foreach (var card in plan.Cards)
+            {
+                var cell = UIFactory.Group("Cell", grid);
+                var cardView = BoardCardView.Create(cell);
+                var cardRect = (RectTransform)cardView.transform;
+                cardRect.anchorMin = cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+                cardRect.pivot = new Vector2(0.5f, 0.5f);
+
+                var clickable = plan.IsClickable != null && plan.IsClickable(card);
+                cardView.Populate(card, plan.TagFor?.Invoke(card), clickable ? () => plan.OnClick(card) : null);
+                cardView.SetAction(clickable ? plan.ActionLabel : null,
+                                   clickable ? () => plan.OnClick(card) : null);
+                cardView.ScaleTo(cardWidth);
+
+                MarkIfDueToActivate(cardView, view);
+                RegisterForActivationPulse(cardView);
+            }
+        }
+
+
+        /// <summary>
+        /// Marks a card the dice have already promised to wake, so the board
+        /// itself says what is about to fire rather than a list of card names in
+        /// the side panel. Standing highlight, not a pulse - it is a statement
+        /// about what is queued, not an event.
+        /// </summary>
+        private void MarkIfDueToActivate(BoardCardView card, GameView view)
+        {
+            if (view.phase != nameof(TurnPhase.Rolling) || !view.diceRolled || card.Definition == null)
+            {
+                return;
+            }
+
+            var faces = view.players.Where(p => p.isAlive && p.primaryDie > 0).Select(p => p.primaryDie).ToHashSet();
+
+            if (card.Definition.Type == CardType.Unit && card.Definition.ActivationNumbers.Any(faces.Contains))
+            {
+                card.SetDueToActivate(BoardArt.ColorOfCategory(
+                    CardEffects.CategoryFor(card.Definition.Id, card.Definition.ActivationNumbers.First(faces.Contains))));
+            }
         }
 
         /// <summary>
@@ -815,8 +917,17 @@ namespace Indoctrination.Net
                 return;
             }
 
+            var face = card.Definition.ActivationNumbers.First(_rolledThisTurn.Contains);
+            var category = CardEffects.CategoryFor(card.Definition.Id, face);
+
             BoardEffects.Instance.PulseCard(
-                (RectTransform)card.transform, BoardArt.ColorOf(card.Definition.Color));
+                (RectTransform)card.transform, BoardArt.ColorOfCategory(category));
+
+            // Only a blow actually landing is worth shaking the board for.
+            if (category == ActivationCategory.Damage)
+            {
+                _somethingHitThisRefresh = true;
+            }
         }
 
         private static bool IsDraftable(GameView view, CardView card)
@@ -1071,7 +1182,6 @@ namespace Indoctrination.Net
                 return;
             }
 
-            RenderActivationPreview(view);
 
             if (you != null && you.compound.Any(c => c.definitionId == CardIds.TryAgain))
             {
@@ -1092,39 +1202,6 @@ namespace Indoctrination.Net
 
             ActionLabel("Highest roll - take one:", 16);
             RenderColorButtons(color => manager.RequestClaimHighRollResourceRpc((int)color));
-        }
-
-        private void RenderActivationPreview(GameView view)
-        {
-            var rolledValues = view.players
-                .Where(player => player.isAlive && player.hasRolled)
-                .Select(player => player.primaryDie)
-                .ToList();
-            var activations = new List<string>();
-
-            foreach (var player in view.players.Where(player => player.isAlive))
-            {
-                foreach (var card in player.compound)
-                {
-                    if (!CardDatabase.Instance.TryGet(card.definitionId, out var definition)
-                        || definition.Type != CardType.Unit)
-                    {
-                        continue;
-                    }
-
-                    var triggerCount = rolledValues.Count(value => definition.ActivationNumbers.Contains(value));
-                    if (triggerCount > 0)
-                    {
-                        activations.Add(
-                            $"{player.name}: {definition.Title}" +
-                            (triggerCount > 1 ? $" (x{triggerCount})" : ""));
-                    }
-                }
-            }
-
-            ActionLabel(activations.Count == 0
-                ? "No Units activate from these primary-die results."
-                : $"Will activate:\n{string.Join("\n", activations)}", 13);
         }
 
         private void RenderActivation(GameView view)
@@ -1320,8 +1397,20 @@ namespace Indoctrination.Net
                         .Select(id => FindCard(view, id))
                         .Where(card => card != null)
                         .ToArray();
-                    BuildCardRow(_actionPanel, "Choose one:", options,
-                        _ => true, card => manager.RequestAnswerCardRpc(card.instanceId), null);
+
+                    // The side panel is narrow, so these are laid out at whatever
+                    // width fits rather than at the board's shared card size.
+                    BuildCardRow(_actionPanel, new PlannedRow
+                    {
+                        Label = "Choose one:",
+                        Cards = options,
+                        IsClickable = _ => true,
+                        OnClick = card => manager.RequestAnswerCardRpc(card.instanceId),
+                        ActionLabel = "Choose"
+                    },
+                    Mathf.Min(BoardCardView.Width, Mathf.Max(90f, _actionViewport.rect.width - 24f)),
+                    view,
+                    availableWidth: Mathf.Max(120f, _actionViewport.rect.width - 24f));
                     break;
 
                 case nameof(ChoiceKind.Color):

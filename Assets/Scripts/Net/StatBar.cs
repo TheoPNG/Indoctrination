@@ -123,7 +123,7 @@ namespace Indoctrination.Net
             // and recruitment are visible as they happen.
             _healthText.text = $"{player.health} HP";
             BoardEffects.Instance.FillTo(
-                _healthFill, (float)player.health / GameSettings.StartingHealth);
+                _healthFill, (float)player.health / GameSettings.MaxHealth);
 
             _followerText.text = $"{player.followers}/{GameSettings.FollowersToWin} followers";
             BoardEffects.Instance.FillTo(

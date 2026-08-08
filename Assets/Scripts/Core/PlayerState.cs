@@ -19,7 +19,7 @@ namespace Indoctrination.Core
         /// <summary>
         /// Lowered by the cursed stones. Healing cannot take you above it.
         /// </summary>
-        public int MaxHealth { get; private set; } = GameSettings.StartingHealth;
+        public int MaxHealth { get; private set; } = GameSettings.MaxHealth;
 
         /// <summary>
         /// Absorbs incoming damage before health does. Cleared between rounds
@@ -222,7 +222,7 @@ namespace Indoctrination.Core
 
         public void LoseFollowers(int amount)
         {
-            Followers = Math.Max(0, Followers - amount);
+            Followers = Math.Max(GameSettings.MinFollowers, Followers - amount);
         }
 
         /// <summary>

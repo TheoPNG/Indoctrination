@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Indoctrination.Core;
+using Indoctrination.Core.Effects;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -26,6 +27,22 @@ namespace Indoctrination.Net
             ResourceColor.Blue => new Color(0.33f, 0.53f, 0.88f),
             ResourceColor.Yellow => new Color(0.90f, 0.74f, 0.28f),
             _ => Color.white
+        };
+
+        /// <summary>
+        /// What an activation looks like, by what it does: red for damage, green
+        /// for followers, blue for drawing, yellow for healing. The colour is the
+        /// explanation - a player should know what a card did from the flash
+        /// without reading it.
+        /// </summary>
+        public static Color ColorOfCategory(ActivationCategory category) => category switch
+        {
+            ActivationCategory.Damage => new Color(0.92f, 0.28f, 0.28f),
+            ActivationCategory.Followers => new Color(0.34f, 0.80f, 0.38f),
+            ActivationCategory.Draw => new Color(0.36f, 0.60f, 0.95f),
+            ActivationCategory.Health => new Color(0.95f, 0.82f, 0.30f),
+            ActivationCategory.Block => new Color(0.65f, 0.72f, 0.85f),
+            _ => new Color(0.80f, 0.80f, 0.85f)
         };
 
         public static IReadOnlyList<ResourceColor> Colors { get; } = new[]
