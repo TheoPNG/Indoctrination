@@ -1,0 +1,109 @@
+using System;
+using System.Linq;
+using Indoctrination.Core;
+using Indoctrination.Core.Effects;
+
+namespace Indoctrination.Net
+{
+    /// <summary>
+    /// Turns the authoritative <see cref="GameState"/> into the filtered picture
+    /// one player is allowed to see.
+    ///
+    /// This is the only thing standing between a hidden hand and every client at
+    /// the table, so it is deliberately free of Unity types and lives apart from
+    /// the networking - which lets RulesCheck prove, outside the Editor, that a
+    /// view built for one player never carries another player's cards.
+    /// </summary>
+    public static class GameViewBuilder
+    {
+        public static GameView Build(
+            GameState game,
+            int viewerPlayerId,
+            float phaseSecondsRemaining = 0f,
+            float choiceSecondsRemaining = 0f)
+        {
+            return new GameView
+            {
+                viewerPlayerId = viewerPlayerId,
+                phase = game.Phase.ToString(),
+                turnInRound = game.TurnInRound,
+                draftNumber = game.DraftNumber,
+                deckCount = game.DeckCount,
+                discardCount = game.Discard.Count,
+                currentDrafterId = game.CurrentDrafterId ?? -1,
+                winnerPlayerId = game.Winner?.PlayerId ?? -1,
+                isGameOver = game.Phase == TurnPhase.GameOver,
+                isDraw = game.IsDraw,
+                diceRolled = game.DiceRolled,
+                highRollResourceClaimed = game.HighRollResourceClaimed,
+                playersReady = game.PlayersReady.ToArray(),
+                phaseSecondsRemaining = phaseSecondsRemaining,
+                choiceSecondsRemaining = choiceSecondsRemaining,
+                draftZone = game.DraftZone.Select(ToCardView).ToArray(),
+                draftMarks = game.DraftMarks.Select(mark => new DraftMarkView
+                {
+                    marker = mark.Key.ToString(),
+                    cardInstanceId = mark.Value.CardInstanceId,
+                    playerId = mark.Value.PlayerId
+                }).ToArray(),
+                pendingChoice = ToChoiceView(game.PendingChoice),
+                resolvingDescription = game.ResolvingDescription,
+                players = game.Players.Select(player => new PlayerView
+                {
+                    playerId = player.PlayerId,
+                    name = player.Name,
+                    health = player.Health,
+                    followers = player.Followers,
+                    primaryDie = player.PrimaryDie,
+                    isAlive = player.IsAlive,
+                    red = player.Resources[ResourceColor.Red],
+                    green = player.Resources[ResourceColor.Green],
+                    blue = player.Resources[ResourceColor.Blue],
+                    yellow = player.Resources[ResourceColor.Yellow],
+                    handCount = player.Hand.Count,
+                    collectedResources = game.HasCollectedResources(player.PlayerId),
+                    isReady = game.PlayersReady.Contains(player.PlayerId),
+
+                    // The whole point of building a view per player: only the
+                    // holder is ever sent the contents of their own hand.
+                    hand = player.PlayerId == viewerPlayerId
+                        ? player.Hand.Select(ToCardView).ToArray()
+                        : Array.Empty<CardView>(),
+
+                    compound = player.Compound.Select(ToCardView).ToArray()
+                }).ToArray()
+            };
+        }
+
+        private static CardView ToCardView(CardInstance card)
+        {
+            return new CardView { instanceId = card.InstanceId, definitionId = card.Definition.Id };
+        }
+
+        /// <summary>
+        /// Mirrors a <see cref="ChoiceRequest"/> into something JsonUtility can send.
+        /// Every viewer gets the same copy - the asker's identity is already public,
+        /// and legal-option lists (e.g. which opponents can be hit) are not secret.
+        /// </summary>
+        private static ChoiceView ToChoiceView(ChoiceRequest request)
+        {
+            if (request == null)
+            {
+                return null;
+            }
+
+            return new ChoiceView
+            {
+                kind = request.Kind.ToString(),
+                prompt = request.Prompt,
+                askedOfPlayerId = request.AskedOfPlayerId,
+                playerOptions = request.PlayerOptions.ToArray(),
+                cardOptions = request.CardOptions.ToArray(),
+                colorOptions = request.ColorOptions.Select(c => (int)c).ToArray(),
+                options = request.Options.ToArray(),
+                minAmount = request.MinAmount,
+                maxAmount = request.MaxAmount
+            };
+        }
+    }
+}

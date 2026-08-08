@@ -491,95 +491,22 @@ namespace Indoctrination.Net
         }
 
         /// <summary>
-        /// The game as one player is allowed to see it. Hands belonging to anyone
-        /// else are reduced to a count.
+        /// The game as one player is allowed to see it, with the clocks filled in
+        /// from this machine's frame time. The filtering itself lives in
+        /// <see cref="GameViewBuilder"/>, away from anything Unity-specific, so it
+        /// can be proved correct outside the Editor.
         /// </summary>
         private GameView BuildViewFor(int viewerPlayerId)
         {
-            var view = new GameView
-            {
-                viewerPlayerId = viewerPlayerId,
-                phase = _game.Phase.ToString(),
-                turnInRound = _game.TurnInRound,
-                draftNumber = _game.DraftNumber,
-                deckCount = _game.DeckCount,
-                discardCount = _game.Discard.Count,
-                currentDrafterId = _game.CurrentDrafterId ?? -1,
-                winnerPlayerId = _game.Winner?.PlayerId ?? -1,
-                isGameOver = _game.Phase == TurnPhase.GameOver,
-                isDraw = _game.IsDraw,
-                diceRolled = _game.DiceRolled,
-                highRollResourceClaimed = _game.HighRollResourceClaimed,
-                playersReady = _game.PlayersReady.ToArray(),
-                phaseSecondsRemaining = _game.Phase is TurnPhase.Draft or TurnPhase.GameOver
-                    ? 0f
-                    : Mathf.Max(0f, GameSettings.PhaseTimeoutSeconds - (Time.time - _phaseStartedAt)),
-                draftZone = _game.DraftZone.Select(ToCardView).ToArray(),
-                draftMarks = _game.DraftMarks.Select(kv => new DraftMarkView
-                {
-                    marker = kv.Key.ToString(),
-                    cardInstanceId = kv.Value.CardInstanceId,
-                    playerId = kv.Value.PlayerId
-                }).ToArray(),
-                pendingChoice = ToChoiceView(_game.PendingChoice),
-                choiceSecondsRemaining = _game.PendingChoice == null || _choiceStartedAt < 0f
-                    ? 0f
-                    : Mathf.Max(0f, GameSettings.ChoiceTimeoutSeconds - (Time.time - _choiceStartedAt)),
-                resolvingDescription = _game.ResolvingDescription,
-                players = _game.Players.Select(player => new PlayerView
-                {
-                    playerId = player.PlayerId,
-                    name = player.Name,
-                    health = player.Health,
-                    followers = player.Followers,
-                    primaryDie = player.PrimaryDie,
-                    isAlive = player.IsAlive,
-                    red = player.Resources[ResourceColor.Red],
-                    green = player.Resources[ResourceColor.Green],
-                    blue = player.Resources[ResourceColor.Blue],
-                    yellow = player.Resources[ResourceColor.Yellow],
-                    handCount = player.Hand.Count,
-                    collectedResources = _game.HasCollectedResources(player.PlayerId),
-                    isReady = _game.PlayersReady.Contains(player.PlayerId),
-                    hand = player.PlayerId == viewerPlayerId
-                        ? player.Hand.Select(ToCardView).ToArray()
-                        : Array.Empty<CardView>(),
-                    compound = player.Compound.Select(ToCardView).ToArray()
-                }).ToArray()
-            };
+            var phaseRemaining = _game.Phase is TurnPhase.Draft or TurnPhase.GameOver
+                ? 0f
+                : Mathf.Max(0f, GameSettings.PhaseTimeoutSeconds - (Time.time - _phaseStartedAt));
 
-            return view;
-        }
+            var choiceRemaining = _game.PendingChoice == null || _choiceStartedAt < 0f
+                ? 0f
+                : Mathf.Max(0f, GameSettings.ChoiceTimeoutSeconds - (Time.time - _choiceStartedAt));
 
-        private static CardView ToCardView(CardInstance card)
-        {
-            return new CardView { instanceId = card.InstanceId, definitionId = card.Definition.Id };
-        }
-
-        /// <summary>
-        /// Mirrors a <see cref="ChoiceRequest"/> into something JsonUtility can send.
-        /// Every viewer gets the same copy - the asker's identity is already public,
-        /// and legal-option lists (e.g. which opponents can be hit) are not secret.
-        /// </summary>
-        private static ChoiceView ToChoiceView(ChoiceRequest request)
-        {
-            if (request == null)
-            {
-                return null;
-            }
-
-            return new ChoiceView
-            {
-                kind = request.Kind.ToString(),
-                prompt = request.Prompt,
-                askedOfPlayerId = request.AskedOfPlayerId,
-                playerOptions = request.PlayerOptions.ToArray(),
-                cardOptions = request.CardOptions.ToArray(),
-                colorOptions = request.ColorOptions.Select(c => (int)c).ToArray(),
-                options = request.Options.ToArray(),
-                minAmount = request.MinAmount,
-                maxAmount = request.MaxAmount
-            };
+            return GameViewBuilder.Build(_game, viewerPlayerId, phaseRemaining, choiceRemaining);
         }
     }
 }

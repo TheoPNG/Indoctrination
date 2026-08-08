@@ -22,6 +22,9 @@
     -->
     <Compile Include="../../Assets/Scripts/Core/*.cs" Exclude="../../Assets/Scripts/Core/CardDatabase.cs" />
     <Compile Include="../../Assets/Scripts/Core/Effects/*.cs" />
+    <!-- The per-player view filter, which is Unity-free precisely so it can be checked here. -->
+    <Compile Include="../../Assets/Scripts/Net/GameView.cs" />
+    <Compile Include="../../Assets/Scripts/Net/GameViewBuilder.cs" />
   </ItemGroup>
 
 </Project>

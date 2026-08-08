@@ -12,6 +12,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Indoctrination.Core;
 using Indoctrination.Core.Effects;
+using Indoctrination.Net;
 
 static class RulesCheck
 {
@@ -242,6 +243,7 @@ static class RulesCheck
         CheckSettledCards(cards);
         CheckActivationOrder(cards);
         CheckEndStates(cards);
+        CheckPerPlayerViews(cards);
 
         Console.WriteLine($"\n{(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED")}");
         Environment.Exit(failures == 0 ? 0 : 1);
@@ -639,6 +641,80 @@ static class RulesCheck
         Check("Block absorbed both hits rather than letting them through",
               game.Players[1].Health == GameSettings.StartingHealth && game.Players[1].Block == 0,
               $"{game.Players[1].Health} health, {game.Players[1].Block} block");
+    }
+
+    /// <summary>
+    /// Each player is sent a separately-built picture of the game, and the whole
+    /// point is that it carries no card they are not entitled to see. A leak here
+    /// would be invisible in play and would quietly ruin every hidden-information
+    /// card in the game, so it is checked directly.
+    /// </summary>
+    static void CheckPerPlayerViews(List<CardDefinition> cards)
+    {
+        Console.WriteLine("\nPer-player views (hidden information):");
+
+        var game = new GameState(new[] { "A", "B", "C" }, cards, randomSeed: 44);
+        FinishDraft(game);
+
+        // Give one player something in play, so compounds are non-empty too.
+        game.Players[1].Compound.Add(new CardInstance(-50, cards.First(c => c.id == CardIds.WondrousBlood)));
+
+        var everyHandIsPrivate = true;
+        var ownHandIsVisible = true;
+        var compoundsArePublic = true;
+
+        foreach (var viewer in game.Players)
+        {
+            var view = GameViewBuilder.Build(game, viewer.PlayerId);
+
+            foreach (var seen in view.players)
+            {
+                var actual = game.GetPlayer(seen.playerId);
+
+                if (seen.playerId == viewer.PlayerId)
+                {
+                    if (seen.hand.Length != actual.Hand.Count) ownHandIsVisible = false;
+                }
+                else if (seen.hand.Length != 0)
+                {
+                    everyHandIsPrivate = false;
+                }
+
+                // Counts are public even when contents are not, and so is the board.
+                if (seen.handCount != actual.Hand.Count) everyHandIsPrivate = false;
+                if (seen.compound.Length != actual.Compound.Count) compoundsArePublic = false;
+            }
+        }
+
+        Check("no view carries another player's hand", everyHandIsPrivate);
+        Check("but each player sees their own", ownHandIsVisible,
+              $"{game.Players[0].Hand.Count} cards");
+        Check("hand sizes and compounds stay public", compoundsArePublic);
+
+        // A question is public - everyone needs to know the table is waiting, and
+        // on whom - but it must still name the right player.
+        var supernatural = cards.First(c => c.id == CardIds.SupernaturalEvent);
+        game.EnqueueEffect(new CardInstance(-51, supernatural), game.Players[2],
+                           CardEffects.For(CardIds.SupernaturalEvent, 0), "Supernatural Event");
+        game.ResolveEffects();
+
+        var asked = game.Players.Select(p => GameViewBuilder.Build(game, p.PlayerId)).ToList();
+        Check("every player is told a decision is pending",
+              asked.All(v => v.pendingChoice != null));
+        Check("and all agree who owes it",
+              asked.All(v => v.pendingChoice.askedOfPlayerId == 2));
+
+        // Dead players are still rendered, so the table can see who is out.
+        var over = new GameState(new[] { "A", "B" }, cards, randomSeed: 45);
+        FinishDraft(over);
+        over.DealDamage(null, over.Players[1], GameSettings.StartingHealth);
+        over.ResolveEffects();
+        var finalView = GameViewBuilder.Build(over, 0);
+        Check("a finished game reports itself as over", finalView.isGameOver && !finalView.isDraw);
+        Check("with the survivor named as winner", finalView.winnerPlayerId == 0,
+              $"winner {finalView.winnerPlayerId}");
+        Check("and the player who is out still shown",
+              finalView.players.Length == 2 && !finalView.players[1].isAlive);
     }
 
     /// <summary>
