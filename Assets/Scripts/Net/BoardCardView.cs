@@ -14,8 +14,8 @@ namespace Indoctrination.Net
     /// </summary>
     public class BoardCardView : MonoBehaviour
     {
-        public const float Width = 150f;
-        public const float Height = 210f;
+        public const float Width = 180f;
+        public const float Height = 250f;
 
         private Image _background;
         private Text _tagText;
@@ -81,9 +81,16 @@ namespace Indoctrination.Net
             layout.childForceExpandWidth = true;
 
             _tagText = UIFactory.Label("Tag", transform, "", 12, TextAnchor.UpperLeft, new Color(1f, 0.6f, 0.35f));
-            _headerText = UIFactory.Label("Header", transform, "", 12, TextAnchor.UpperLeft, new Color(0.8f, 0.8f, 0.8f));
-            _titleText = UIFactory.Label("Title", transform, "", 16, TextAnchor.UpperLeft);
-            _titleText.fontStyle = FontStyle.Bold;
+            // Put the title in the first permanent text row. The former separate
+            // title label was the field disappearing during layout; the old header
+            // (colour/type) was already rendering reliably in every card row.
+            _headerText = UIFactory.Label(
+                "Title", transform, "", 20, TextAnchor.UpperLeft, Color.white);
+            _headerText.fontStyle = FontStyle.Bold;
+            var titleOutline = _headerText.gameObject.AddComponent<Outline>();
+            titleOutline.effectColor = new Color(0f, 0f, 0f, 0.9f);
+            titleOutline.effectDistance = new Vector2(1f, -1f);
+            _titleText = UIFactory.Label("Details", transform, "", 13, TextAnchor.UpperLeft);
             _costText = UIFactory.Label("Cost", transform, "", 12, TextAnchor.UpperLeft, new Color(0.85f, 0.85f, 0.6f));
             _activatesText = UIFactory.Label("Activates", transform, "", 12, TextAnchor.UpperLeft, new Color(0.7f, 0.85f, 1f));
             _effectText = UIFactory.Label("Effect", transform, "", 12, TextAnchor.UpperLeft, new Color(0.9f, 0.9f, 0.9f));
@@ -92,6 +99,17 @@ namespace Indoctrination.Net
             {
                 var element = child.gameObject.AddComponent<LayoutElement>();
                 element.flexibleWidth = 1;
+
+                if (child == _headerText.transform)
+                {
+                    element.minHeight = 76;
+                    element.preferredHeight = 76;
+                }
+                else if (child == _titleText.transform)
+                {
+                    element.minHeight = 18;
+                    element.preferredHeight = 18;
+                }
             }
         }
 
@@ -111,17 +129,19 @@ namespace Indoctrination.Net
                 var definition = CardDatabase.Instance.TryGet(card.definitionId, out var found) ? found : null;
                 if (definition == null)
                 {
-                    _headerText.text = "";
-                    _titleText.text = card.definitionId;
+                    _headerText.text = card.definitionId;
+                    _headerText.color = Color.white;
+                    _titleText.text = "";
                     _costText.text = "";
                     _activatesText.gameObject.SetActive(false);
                     _effectText.text = "";
                 }
                 else
                 {
-                    _headerText.text = $"{definition.Color}  -  {definition.Type}";
-                    _headerText.color = ColorFor(definition.Color);
-                    _titleText.text = definition.Title;
+                    _headerText.text = definition.Title;
+                    _headerText.color = Color.white;
+                    _titleText.text = $"{definition.Color}  -  {definition.Type}";
+                    _titleText.color = ColorFor(definition.Color);
                     _costText.text = $"Cost: {(definition.Cost.IsSpecial ? "special" : definition.costRaw)}";
 
                     if (definition.Type == CardType.Unit && definition.ActivationNumbers.Count > 0)
@@ -140,8 +160,9 @@ namespace Indoctrination.Net
             catch (Exception e)
             {
                 Debug.LogError($"BoardCardView could not read '{card?.definitionId}': {e}");
-                _headerText.text = "";
-                _titleText.text = card?.definitionId ?? "?";
+                _headerText.text = card?.definitionId ?? "?";
+                _headerText.color = Color.white;
+                _titleText.text = "";
                 _costText.text = "(error - see Console)";
                 _activatesText.gameObject.SetActive(false);
                 _effectText.text = "";

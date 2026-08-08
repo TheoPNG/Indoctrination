@@ -139,6 +139,25 @@ namespace Indoctrination.Net
             return _seats.Count - 1;
         }
 
+        /// <summary>
+        /// Seats a player with no client behind them, so a test can fill a table
+        /// without a second process. The seat takes a client id that no real
+        /// connection can hold, and so is never sent a view - it exists purely to
+        /// make the table big enough to start.
+        /// </summary>
+        public void AddTestSeat(string name)
+        {
+            if (_game != null || _seats.Count >= GameSettings.MaxPlayers)
+            {
+                return;
+            }
+
+            var placeholderId = ulong.MaxValue - (ulong)_seats.Count;
+            _seats.Add(placeholderId);
+            _names[placeholderId] = name;
+            BroadcastLobby();
+        }
+
         private void BroadcastLobby()
         {
             var lobby = new LobbyView
@@ -230,9 +249,7 @@ namespace Indoctrination.Net
         [Rpc(SendTo.Server)]
         public void RequestRollRpc(RpcParams rpcParams = default)
         {
-            // Everyone's dice are rolled at once, so this is not tied to a seat -
-            // any player at the table can call for the roll.
-            Apply(rpcParams, _ => _game.RollPrimaryDice());
+            Apply(rpcParams, playerId => _game.RollPrimaryDie(playerId));
         }
 
         [Rpc(SendTo.Server)]
@@ -353,11 +370,6 @@ namespace Indoctrination.Net
                 return;
             }
 
-            if (_game.Phase is TurnPhase.Draft or TurnPhase.GameOver)
-            {
-                return;
-            }
-
             if (_game.PendingChoice != null)
             {
                 // The phase clock does not run while a card is waiting - nobody
@@ -380,6 +392,14 @@ namespace Indoctrination.Net
             }
 
             _choiceStartedAt = -1f;
+
+            // Draft picks do not time out, but draft-related card choices do.
+            // This check must stay below PendingChoice or those choices reach
+            // zero seconds and can never answer themselves.
+            if (_game.Phase is TurnPhase.Draft or TurnPhase.GameOver)
+            {
+                return;
+            }
 
             if (Time.time - _phaseStartedAt < GameSettings.PhaseTimeoutSeconds)
             {
@@ -451,6 +471,18 @@ namespace Indoctrination.Net
 
         private void BroadcastState()
         {
+            // Every outbound choice needs a running server clock before its view
+            // is built. This also covers choices opened by a timeout-driven phase
+            // advance rather than by an RPC operation.
+            if (_game.PendingChoice != null && _choiceStartedAt < 0f)
+            {
+                _choiceStartedAt = Time.time;
+            }
+            else if (_game.PendingChoice == null)
+            {
+                _choiceStartedAt = -1f;
+            }
+
             foreach (var clientId in _seats)
             {
                 SendStateTo(clientId);
@@ -461,6 +493,14 @@ namespace Indoctrination.Net
         {
             var playerId = _seats.IndexOf(clientId);
             if (playerId < 0)
+            {
+                return;
+            }
+
+            // A seat can outlive its connection - a player who dropped keeps their
+            // board in case they come back, and tests seat opponents with no
+            // client at all. Netcode has nowhere to deliver either.
+            if (!NetworkManager.ConnectedClients.ContainsKey(clientId))
             {
                 return;
             }
@@ -480,6 +520,11 @@ namespace Indoctrination.Net
 
         private void ReportError(string message, ulong clientId)
         {
+            if (!NetworkManager.ConnectedClients.ContainsKey(clientId))
+            {
+                return;
+            }
+
             ShowErrorRpc(message, RpcTarget.Single(clientId, RpcTargetUse.Temp));
         }
 

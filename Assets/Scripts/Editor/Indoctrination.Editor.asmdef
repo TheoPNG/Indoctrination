@@ -1,0 +1,12 @@
+{
+    "name": "Indoctrination.Editor",
+    "rootNamespace": "Indoctrination.EditorTools",
+    "references": [
+        "Indoctrination.Core",
+        "Indoctrination.Net",
+        "Unity.Netcode.Runtime",
+        "Unity.Networking.Transport"
+    ],
+    "includePlatforms": [ "Editor" ],
+    "autoReferenced": true
+}

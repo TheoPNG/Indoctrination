@@ -1,0 +1,11 @@
+{
+    "name": "Indoctrination.Net",
+    "rootNamespace": "Indoctrination.Net",
+    "references": [
+        "Indoctrination.Core",
+        "Unity.Netcode.Runtime",
+        "Unity.Networking.Transport",
+        "Unity.InputSystem"
+    ],
+    "autoReferenced": true
+}

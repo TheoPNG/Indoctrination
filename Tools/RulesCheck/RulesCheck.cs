@@ -115,6 +115,8 @@ static class RulesCheck
             Check("3 undrafted cards discarded", g.Discard.Count == 3, $"{g.Discard.Count}");
             Check("draft zone emptied", g.DraftZone.Count == 0);
             Check("play begins in Rolling", g.Phase == TurnPhase.Rolling);
+            Check("players begin Rolling with their own roll still available",
+                  !g.DiceRolled && g.Players.All(p => !g.HasRolled(p.PlayerId)));
         }
 
         Console.WriteLine("\nStarting stats:");
@@ -131,7 +133,8 @@ static class RulesCheck
         for (var turn = 0; turn < 3; turn++)
         {
             phasesSeen.Add($"T{game.TurnInRound}");
-            game.RollPrimaryDice();
+            foreach (var player in game.LivingPlayers.ToList())
+                game.RollPrimaryDie(player.PlayerId);
             Check($"  turn {turn + 1}: all dice in 1-6",
                   game.Players.All(p => p.PrimaryDie >= 1 && p.PrimaryDie <= 6),
                   string.Join(",", game.Players.Select(p => p.PrimaryDie)));
@@ -165,7 +168,13 @@ static class RulesCheck
         g6.BeginDraft();
         while (g6.CurrentDrafterId is int d6) g6.DraftCard(d6, g6.DraftZone[0].InstanceId);
 
-        var roller = g6.RollPrimaryDice();
+        g6.RollPrimaryDie(0);
+        Check("one player rolling does not roll for the table",
+              g6.HasRolled(0) && !g6.HasRolled(1) && !g6.DiceRolled);
+        g6.RollPrimaryDie(1);
+        var highest = g6.LivingPlayers.Max(p => p.PrimaryDie);
+        var highestRollers = g6.LivingPlayers.Where(p => p.PrimaryDie == highest).ToList();
+        var roller = highestRollers.Count == 1 ? highestRollers[0] : null;
         Check("cannot roll the dice twice", Throws(() => g6.RollPrimaryDice()));
 
         if (roller != null)
@@ -196,6 +205,7 @@ static class RulesCheck
         var g7 = new GameState(new[] { "A", "B", "C" }, cards, randomSeed: 13);
         g7.BeginDraft();
         while (g7.CurrentDrafterId is int d7) g7.DraftCard(d7, g7.DraftZone[0].InstanceId);
+        g7.RollPrimaryDice();
 
         Check("one of three ready is not enough", !g7.SetReady(0, true));
         Check("two of three is not enough", !g7.SetReady(1, true));
@@ -547,12 +557,15 @@ static class RulesCheck
         var baal = Card(-20, CardIds.BaalTheManipulator);
         baal.AddCounter(Counters.Scheme, 1);
         scheme.Players[0].Compound.Add(baal);
-        FinishDraft(scheme);
 
-        Check("Baal cannot act before the dice are rolled",
+        Check("Baal cannot act outside the Rolling phase",
               Throws(() => scheme.SpendSchemeCounter(0, 1, 6)));
 
-        scheme.RollPrimaryDice();
+        FinishDraft(scheme);
+        Check("Baal waits until every player has rolled",
+              Throws(() => scheme.SpendSchemeCounter(0, 1, 4)));
+        scheme.RollPrimaryDie(0);
+        scheme.RollPrimaryDie(1);
         scheme.SpendSchemeCounter(0, 1, 4);
         Check("spending a Scheme counter sets a die",
               scheme.Players[1].PrimaryDie == 4 && baal.GetCounter(Counters.Scheme) == 0,
@@ -743,6 +756,7 @@ static class RulesCheck
         Check("the game continues while two remain", out1.Phase != TurnPhase.GameOver);
         Check("a dead leader cannot collect, buy, or ready up",
               Throws(() => out1.SetReady(2, true)));
+        out1.RollPrimaryDice();
         Check("and the living can still finish the phase",
               out1.SetReady(0, true) == false && out1.SetReady(1, true));
 
@@ -793,6 +807,7 @@ static class RulesCheck
             game.DraftCard(drafter, game.DraftZone[0].InstanceId);
 
         game.Players[2].TakeDamage(GameSettings.StartingHealth);
+        game.RollPrimaryDice();
 
         game.SetReady(0, true);
         return game.SetReady(1, true);

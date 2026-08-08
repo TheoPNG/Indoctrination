@@ -1,0 +1,17 @@
+{
+    "name": "Indoctrination.PlayModeTests",
+    "rootNamespace": "Indoctrination.Tests",
+    "references": [
+        "Indoctrination.Core",
+        "Indoctrination.Net",
+        "Unity.Netcode.Runtime",
+        "Unity.Networking.Transport",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [],
+    "overrideReferences": true,
+    "precompiledReferences": [ "nunit.framework.dll" ],
+    "autoReferenced": false,
+    "defineConstraints": [ "UNITY_INCLUDE_TESTS" ]
+}

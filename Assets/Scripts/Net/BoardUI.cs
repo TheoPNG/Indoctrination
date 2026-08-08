@@ -30,6 +30,8 @@ namespace Indoctrination.Net
 
         private const float DockTopHeight = 82f;
         private const float BattlefieldRowHeight = BoardCardView.Height + 40f;
+        private const int BoardSafeInset = 14;
+        private const int DraftZoneLeftInset = 12;
 
         // --------------------------------------------------------------- Panels
         private RectTransform _connectPanel;
@@ -47,7 +49,9 @@ namespace Indoctrination.Net
 
         private RectTransform _topBar;
         private RectTransform _battlefield;
+        private RectTransform _actionViewport;
         private RectTransform _actionPanel;
+        private ScrollRect _actionScroll;
         private RectTransform _handRow;
         private LayoutElement _handRowPin;
         private LayoutElement _dockPin;
@@ -59,7 +63,9 @@ namespace Indoctrination.Net
         private NetworkGameManager _subscribedManager;
         private GameView _lastView;
         private float _secondsLeft;
-        private bool _handExpanded = true;
+        private float _choiceSecondsLeft;
+        private bool _handExpanded;
+        private string _renderedPhase;
 
         private readonly List<ResourceColor> _pendingResources = new();
         private readonly List<ResourceColor> _pendingMealPayment = new();
@@ -211,6 +217,7 @@ namespace Indoctrination.Net
             {
                 _lastView = null;
                 _secondsLeft = 0f;
+                _choiceSecondsLeft = 0f;
                 return;
             }
 
@@ -225,19 +232,29 @@ namespace Indoctrination.Net
 
                 _lastView = view;
                 _secondsLeft = view.phaseSecondsRemaining;
+                _choiceSecondsLeft = view.choiceSecondsRemaining;
             }
             else
             {
-                _secondsLeft = Mathf.Max(0f, _secondsLeft - Time.deltaTime);
+                if (view.pendingChoice != null)
+                {
+                    _choiceSecondsLeft = Mathf.Max(0f, _choiceSecondsLeft - Time.deltaTime);
+                }
+                else
+                {
+                    _secondsLeft = Mathf.Max(0f, _secondsLeft - Time.deltaTime);
+                }
             }
 
             if (_timerText != null && _gameRoot.gameObject.activeSelf)
             {
-                _timerText.text = view.isGameOver || view.phase == nameof(TurnPhase.Draft)
+                _timerText.text = view.isGameOver
                     ? ""
                     : view.pendingChoice != null
-                        ? $"{view.choiceSecondsRemaining:0}s until the card decides for itself"
-                        : $"{_secondsLeft:0}s until phase advances";
+                        ? $"{_choiceSecondsLeft:0}s until the card decides for itself"
+                        : view.phase == nameof(TurnPhase.Draft)
+                            ? ""
+                            : $"{_secondsLeft:0}s until phase advances";
             }
         }
 
@@ -365,36 +382,41 @@ namespace Indoctrination.Net
         {
             var root = UIFactory.Panel("Game Root", parent, Color.clear);
             UIFactory.Stretch(root);
-            var layout = UIFactory.VerticalLayout(root, 6, new RectOffset(10, 10, 10, 10), controlHeight: true);
+            var layout = UIFactory.VerticalLayout(
+                root, 6,
+                new RectOffset(BoardSafeInset, BoardSafeInset, BoardSafeInset, BoardSafeInset),
+                controlHeight: true);
             layout.childAlignment = TextAnchor.UpperCenter;
 
             // Status strip: phase/turn/deck info, plus the phase timer.
             var status = UIFactory.Group("Status Row", root);
-            AddFixedHeight(status, 24);
-            UIFactory.HorizontalLayout(status, 12, new RectOffset(4, 4, 0, 0), controlWidth: true);
+            AddFixedHeight(status, 28);
+            UIFactory.HorizontalLayout(status, 8, new RectOffset(4, 4, 0, 0), controlWidth: true);
             _statusText = UIFactory.Label("Status", status, "", 15, TextAnchor.MiddleLeft);
             AddFlexibleWidth(_statusText.rectTransform);
             _timerText = UIFactory.Label("Timer", status, "", 13, TextAnchor.MiddleRight, new Color(0.8f, 0.8f, 0.6f));
-            AddFixedWidth(_timerText.rectTransform, 260);
+            AddResponsiveWidth(_timerText.rectTransform, 150, 230, 0);
 
-            // Opponents across the top of the board.
-            _topBar = UIFactory.Group("Top Bar", root);
-            AddFixedHeight(_topBar, 84);
-            var topLayout = UIFactory.HorizontalLayout(_topBar, 10, new RectOffset(0, 0, 0, 0));
-            topLayout.childAlignment = TextAnchor.MiddleCenter;
+            // Opponents across the top of the board. This row scrolls rather than
+            // shrinking or clipping stat bars when several players share a small
+            // Multiplayer Player window.
+            _topBar = UIFactory.HorizontalScroll("Top Bar", root, 84);
+            _topBar.GetComponent<HorizontalLayoutGroup>().childAlignment = TextAnchor.MiddleCenter;
 
             // Battlefield + action panel share the flexible middle area. Both are
             // force-expanded vertically: neither reports a preferred height of its
             // own, so without this the layout would size them to nothing.
             var middle = UIFactory.Group("Middle Area", root);
             AddFlexibleHeight(middle);
-            var middleLayout = UIFactory.HorizontalLayout(middle, 10, new RectOffset(0, 0, 0, 0), controlHeight: true);
+            var middleLayout = UIFactory.HorizontalLayout(
+                middle, 10, new RectOffset(0, 0, 0, 0),
+                controlWidth: true, controlHeight: true);
             middleLayout.childForceExpandHeight = true;
 
             // Battlefield is a vertical stack of rows, not a horizontal strip, so
             // it gets its own scroll rect rather than reusing the horizontal helper.
             var battlefieldPanel = UIFactory.Panel("Battlefield Panel", middle, new Color(1, 1, 1, 0.04f));
-            AddFlexibleWidth(battlefieldPanel);
+            AddResponsiveWidth(battlefieldPanel, 360, 760, 3);
             var battlefieldViewport = UIFactory.Panel("Battlefield Viewport", battlefieldPanel, Color.clear);
             battlefieldViewport.gameObject.AddComponent<RectMask2D>();
             UIFactory.Stretch(battlefieldViewport);
@@ -406,17 +428,48 @@ namespace Indoctrination.Net
             _battlefield.anchorMin = new Vector2(0, 1);
             _battlefield.anchorMax = new Vector2(1, 1);
             _battlefield.pivot = new Vector2(0.5f, 1);
+            // A newly-created RectTransform starts 100 units wide. Once its
+            // horizontal anchors are stretched, retaining that size delta makes
+            // the content 50 units wider off each side of the viewport and clips
+            // the first cards on the left. The fitter owns height; width must be
+            // exactly the viewport width.
+            _battlefield.sizeDelta = Vector2.zero;
             UIFactory.VerticalLayout(_battlefield, 8, new RectOffset(6, 6, 6, 6), controlHeight: true);
             UIFactory.FitToContent(_battlefield, ContentSizeFitter.FitMode.Unconstrained, ContentSizeFitter.FitMode.PreferredSize);
             battlefieldScroll.viewport = battlefieldViewport;
             battlefieldScroll.content = _battlefield;
 
-            _actionPanel = UIFactory.Panel("Action Panel", middle, new Color(0.12f, 0.12f, 0.16f, 0.9f));
-            var actionPin = _actionPanel.gameObject.AddComponent<LayoutElement>();
-            actionPin.preferredWidth = 380;
-            actionPin.minWidth = 380;
-            var actionLayout = UIFactory.VerticalLayout(_actionPanel, 8, new RectOffset(12, 12, 12, 12), controlHeight: true);
+            // This behaves like a flexbox side column: it has a readable minimum
+            // width, receives a share of extra width, and independently scrolls
+            // vertically when the window is short. Phase controls can therefore
+            // never disappear underneath the hand dock.
+            var actionShell = UIFactory.Panel("Action Panel", middle, new Color(0.12f, 0.12f, 0.16f, 0.9f));
+            AddResponsiveWidth(actionShell, 280, 340, 1);
+
+            _actionViewport = UIFactory.Panel("Action Viewport", actionShell, Color.clear);
+            _actionViewport.gameObject.AddComponent<RectMask2D>();
+            UIFactory.Stretch(_actionViewport);
+
+            _actionScroll = actionShell.gameObject.AddComponent<ScrollRect>();
+            _actionScroll.horizontal = false;
+            _actionScroll.vertical = true;
+            _actionScroll.scrollSensitivity = 34f;
+            _actionScroll.movementType = ScrollRect.MovementType.Clamped;
+
+            _actionPanel = UIFactory.Group("Action Content", _actionViewport);
+            _actionPanel.anchorMin = new Vector2(0, 1);
+            _actionPanel.anchorMax = new Vector2(1, 1);
+            _actionPanel.pivot = new Vector2(0.5f, 1);
+            _actionPanel.sizeDelta = Vector2.zero;
+            var actionLayout = UIFactory.VerticalLayout(
+                _actionPanel, 8, new RectOffset(12, 12, 12, 12), controlHeight: true);
             actionLayout.childAlignment = TextAnchor.UpperLeft;
+            UIFactory.FitToContent(
+                _actionPanel,
+                ContentSizeFitter.FitMode.Unconstrained,
+                ContentSizeFitter.FitMode.PreferredSize);
+            _actionScroll.viewport = _actionViewport;
+            _actionScroll.content = _actionPanel;
 
             // Bottom dock: your own stat bar, then the collapsible hand. Its
             // height is recomputed in RefreshHand every time the tray opens or
@@ -519,6 +572,14 @@ namespace Indoctrination.Net
 
         private void RefreshGame(NetworkGameManager manager, GameView view)
         {
+            if (!string.Equals(_renderedPhase, view.phase, StringComparison.Ordinal))
+            {
+                // Keep the battlefield and the phase action usable by default.
+                // The hand opens automatically only when it becomes actionable.
+                _handExpanded = view.phase == nameof(TurnPhase.Buy);
+                _renderedPhase = view.phase;
+            }
+
             _statusText.text = view.isGameOver
                 ? $"<b>{GameOverHeadline(view)}</b>"
                 : $"{view.phase}   draft {view.draftNumber}, turn {view.turnInRound}/{GameSettings.TurnsPerRound}   " +
@@ -527,6 +588,10 @@ namespace Indoctrination.Net
             RefreshTopBar(view);
             RefreshBattlefield(manager, view);
             RefreshActionPanel(manager, view);
+            // Dynamic phase contents replace the old children in-place. Always
+            // return the scroll position to the primary action at the top.
+            _actionPanel.anchoredPosition = new Vector2(_actionPanel.anchoredPosition.x, 0f);
+            _actionScroll.verticalNormalizedPosition = 1f;
             RefreshHand(view);
         }
 
@@ -552,7 +617,8 @@ namespace Indoctrination.Net
                     _battlefield, $"Draft Zone ({view.draftZone.Length})", view.draftZone,
                     card => isMyPick && IsDraftable(view, card),
                     card => manager.RequestDraftRpc(card.instanceId),
-                    card => DraftMarkTag(view, card));
+                    card => DraftMarkTag(view, card),
+                    DraftZoneLeftInset);
             }
 
             foreach (var player in view.players.Where(p => p.playerId != view.viewerPlayerId))
@@ -571,10 +637,12 @@ namespace Indoctrination.Net
 
         private void BuildCardRow(
             Transform parent, string label, CardView[] cards,
-            Func<CardView, bool> isClickable, Action<CardView> onClick, Func<CardView, string> tagFor)
+            Func<CardView, bool> isClickable, Action<CardView> onClick, Func<CardView, string> tagFor,
+            int leftInset = 0)
         {
             var row = UIFactory.Group(label, parent);
-            var rowLayout = UIFactory.VerticalLayout(row, 4, new RectOffset(0, 0, 0, 0), controlHeight: true);
+            var rowLayout = UIFactory.VerticalLayout(
+                row, 4, new RectOffset(leftInset, 0, 0, 0), controlHeight: true);
             rowLayout.childAlignment = TextAnchor.UpperLeft;
             var rowPin = row.gameObject.AddComponent<LayoutElement>();
             rowPin.preferredHeight = BattlefieldRowHeight;
@@ -811,13 +879,35 @@ namespace Indoctrination.Net
 
         private void RenderRolling(NetworkGameManager manager, GameView view)
         {
+            var you = view.Viewer;
+            if (you is { isAlive: true, hasRolled: false })
+            {
+                UIFactory.ButtonWithLabel(
+                    "Roll", _actionPanel, "ROLL DIE", () => manager.RequestRollRpc(),
+                    new Color(0.22f, 0.5f, 0.24f), width: 240, height: 54);
+            }
+
+            var rolled = view.players
+                .Where(player => player.isAlive && player.hasRolled)
+                .Select(player => $"{player.name}: {player.primaryDie}")
+                .ToList();
+
+            ActionLabel(rolled.Count == 0
+                ? "No dice rolled yet."
+                : $"Rolled so far: {string.Join("  |  ", rolled)}");
+
             if (!view.diceRolled)
             {
-                UIFactory.ButtonWithLabel("Roll", _actionPanel, "Roll Dice", () => manager.RequestRollRpc(), width: 200);
+                var waiting = view.players
+                    .Where(player => player.isAlive && !player.hasRolled)
+                    .Select(player => player.name);
+                ActionLabel($"Waiting to roll: {string.Join(", ", waiting)}");
                 return;
             }
 
-            var you = view.Viewer;
+            ActionLabel("All dice are down. Ready up to see which units activate.");
+            RenderActivationPreview(view);
+
             if (you != null && you.compound.Any(c => c.definitionId == CardIds.TryAgain))
             {
                 UIFactory.ButtonWithLabel("Reroll", _actionPanel, "Try Again (reroll)",
@@ -845,6 +935,39 @@ namespace Indoctrination.Net
 
             ActionLabel("You rolled highest. Take one resource:");
             RenderColorButtons(color => manager.RequestClaimHighRollResourceRpc((int)color));
+        }
+
+        private void RenderActivationPreview(GameView view)
+        {
+            var rolledValues = view.players
+                .Where(player => player.isAlive && player.hasRolled)
+                .Select(player => player.primaryDie)
+                .ToList();
+            var activations = new List<string>();
+
+            foreach (var player in view.players.Where(player => player.isAlive))
+            {
+                foreach (var card in player.compound)
+                {
+                    if (!CardDatabase.Instance.TryGet(card.definitionId, out var definition)
+                        || definition.Type != CardType.Unit)
+                    {
+                        continue;
+                    }
+
+                    var triggerCount = rolledValues.Count(value => definition.ActivationNumbers.Contains(value));
+                    if (triggerCount > 0)
+                    {
+                        activations.Add(
+                            $"{player.name}: {definition.Title}" +
+                            (triggerCount > 1 ? $" (x{triggerCount})" : ""));
+                    }
+                }
+            }
+
+            ActionLabel(activations.Count == 0
+                ? "No Units activate from these primary-die results."
+                : $"Will activate:\n{string.Join("\n", activations)}", 13);
         }
 
         private void RenderActivation(GameView view)
@@ -980,6 +1103,11 @@ namespace Indoctrination.Net
             if (!you.isAlive)
             {
                 ActionLabel("You are out of the game. Watching the rest play out.", 13);
+                return;
+            }
+
+            if (view.phase == nameof(TurnPhase.Rolling) && !view.diceRolled)
+            {
                 return;
             }
 
@@ -1191,6 +1319,14 @@ namespace Indoctrination.Net
         {
             var element = rect.gameObject.AddComponent<LayoutElement>();
             element.flexibleWidth = 1;
+        }
+
+        private static void AddResponsiveWidth(Component rect, float minWidth, float preferredWidth, float flexGrow)
+        {
+            var element = rect.gameObject.GetComponent<LayoutElement>() ?? rect.gameObject.AddComponent<LayoutElement>();
+            element.minWidth = minWidth;
+            element.preferredWidth = preferredWidth;
+            element.flexibleWidth = flexGrow;
         }
 
         private static void AddFlexibleHeight(Component rect)

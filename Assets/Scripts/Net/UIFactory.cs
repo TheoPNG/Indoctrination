@@ -30,7 +30,12 @@ namespace Indoctrination.Net
 
             var scaler = go.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080);
+            scaler.referenceResolution = new Vector2(1280, 720);
+            // Treat the reference resolution like a responsive CSS viewport.
+            // Balancing width and height keeps controls readable in both the main
+            // Game view and Unity Multiplayer Player windows; the board itself
+            // now flexes and scrolls instead of assuming a 1920-wide desktop.
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight = 0.5f;
 
             if (UnityEngine.Object.FindAnyObjectByType<EventSystem>() == null)

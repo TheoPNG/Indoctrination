@@ -55,6 +55,7 @@ namespace Indoctrination.Net
                     health = player.Health,
                     followers = player.Followers,
                     primaryDie = player.PrimaryDie,
+                    hasRolled = game.HasRolled(player.PlayerId),
                     isAlive = player.IsAlive,
                     red = player.Resources[ResourceColor.Red],
                     green = player.Resources[ResourceColor.Green],

@@ -114,6 +114,7 @@ namespace Indoctrination.Net
         public int health;
         public int followers;
         public int primaryDie;
+        public bool hasRolled;
         public bool isAlive;
 
         public int red;

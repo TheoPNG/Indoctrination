@@ -31,7 +31,7 @@ namespace Indoctrination.Core
 
         // Turn-scoped flags, all cleared by AdvancePhase. Without these a player
         // can simply ask for the same free resource over and over.
-        private bool _diceRolled;
+        private readonly HashSet<int> _playersWhoRolled = new();
         private bool _highRollClaimed;
         private readonly HashSet<int> _resourcesCollected = new();
         private readonly HashSet<int> _playersReady = new();
@@ -406,37 +406,59 @@ namespace Indoctrination.Core
 
         // -------------------------------------------------------------- Rolling
 
-        /// <summary>
-        /// Rolls every living player's primary die and returns the player who rolled
-        /// the highest, or null if the highest roll was tied. That player takes one
-        /// resource of their choice via <see cref="ClaimHighRollResource"/>.
-        /// </summary>
-        /// <summary>Whether this turn's dice have already been rolled.</summary>
-        public bool DiceRolled => _diceRolled;
+        /// <summary>Whether every living player has rolled this turn.</summary>
+        public bool DiceRolled => LivingPlayers.All(player => HasRolled(player.PlayerId));
 
+        public bool HasRolled(int playerId) => _playersWhoRolled.Contains(playerId);
+
+        /// <summary>Rolls one player's die when they press Roll Die.</summary>
+        public PlayerState RollPrimaryDie(int playerId)
+        {
+            RequirePhase(TurnPhase.Rolling);
+            RequireNoPendingChoice();
+            var player = RequireAlive(playerId);
+
+            if (HasRolled(playerId))
+            {
+                throw new InvalidOperationException("You have already rolled this turn.");
+            }
+
+            RollPrimaryDieFor(player);
+            return player;
+        }
+
+        /// <summary>
+        /// Rolls every living player who has not rolled yet. Used by rules tests
+        /// and by the phase-timeout fallback so an absent player cannot stall the
+        /// table forever.
+        /// </summary>
         public PlayerState RollPrimaryDice()
         {
             RequirePhase(TurnPhase.Rolling);
 
-            if (_diceRolled)
+            if (DiceRolled)
             {
                 throw new InvalidOperationException("The dice have already been rolled this turn.");
             }
 
-            _diceRolled = true;
-
-            foreach (var player in LivingPlayers)
+            foreach (var player in LivingPlayers.Where(player => !HasRolled(player.PlayerId)).ToList())
             {
-                player.SetPrimaryDie(_random.Next(1, GameSettings.DieSides + 1));
-
-                // Standardized Uniforms buys a die nobody else's units answer to.
-                if (player.HasInPlay(CardIds.StandardizedUniforms))
-                {
-                    AddPrivateDie(player);
-                }
+                RollPrimaryDieFor(player);
             }
 
             return HighestUniqueRoller();
+        }
+
+        private void RollPrimaryDieFor(PlayerState player)
+        {
+            player.SetPrimaryDie(_random.Next(1, GameSettings.DieSides + 1));
+            _playersWhoRolled.Add(player.PlayerId);
+
+            // Standardized Uniforms buys a die nobody else's units answer to.
+            if (player.HasInPlay(CardIds.StandardizedUniforms))
+            {
+                AddPrivateDie(player);
+            }
         }
 
         private PlayerState HighestUniqueRoller()
@@ -455,9 +477,9 @@ namespace Indoctrination.Core
             RequireNoPendingChoice();
             RequireAlive(playerId);
 
-            if (!_diceRolled)
+            if (!DiceRolled)
             {
-                throw new InvalidOperationException("Nobody has rolled yet.");
+                throw new InvalidOperationException("Not everyone has rolled yet.");
             }
 
             if (_highRollClaimed)
@@ -750,6 +772,11 @@ namespace Indoctrination.Core
             // Confirms the player is still in the game; the dead are not waited on.
             RequireAlive(playerId);
 
+            if (Phase == TurnPhase.Rolling && ready && !DiceRolled)
+            {
+                throw new InvalidOperationException("Every living player must roll before the table can activate units.");
+            }
+
             if (ready)
             {
                 _playersReady.Add(playerId);
@@ -797,6 +824,13 @@ namespace Indoctrination.Core
                     break;
 
                 case TurnPhase.Rolling:
+                    // A phase timeout rolls only the missing dice so a disconnected
+                    // player cannot strand everybody in Rolling.
+                    if (!DiceRolled)
+                    {
+                        RollPrimaryDice();
+                    }
+
                     Phase = TurnPhase.Activation;
                     QueueActivations();
                     break;
@@ -827,7 +861,7 @@ namespace Indoctrination.Core
         private void EndOfTurn()
         {
             _endOfTurnPending = false;
-            _diceRolled = false;
+            _playersWhoRolled.Clear();
             _highRollClaimed = false;
             _resourcesCollected.Clear();
             _playersReady.Clear();
@@ -1236,9 +1270,9 @@ namespace Indoctrination.Core
             RequirePhase(TurnPhase.Rolling);
             RequireNoPendingChoice();
 
-            if (!_diceRolled)
+            if (!DiceRolled)
             {
-                throw new InvalidOperationException("Nobody has rolled yet.");
+                throw new InvalidOperationException("Not everyone has rolled yet.");
             }
 
             var player = RequireAlive(playerId);
@@ -1276,9 +1310,9 @@ namespace Indoctrination.Core
                 throw new InvalidOperationException("You have no card that lets you reroll.");
             }
 
-            if (!_diceRolled)
+            if (!DiceRolled)
             {
-                throw new InvalidOperationException("Nobody has rolled yet.");
+                throw new InvalidOperationException("Not everyone has rolled yet.");
             }
 
             if (!TakeOncePerTurn($"reroll:{playerId}"))

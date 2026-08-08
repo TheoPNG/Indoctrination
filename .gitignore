@@ -87,3 +87,10 @@ Tools/**/obj/
 
 # Smoke test output from Tools/SmokeTest/run.sh
 Tools/SmokeTest/last-run.log
+
+# Mono crash dumps Unity drops in the project root
+mono_crash.*.blob
+
+# PlayMode test output from Tools/PlayModeTests/run.sh
+Tools/PlayModeTests/last-run.log
+Tools/PlayModeTests/results.xml

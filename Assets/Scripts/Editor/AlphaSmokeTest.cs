@@ -8,6 +8,7 @@ using Unity.Netcode;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Indoctrination.EditorTools
 {
@@ -164,7 +165,9 @@ namespace Indoctrination.EditorTools
                 Check("the whole interface builds without throwing", board != null);
                 Check("and produced a canvas", UnityEngine.Object.FindAnyObjectByType<Canvas>() != null);
 
+                CheckDraftTitlesAndRollingControls(board);
                 DriveViewsThroughTheBoard(board);
+                CheckBoardLayout();
             }
             catch (Exception e)
             {
@@ -178,6 +181,159 @@ namespace Indoctrination.EditorTools
                     UnityEngine.Object.DestroyImmediate(host);
                 }
             }
+        }
+
+        /// <summary>
+        /// Reproduces the reported path exactly: render the dealt draft, verify
+        /// every card carries readable title text, take picks until three cards
+        /// remain, and verify every player perspective receives Roll Die.
+        /// </summary>
+        private static void CheckDraftTitlesAndRollingControls(BoardUI board)
+        {
+            var game = new GameState(new[] { "A", "B", "C" }, CardDatabase.Instance.All, randomSeed: 197);
+            game.BeginDraft();
+            board.RenderForTesting(GameViewBuilder.Build(game, 0));
+
+            var canvas = UnityEngine.Object.FindAnyObjectByType<Canvas>();
+            LayoutRebuilder.ForceRebuildLayoutImmediate((RectTransform)canvas.transform);
+            Canvas.ForceUpdateCanvases();
+
+            var renderedCards = UnityEngine.Object.FindObjectsByType<BoardCardView>()
+                .Where(card => card.Card != null)
+                .ToList();
+            var titleFailures = new List<string>();
+
+            foreach (var card in renderedCards)
+            {
+                var title = card.transform.Find("Title")?.GetComponent<Text>();
+                CardDatabase.Instance.TryGet(card.Card.definitionId, out var definition);
+                var expected = definition?.Title ?? card.Card.definitionId;
+                var cardRect = ((RectTransform)card.transform).rect;
+                var titleBounds = title == null
+                    ? new Bounds()
+                    : RectTransformUtility.CalculateRelativeRectTransformBounds(
+                        card.transform, title.rectTransform);
+
+                if (title == null
+                    || title.text != expected
+                    || title.font == null
+                    || title.fontSize < 18
+                    || title.color.a < 0.99f
+                    || title.rectTransform.rect.width <= 0f
+                    || title.rectTransform.rect.height < 72f
+                    || titleBounds.min.x < cardRect.xMin - 0.1f
+                    || titleBounds.max.x > cardRect.xMax + 0.1f
+                    || titleBounds.min.y < cardRect.yMin - 0.1f
+                    || titleBounds.max.y > cardRect.yMax + 0.1f)
+                {
+                    titleFailures.Add($"{expected}: '{title?.text ?? "missing"}' " +
+                                      $"{title?.rectTransform.rect.width ?? 0:0}x" +
+                                      $"{title?.rectTransform.rect.height ?? 0:0}");
+                }
+            }
+
+            Check("every draft card renders its full title in a visible text row",
+                  renderedCards.Count == game.DraftZone.Count && titleFailures.Count == 0,
+                  titleFailures.Count == 0
+                      ? $"{renderedCards.Count} titles"
+                      : string.Join(" | ", titleFailures));
+
+            while (game.CurrentDrafterId is int drafter)
+            {
+                game.DraftCard(drafter, game.DraftZone[0].InstanceId);
+            }
+
+            Check("three leftovers close the draft into Rolling",
+                  game.Phase == TurnPhase.Rolling
+                  && game.DraftZone.Count == 0
+                  && game.Discard.Count == GameSettings.UndraftedCardsDiscarded,
+                  $"{game.Phase}, zone {game.DraftZone.Count}, discard {game.Discard.Count}");
+
+            foreach (var player in game.Players)
+            {
+                board.RenderForTesting(GameViewBuilder.Build(game, player.PlayerId));
+                var gameRoot = canvas.transform.Find("Game Root") as RectTransform;
+                var actionViewport = gameRoot?.Find("Middle Area/Action Panel/Action Viewport") as RectTransform;
+                var actionContent = actionViewport?.Find("Action Content") as RectTransform;
+                var roll = actionContent?.Find("Roll") as RectTransform;
+                LayoutRebuilder.ForceRebuildLayoutImmediate(gameRoot);
+                Canvas.ForceUpdateCanvases();
+
+                var rollBounds = roll == null || actionViewport == null
+                    ? new Bounds()
+                    : RectTransformUtility.CalculateRelativeRectTransformBounds(actionViewport, roll);
+                var viewportRect = actionViewport?.rect ?? new Rect();
+                var rollIsVisible = roll != null
+                    && roll.gameObject.activeInHierarchy
+                    && roll.rect.width >= 200f
+                    && roll.rect.height >= 50f
+                    && rollBounds.min.x >= viewportRect.xMin - 0.1f
+                    && rollBounds.max.x <= viewportRect.xMax + 0.1f
+                    && rollBounds.min.y >= viewportRect.yMin - 0.1f
+                    && rollBounds.max.y <= viewportRect.yMax + 0.1f;
+                Check($"player {player.PlayerId} perspective gets Roll Die immediately",
+                      rollIsVisible,
+                      roll == null
+                          ? "button missing"
+                          : $"{roll.rect.width:0}x{roll.rect.height:0}, " +
+                            $"viewport y {viewportRect.yMin:0}..{viewportRect.yMax:0}, " +
+                            $"button y {rollBounds.min.y:0}..{rollBounds.max.y:0}");
+
+                var handRow = gameRoot?.Find("Bottom Dock/Hand Row");
+                Check($"player {player.PlayerId} enters Rolling with the hand collapsed",
+                      handRow != null && !handRow.gameObject.activeSelf);
+            }
+        }
+
+        /// <summary>
+        /// Proves the middle row is using the widths its LayoutElements request.
+        /// If its HorizontalLayoutGroup stops controlling child width, Unity gives
+        /// both panels their 100-unit RectTransform defaults and piles the entire
+        /// playable board against the left edge.
+        /// </summary>
+        private static void CheckBoardLayout()
+        {
+            var canvas = UnityEngine.Object.FindAnyObjectByType<Canvas>();
+            var gameRoot = canvas?.transform.Find("Game Root") as RectTransform;
+            var middle = gameRoot?.Find("Middle Area") as RectTransform;
+            var battlefield = middle?.Find("Battlefield Panel") as RectTransform;
+            var actions = middle?.Find("Action Panel") as RectTransform;
+            var actionViewport = actions?.Find("Action Viewport") as RectTransform;
+            var actionContent = actionViewport?.Find("Action Content") as RectTransform;
+            var actionScroll = actions?.GetComponent<ScrollRect>();
+
+            if (gameRoot == null || middle == null || battlefield == null || actions == null
+                || actionViewport == null || actionContent == null || actionScroll == null)
+            {
+                Check("the battlefield and controls have a measurable layout", false);
+                return;
+            }
+
+            LayoutRebuilder.ForceRebuildLayoutImmediate(gameRoot);
+            Canvas.ForceUpdateCanvases();
+
+            Check("the battlefield receives the larger flex share",
+                  battlefield.rect.width > actions.rect.width
+                  && battlefield.rect.width >= 360f,
+                  $"battlefield {battlefield.rect.width:0}, actions {actions.rect.width:0}");
+            Check("the action panel keeps a readable responsive width",
+                  actions.rect.width >= 280f,
+                  $"{actions.rect.width:0} wide");
+            Check("the action panel scrolls vertically inside a clipped viewport",
+                  actionScroll.vertical
+                  && !actionScroll.horizontal
+                  && actionViewport.GetComponent<RectMask2D>() != null
+                  && actionScroll.viewport == actionViewport
+                  && actionScroll.content == actionContent,
+                  $"viewport {actionViewport.rect.width:0}x{actionViewport.rect.height:0}");
+
+            var battlefieldBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(middle, battlefield);
+            var actionBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(middle, actions);
+            Check("the battlefield and controls remain inside the middle frame",
+                  battlefieldBounds.min.x >= middle.rect.xMin - 0.1f
+                  && actionBounds.max.x <= middle.rect.xMax + 0.1f,
+                  $"frame {middle.rect.xMin:0}..{middle.rect.xMax:0}, " +
+                  $"content {battlefieldBounds.min.x:0}..{actionBounds.max.x:0}");
         }
 
         /// <summary>

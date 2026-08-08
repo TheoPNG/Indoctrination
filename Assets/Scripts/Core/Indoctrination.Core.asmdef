@@ -1,0 +1,6 @@
+{
+    "name": "Indoctrination.Core",
+    "rootNamespace": "Indoctrination.Core",
+    "references": [],
+    "autoReferenced": true
+}
