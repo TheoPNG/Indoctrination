@@ -109,8 +109,23 @@ namespace Indoctrination.Core
 
         /// <summary>
         /// Fills the draft zone and works out the snake order for this draft.
+        /// Only needed to open the game - every later draft is dealt by the turn
+        /// loop itself when it comes back around.
         /// </summary>
         public void BeginDraft()
+        {
+            DealDraft();
+            ResolveEffects();
+        }
+
+        /// <summary>
+        /// Deals the zone and queues the draft Blessings, without draining the
+        /// effect queue. Kept separate from <see cref="BeginDraft"/> because the
+        /// turn loop reaches a new draft from inside <see cref="ResolveEffects"/>,
+        /// which must not be re-entered - the queued effects are picked up by the
+        /// loop that is already running.
+        /// </summary>
+        private void DealDraft()
         {
             RequirePhase(TurnPhase.Draft);
 
@@ -126,16 +141,35 @@ namespace Indoctrination.Core
                 FirstDrafterIndex = _players.IndexOf(eager);
             }
 
-            var zoneSize = GameSettings.DraftZoneSize(_players.Count);
+            // Sized by who is still playing, not who started, so a table that has
+            // lost a leader keeps the same three picks each rather than drowning
+            // the survivors in cards. The floor matches the minimum table size;
+            // a game down to one leader has already ended before reaching here.
+            var livingCount = Math.Max(GameSettings.MinPlayers, LivingPlayers.Count());
+            var zoneSize = GameSettings.DraftZoneSize(livingCount);
             for (var i = 0; i < zoneSize; i++)
             {
-                _draftZone.Add(DrawFromDeck());
+                var card = DrawFromDeck();
+                if (card == null)
+                {
+                    break;
+                }
+
+                _draftZone.Add(card);
             }
 
             _draftOrder = BuildSnakeOrder();
 
+            // Too few cards left to give anybody a pick. The round goes ahead
+            // with the boards people already have rather than stalling on a
+            // draft that cannot happen.
+            if (_draftOrder.Count == 0)
+            {
+                CloseDraft();
+                return;
+            }
+
             QueueDraftSetupTriggers();
-            ResolveEffects();
         }
 
         /// <summary>
@@ -197,12 +231,23 @@ namespace Indoctrination.Core
         /// <summary>
         /// The snake draft order: the starting player's seat order reverses after
         /// every pass, e.g. A B C, C B A, A B C.
+        ///
+        /// Only leaders still in the game get picks. A dead player left in the
+        /// order would stop the draft dead, since the table waits on whoever's
+        /// turn it is and they can never take one.
         /// </summary>
         private List<int> BuildSnakeOrder()
         {
             var seats = Enumerable.Range(0, _players.Count)
-                .Select(offset => _players[(FirstDrafterIndex + offset) % _players.Count].PlayerId)
+                .Select(offset => _players[(FirstDrafterIndex + offset) % _players.Count])
+                .Where(player => player.IsAlive)
+                .Select(player => player.PlayerId)
                 .ToList();
+
+            if (seats.Count == 0)
+            {
+                return new List<int>();
+            }
 
             var picksAvailable = _draftZone.Count - GameSettings.UndraftedCardsDiscarded;
             var order = new List<int>(picksAvailable);
@@ -225,13 +270,41 @@ namespace Indoctrination.Core
         }
 
         /// <summary>Whose turn it is to draft, or null when the draft is over.</summary>
-        public int? CurrentDrafterId =>
-            _draftPickIndex < _draftOrder.Count ? _draftOrder[_draftPickIndex] : null;
+        /// <summary>
+        /// Whose turn it is to draft, or null when the draft is over.
+        ///
+        /// Dead leaders are stepped over rather than waited on. The order is
+        /// fixed when the zone is dealt, but damage queued at the end of the
+        /// previous turn - a flame counter, a retaliation - resolves afterwards
+        /// and can take somebody out who is already in the running order.
+        /// </summary>
+        public int? CurrentDrafterId
+        {
+            get
+            {
+                var index = CurrentDraftIndex();
+                return index < 0 ? null : _draftOrder[index];
+            }
+        }
+
+        private int CurrentDraftIndex()
+        {
+            for (var i = _draftPickIndex; i < _draftOrder.Count; i++)
+            {
+                if (GetPlayer(_draftOrder[i]).IsAlive)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
 
         public void DraftCard(int playerId, int cardInstanceId)
         {
             RequirePhase(TurnPhase.Draft);
             RequireNoPendingChoice();
+            RequireAlive(playerId);
 
             if (CurrentDrafterId != playerId)
             {
@@ -257,7 +330,7 @@ namespace Indoctrination.Core
 
             _draftZone.Remove(card);
             GetPlayer(playerId).Hand.Add(card);
-            _draftPickIndex++;
+            _draftPickIndex = CurrentDraftIndex() + 1;
 
             if (CurrentDrafterId == null)
             {
@@ -267,6 +340,17 @@ namespace Indoctrination.Core
 
         /// <summary>The last three cards go to the discard pile and play begins.</summary>
         private void EndDraft()
+        {
+            CloseDraft();
+            ResolveEffects();
+        }
+
+        /// <summary>
+        /// Clears the zone away and opens the first turn. Separate from
+        /// <see cref="EndDraft"/> so it can be reached from inside
+        /// <see cref="ResolveEffects"/>, which must not be re-entered.
+        /// </summary>
+        private void CloseDraft()
         {
             // The trap is checked the moment the last pick is taken. All Parts of
             // the Animal rummages through the leftovers afterwards, and salvaging
@@ -292,7 +376,6 @@ namespace Indoctrination.Core
             TurnInRound = 1;
             Phase = TurnPhase.Rolling;
             QueueStartOfTurnTriggers();
-            ResolveEffects();
         }
 
         /// <summary>
@@ -369,6 +452,8 @@ namespace Indoctrination.Core
         public void ClaimHighRollResource(int playerId, ResourceColor color)
         {
             RequirePhase(TurnPhase.Rolling);
+            RequireNoPendingChoice();
+            RequireAlive(playerId);
 
             if (!_diceRolled)
             {
@@ -412,6 +497,8 @@ namespace Indoctrination.Core
         public void CollectResources(int playerId, IReadOnlyList<ResourceColor> choices)
         {
             RequirePhase(TurnPhase.Resource);
+            RequireNoPendingChoice();
+            RequireAlive(playerId);
 
             var allowance = ResourcesPerTurnFor(playerId);
             if (choices.Count != allowance)
@@ -508,7 +595,7 @@ namespace Indoctrination.Core
             RequirePhase(TurnPhase.Buy);
             RequireNoPendingChoice();
 
-            var player = GetPlayer(playerId);
+            var player = RequireAlive(playerId);
             var card = player.Hand.FirstOrDefault(c => c.InstanceId == cardInstanceId);
             if (card == null)
             {
@@ -612,8 +699,9 @@ namespace Indoctrination.Core
         public void RecycleCard(int playerId, int cardInstanceId)
         {
             RequirePhase(TurnPhase.Buy);
+            RequireNoPendingChoice();
 
-            var player = GetPlayer(playerId);
+            var player = RequireAlive(playerId);
             var card = player.Hand.FirstOrDefault(c => c.InstanceId == cardInstanceId);
             if (card == null)
             {
@@ -659,8 +747,8 @@ namespace Indoctrination.Core
                 throw new InvalidOperationException($"The {Phase} phase does not wait on ready checks.");
             }
 
-            // Confirms the player exists.
-            GetPlayer(playerId);
+            // Confirms the player is still in the game; the dead are not waited on.
+            RequireAlive(playerId);
 
             if (ready)
             {
@@ -778,7 +866,11 @@ namespace Indoctrination.Core
                 return;
             }
 
+            // Straight into the next draft. Dealing it here rather than leaving
+            // the game sitting in a Draft phase with an empty zone means the rules
+            // engine never needs an outside caller to get it unstuck.
             Phase = TurnPhase.Draft;
+            DealDraft();
         }
 
         // ------------------------------------------------------------- Game over
@@ -804,9 +896,19 @@ namespace Indoctrination.Core
             }
         }
 
+        /// <summary>
+        /// Whether the game ended with nobody left standing. Cards that hit the
+        /// whole table at once - Friend of the Beasts, Bloody Mooner, a flame
+        /// counter burning out - can take the last two leaders down together.
+        /// </summary>
+        public bool IsDraw => Phase == TurnPhase.GameOver && Winner == null;
+
         private bool CheckForGameOver()
         {
-            if (Winner == null)
+            // No survivors is just as final as a winner, and has to end the game
+            // too: with nobody alive there is no one left to roll, draft, or be
+            // asked anything, so play cannot continue.
+            if (Winner == null && LivingPlayers.Any())
             {
                 return false;
             }
@@ -933,6 +1035,11 @@ namespace Indoctrination.Core
         {
             var player = GetPlayer(playerId);
             var card = DrawFromDeck();
+            if (card == null)
+            {
+                return null;
+            }
+
             player.Hand.Add(card);
 
             EffectModifiers.AfterCardDrawn(this, player);
@@ -1080,7 +1187,7 @@ namespace Indoctrination.Core
         {
             RequireNoPendingChoice();
 
-            var player = GetPlayer(playerId);
+            var player = RequireAlive(playerId);
             var chef = player.Compound.FirstOrDefault(
                 c => c.InstanceId == cardInstanceId && c.Definition.Id == CardIds.SuspiciousChef);
 
@@ -1134,7 +1241,7 @@ namespace Indoctrination.Core
                 throw new InvalidOperationException("Nobody has rolled yet.");
             }
 
-            var player = GetPlayer(playerId);
+            var player = RequireAlive(playerId);
             var baal = player.Compound.FirstOrDefault(
                 c => c.Definition.Id == CardIds.BaalTheManipulator && c.GetCounter(Counters.Scheme) > 0);
 
@@ -1162,7 +1269,7 @@ namespace Indoctrination.Core
             RequirePhase(TurnPhase.Rolling);
             RequireNoPendingChoice();
 
-            var player = GetPlayer(playerId);
+            var player = RequireAlive(playerId);
 
             if (!player.HasInPlay(CardIds.TryAgain))
             {
@@ -1247,7 +1354,10 @@ namespace Indoctrination.Core
             // stopping early is survivable in a way that hanging the server is not.
             var budget = GameSettings.MaxEffectStepsPerResolution;
 
-            while (PendingChoice == null && Phase != TurnPhase.GameOver)
+            // The game-over test runs every time round, and on the way in. Damage
+            // dealt outside an effect - a flame counter burning out, a direct hit
+            // - would otherwise go unnoticed until something else happened to ask.
+            while (PendingChoice == null && !CheckForGameOver())
             {
                 if (budget-- <= 0)
                 {
@@ -1260,6 +1370,14 @@ namespace Indoctrination.Core
                 {
                     if (_effectQueue.Count == 0)
                     {
+                        // Damage that resolved after the zone was dealt can leave
+                        // nobody alive who is still owed a pick.
+                        if (Phase == TurnPhase.Draft && _draftOrder.Count > 0 && CurrentDrafterId == null)
+                        {
+                            CloseDraft();
+                            continue;
+                        }
+
                         if (!_endOfTurnPending)
                         {
                             return;
@@ -1295,6 +1413,18 @@ namespace Indoctrination.Core
                 // two-player games are not pestered with pointless prompts.
                 if (request == null || request.Answered)
                 {
+                    continue;
+                }
+
+                // An effect can kill the very player it is about to question -
+                // Revive the Forgotten replays a card out of the discard, and that
+                // card can finish its own controller off. A leader who is out of
+                // the game makes no more decisions, so the rest of the effect is
+                // abandoned rather than left waiting for an answer that can never come.
+                if (!GetPlayer(request.AskedOfPlayerId).IsAlive)
+                {
+                    _resolving = null;
+                    CheckForGameOver();
                     continue;
                 }
 
@@ -1361,6 +1491,53 @@ namespace Indoctrination.Core
         public void AnswerYesNo(int playerId, bool yes)
         {
             RequireChoiceFrom(playerId, ChoiceKind.YesNo).AnswerYesNo(yes);
+            Answered();
+        }
+
+        /// <summary>
+        /// Answers the open question on behalf of whoever it was put to, for a
+        /// player who has stopped responding - otherwise one dropped connection
+        /// stops the table forever, since nothing may happen while a card waits.
+        ///
+        /// Every default is the passive one: decline the offer, take the smallest
+        /// number, pick the first target. An absent player should never have an
+        /// aggressive move or a spend made in their name.
+        /// </summary>
+        public void AnswerPendingChoiceWithDefault()
+        {
+            var choice = PendingChoice;
+            if (choice == null)
+            {
+                return;
+            }
+
+            switch (choice.Kind)
+            {
+                case ChoiceKind.Player:
+                    choice.AnswerPlayer(choice.PlayerOptions[0]);
+                    break;
+
+                case ChoiceKind.Card:
+                    choice.AnswerCard(choice.CardOptions[0]);
+                    break;
+
+                case ChoiceKind.Color:
+                    choice.AnswerColor(choice.ColorOptions.Count > 0 ? choice.ColorOptions[0] : ResourceColor.Red);
+                    break;
+
+                case ChoiceKind.Option:
+                    choice.AnswerOption(choice.Options[0]);
+                    break;
+
+                case ChoiceKind.YesNo:
+                    choice.AnswerYesNo(false);
+                    break;
+
+                case ChoiceKind.Amount:
+                    choice.AnswerAmount(choice.MinAmount);
+                    break;
+            }
+
             Answered();
         }
 
@@ -1449,11 +1626,22 @@ namespace Indoctrination.Core
 
         // ------------------------------------------------------------- Card flow
 
+        /// <summary>
+        /// Takes the top card, shuffling the discard back in when the deck runs
+        /// out. Returns null once both are empty - with 138 cards and four
+        /// players hoarding hands and compounds, a long game really can exhaust
+        /// the supply, and that is a card nobody draws rather than a crash.
+        /// </summary>
         private CardInstance DrawFromDeck()
         {
             if (_deck.Count == 0)
             {
                 ReshuffleDiscardIntoDeck();
+            }
+
+            if (_deck.Count == 0)
+            {
+                return null;
             }
 
             var card = _deck[^1];
@@ -1465,7 +1653,7 @@ namespace Indoctrination.Core
         {
             if (_discard.Count == 0)
             {
-                throw new InvalidOperationException("No cards left in the deck or discard pile.");
+                return;
             }
 
             _deck.AddRange(_discard);
@@ -1488,6 +1676,22 @@ namespace Indoctrination.Core
             {
                 throw new InvalidOperationException($"Expected the {expected} phase, but the game is in {Phase}.");
             }
+        }
+
+        /// <summary>
+        /// A leader who has been knocked out takes no more actions. Their board
+        /// stays on the table - other cards still read it - but they do not draft,
+        /// buy, collect, or spend anything again.
+        /// </summary>
+        private PlayerState RequireAlive(int playerId)
+        {
+            var player = GetPlayer(playerId);
+            if (!player.IsAlive)
+            {
+                throw new InvalidOperationException($"{player.Name} is out of the game.");
+            }
+
+            return player;
         }
 
         /// <summary>

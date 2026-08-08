@@ -216,9 +216,11 @@ namespace Indoctrination.Net
 
             if (_timerText != null && _gameRoot.gameObject.activeSelf)
             {
-                _timerText.text = view.phase is nameof(TurnPhase.Draft) or nameof(TurnPhase.GameOver)
+                _timerText.text = view.isGameOver || view.phase == nameof(TurnPhase.Draft)
                     ? ""
-                    : $"{_secondsLeft:0}s until phase advances";
+                    : view.pendingChoice != null
+                        ? $"{view.choiceSecondsRemaining:0}s until the card decides for itself"
+                        : $"{_secondsLeft:0}s until phase advances";
             }
         }
 
@@ -484,9 +486,8 @@ namespace Indoctrination.Net
 
         private void RefreshGame(NetworkGameManager manager, GameView view)
         {
-            var winner = view.winnerPlayerId >= 0 ? FindPlayer(view, view.winnerPlayerId) : null;
-            _statusText.text = winner != null
-                ? $"{view.phase}  -  draft {view.draftNumber}, turn {view.turnInRound}/{GameSettings.TurnsPerRound}   <b>{winner.name} wins.</b>"
+            _statusText.text = view.isGameOver
+                ? $"<b>{GameOverHeadline(view)}</b>"
                 : $"{view.phase}   draft {view.draftNumber}, turn {view.turnInRound}/{GameSettings.TurnsPerRound}   " +
                   $"deck {view.deckCount}, discard {view.discardCount}";
 
@@ -673,9 +674,31 @@ namespace Indoctrination.Net
 
         // ------------------------------------------------------- Action panel
 
+        /// <summary>How the game ended, said plainly enough to read at a glance.</summary>
+        private static string GameOverHeadline(GameView view)
+        {
+            if (view.isDraw)
+            {
+                return "Everyone is out. The game is a draw.";
+            }
+
+            var winner = FindPlayer(view, view.winnerPlayerId);
+            var name = winner?.name ?? "Somebody";
+
+            return winner != null && winner.followers >= GameSettings.FollowersToWin
+                ? $"{name} wins with {winner.followers} followers."
+                : $"{name} wins - last leader standing.";
+        }
+
         private void RefreshActionPanel(NetworkGameManager manager, GameView view)
         {
             UIFactory.DestroyChildren(_actionPanel);
+
+            if (view.isGameOver)
+            {
+                RenderGameOver(manager, view);
+                return;
+            }
 
             if (view.pendingChoice != null)
             {
@@ -704,6 +727,37 @@ namespace Indoctrination.Net
 
             RenderCardActions(manager, view);
             RenderReadyCheck(manager, view);
+        }
+
+        /// <summary>
+        /// The end of the game: how it finished, the final standings, and the
+        /// host's offer of another one. Without this the table is left staring at
+        /// a board nothing will ever change again.
+        /// </summary>
+        private void RenderGameOver(NetworkGameManager manager, GameView view)
+        {
+            ActionLabel(GameOverHeadline(view), 17);
+
+            var standings = view.players
+                .OrderByDescending(p => p.followers)
+                .ThenByDescending(p => p.health)
+                .Select(p => $"{p.name}: {p.followers} followers, {p.health} HP{(p.isAlive ? "" : "  (out)")}");
+
+            ActionLabel(string.Join("\n", standings), 14);
+
+            var network = NetworkManager.Singleton;
+            if (network != null && network.IsHost)
+            {
+                UIFactory.ButtonWithLabel("Play Again", _actionPanel, "Play Again",
+                    () => manager.RequestPlayAgainRpc(), new Color(0.2f, 0.4f, 0.2f), 200, 38);
+            }
+            else
+            {
+                ActionLabel("Waiting for the host to start another game.", 13);
+            }
+
+            UIFactory.ButtonWithLabel("Leave", _actionPanel, "Leave",
+                () => NetworkManager.Singleton?.Shutdown(), new Color(0.4f, 0.2f, 0.2f), 200, 32);
         }
 
         private Text ActionLabel(string text, int fontSize = 15)
@@ -877,7 +931,7 @@ namespace Indoctrination.Net
 
         private void RenderReadyCheck(NetworkGameManager manager, GameView view)
         {
-            if (view.phase == nameof(TurnPhase.Draft) || view.winnerPlayerId >= 0)
+            if (view.phase == nameof(TurnPhase.Draft) || view.isGameOver)
             {
                 return;
             }
@@ -885,6 +939,14 @@ namespace Indoctrination.Net
             var you = view.Viewer;
             if (you == null)
             {
+                return;
+            }
+
+            // A leader who is out takes no more actions, so there is nothing for
+            // them to be ready for - and the table is not waiting on them either.
+            if (!you.isAlive)
+            {
+                ActionLabel("You are out of the game. Watching the rest play out.", 13);
                 return;
             }
 

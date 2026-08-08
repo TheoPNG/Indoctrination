@@ -48,8 +48,17 @@ namespace Indoctrination.Net
         /// <summary>Whose pick it is, or -1 outside the draft.</summary>
         public int currentDrafterId = -1;
 
-        /// <summary>The winner, or -1 while the game is still going.</summary>
+        /// <summary>The winner, or -1 while the game is still going - or if it was a draw.</summary>
         public int winnerPlayerId = -1;
+
+        /// <summary>Whether play has finished, however it ended.</summary>
+        public bool isGameOver;
+
+        /// <summary>
+        /// Set when the game ended with nobody left standing, which a winner of
+        /// -1 alone cannot distinguish from a game still in progress.
+        /// </summary>
+        public bool isDraw;
 
         public bool diceRolled;
         public bool highRollResourceClaimed;
@@ -63,6 +72,12 @@ namespace Indoctrination.Net
         /// a fresh view every second.
         /// </summary>
         public float phaseSecondsRemaining;
+
+        /// <summary>
+        /// Seconds left before the open card question answers itself, as of the
+        /// moment this view was sent. Zero when nothing is pending.
+        /// </summary>
+        public float choiceSecondsRemaining;
 
         public CardView[] draftZone = Array.Empty<CardView>();
         public DraftMarkView[] draftMarks = Array.Empty<DraftMarkView>();

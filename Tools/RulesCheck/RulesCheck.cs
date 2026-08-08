@@ -52,10 +52,24 @@ static class RulesCheck
         return list;
     }
 
-    static void Main()
+    static void Main(string[] args)
     {
         var cards = LoadCards(CardDataPath());
         Console.WriteLine($"Loaded {cards.Count} definitions, {cards.Sum(c => c.Count)} physical cards\n");
+
+        // --fuzz [n] plays whole games at random instead of running the rule
+        // checks, for shaking out interactions no hand-written case covers.
+        var fuzzIndex = Array.IndexOf(args, "--fuzz");
+        if (fuzzIndex >= 0)
+        {
+            var games = fuzzIndex + 1 < args.Length && int.TryParse(args[fuzzIndex + 1], out var n) ? n : 500;
+            var seed = Array.IndexOf(args, "--seed") is var s && s >= 0 && s + 1 < args.Length
+                       && int.TryParse(args[s + 1], out var parsedSeed)
+                ? parsedSeed
+                : 1000;
+
+            Environment.Exit(Indoctrination.Tools.Fuzz.Run(cards, games, seed) ? 0 : 1);
+        }
 
         Console.WriteLine("Card data parses:");
         var parsed = 0;
@@ -227,6 +241,7 @@ static class RulesCheck
         CheckEffectResolution(cards);
         CheckSettledCards(cards);
         CheckActivationOrder(cards);
+        CheckEndStates(cards);
 
         Console.WriteLine($"\n{(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED")}");
         Environment.Exit(failures == 0 ? 0 : 1);
@@ -624,6 +639,55 @@ static class RulesCheck
         Check("Block absorbed both hits rather than letting them through",
               game.Players[1].Health == GameSettings.StartingHealth && game.Players[1].Block == 0,
               $"{game.Players[1].Health} health, {game.Players[1].Block} block");
+    }
+
+    /// <summary>
+    /// The ways a game can stop, and the ways it must not stop: a table wiped
+    /// out together is a draw rather than a game that runs forever, a dead
+    /// leader takes no more actions, and an abandoned question answers itself.
+    /// </summary>
+    static void CheckEndStates(List<CardDefinition> cards)
+    {
+        Console.WriteLine("\nEnd states and abandoned decisions:");
+
+        // Everyone dying at once still has to end the game. Nothing is left to
+        // roll, draft, or ask, so play cannot continue.
+        var wipe = new GameState(new[] { "A", "B" }, cards, randomSeed: 41);
+        FinishDraft(wipe);
+        foreach (var player in wipe.Players) wipe.DealDamage(null, player, GameSettings.StartingHealth);
+        wipe.ResolveEffects();
+        Check("a total wipe ends the game", wipe.Phase == TurnPhase.GameOver, wipe.Phase.ToString());
+        Check("and reports a draw rather than a winner", wipe.IsDraw && wipe.Winner == null);
+
+        // A knocked-out leader stops acting, and stops being waited on.
+        var out1 = new GameState(new[] { "A", "B", "C" }, cards, randomSeed: 42);
+        FinishDraft(out1);
+        out1.DealDamage(null, out1.Players[2], GameSettings.StartingHealth);
+        out1.ResolveEffects();
+        Check("the game continues while two remain", out1.Phase != TurnPhase.GameOver);
+        Check("a dead leader cannot collect, buy, or ready up",
+              Throws(() => out1.SetReady(2, true)));
+        Check("and the living can still finish the phase",
+              out1.SetReady(0, true) == false && out1.SetReady(1, true));
+
+        // A dead player must not be handed a draft pick - the table would wait forever.
+        while (out1.Phase != TurnPhase.Draft) out1.AdvancePhase();
+        Check("the next draft skips the leader who is out",
+              out1.CurrentDrafterId != 2 && out1.DraftZone.Count > 0,
+              $"drafter {out1.CurrentDrafterId}, zone {out1.DraftZone.Count}");
+
+        // An abandoned question resolves itself rather than stopping the table.
+        var quiet = new GameState(new[] { "A", "B", "C" }, cards, randomSeed: 43);
+        var supernatural = cards.First(c => c.id == CardIds.SupernaturalEvent);
+        quiet.EnqueueEffect(new CardInstance(-40, supernatural), quiet.Players[0],
+                            CardEffects.For(CardIds.SupernaturalEvent, 0), "Supernatural Event");
+        quiet.ResolveEffects();
+        Check("a card is waiting on a decision", quiet.PendingChoice != null);
+        quiet.AnswerPendingChoiceWithDefault();
+        Check("which answers itself when nobody responds", quiet.PendingChoice == null);
+        Check("and the effect still resolved",
+              quiet.Players.Skip(1).Any(p => p.Health < GameSettings.StartingHealth),
+              string.Join(",", quiet.Players.Select(p => p.Health)));
     }
 
     /// <summary>Runs a whole draft off, leaving the game in the Rolling phase.</summary>

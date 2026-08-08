@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <Compile Include="RulesCheck.cs" />
+    <Compile Include="Fuzz.cs" />
     <!--
       The real game logic is compiled straight from the Unity project, so this
       check always runs against the live code. CardDatabase is excluded because

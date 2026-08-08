@@ -32,6 +32,13 @@ namespace Indoctrination.Net
         /// <summary>Time.time when the current phase began, for the timeout.</summary>
         private float _phaseStartedAt;
 
+        /// <summary>
+        /// Time.time when the open card question was put, or -1 when none is.
+        /// A player who drops mid-question would otherwise stop the table
+        /// permanently, since nothing may happen while a card is waiting.
+        /// </summary>
+        private float _choiceStartedAt = -1f;
+
         // ---------------------------------------------------------- Every machine
         /// <summary>This machine's view of the game, or null before it starts.</summary>
         public GameView View { get; private set; }
@@ -167,9 +174,14 @@ namespace Indoctrination.Net
                 return;
             }
 
+            StartGame(rpcParams.Receive.SenderClientId);
+        }
+
+        private void StartGame(ulong requestedBy)
+        {
             if (_seats.Count < GameSettings.MinPlayers)
             {
-                ReportError($"Need at least {GameSettings.MinPlayers} players to start.", rpcParams.Receive.SenderClientId);
+                ReportError($"Need at least {GameSettings.MinPlayers} players to start.", requestedBy);
                 return;
             }
 
@@ -184,6 +196,29 @@ namespace Indoctrination.Net
             _phaseStartedAt = Time.time;
 
             BroadcastState();
+        }
+
+        /// <summary>
+        /// Starts a fresh game with everyone still seated. Only offered once the
+        /// current one has finished - this is "play again", not a reset button
+        /// somebody can pull on a game they are losing.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void RequestPlayAgainRpc(RpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != NetworkManager.ServerClientId)
+            {
+                return;
+            }
+
+            if (_game == null || _game.Phase != TurnPhase.GameOver)
+            {
+                ReportError("The game is still going.", rpcParams.Receive.SenderClientId);
+                return;
+            }
+
+            _game = null;
+            StartGame(rpcParams.Receive.SenderClientId);
         }
 
         [Rpc(SendTo.Server)]
@@ -299,14 +334,9 @@ namespace Indoctrination.Net
 
         private void AdvancePhase()
         {
+            // The rules engine deals each new draft itself as the turn loop comes
+            // back around, so there is nothing to arrange here.
             _game.AdvancePhase();
-
-            // A new draft needs its zone dealt before anyone can pick.
-            if (_game.Phase == TurnPhase.Draft && _game.CurrentDrafterId == null)
-            {
-                _game.BeginDraft();
-            }
-
             _phaseStartedAt = Time.time;
         }
 
@@ -330,12 +360,26 @@ namespace Indoctrination.Net
 
             if (_game.PendingChoice != null)
             {
-                // A card question is not something a decision-blocked player can
-                // act against, so the clock does not run while one is open. The
-                // player who is asked gets the full timeout once they can answer.
+                // The phase clock does not run while a card is waiting - nobody
+                // else can act anyway. The question gets its own clock instead,
+                // and answers itself if whoever was asked has gone quiet.
                 _phaseStartedAt = Time.time;
+
+                if (_choiceStartedAt < 0f)
+                {
+                    _choiceStartedAt = Time.time;
+                }
+                else if (Time.time - _choiceStartedAt >= GameSettings.ChoiceTimeoutSeconds)
+                {
+                    _game.AnswerPendingChoiceWithDefault();
+                    _choiceStartedAt = _game.PendingChoice == null ? -1f : Time.time;
+                    BroadcastState();
+                }
+
                 return;
             }
+
+            _choiceStartedAt = -1f;
 
             if (Time.time - _phaseStartedAt < GameSettings.PhaseTimeoutSeconds)
             {
@@ -391,6 +435,13 @@ namespace Indoctrination.Net
                 || (hadPendingChoice && _game.PendingChoice == null))
             {
                 _phaseStartedAt = Time.time;
+            }
+
+            // A new question starts its own clock rather than inheriting the
+            // remaining time of the one just answered.
+            if (hadPendingChoice != (_game.PendingChoice != null) || !hadPendingChoice)
+            {
+                _choiceStartedAt = _game.PendingChoice == null ? -1f : Time.time;
             }
 
             BroadcastState();
@@ -455,6 +506,8 @@ namespace Indoctrination.Net
                 discardCount = _game.Discard.Count,
                 currentDrafterId = _game.CurrentDrafterId ?? -1,
                 winnerPlayerId = _game.Winner?.PlayerId ?? -1,
+                isGameOver = _game.Phase == TurnPhase.GameOver,
+                isDraw = _game.IsDraw,
                 diceRolled = _game.DiceRolled,
                 highRollResourceClaimed = _game.HighRollResourceClaimed,
                 playersReady = _game.PlayersReady.ToArray(),
@@ -469,6 +522,9 @@ namespace Indoctrination.Net
                     playerId = kv.Value.PlayerId
                 }).ToArray(),
                 pendingChoice = ToChoiceView(_game.PendingChoice),
+                choiceSecondsRemaining = _game.PendingChoice == null || _choiceStartedAt < 0f
+                    ? 0f
+                    : Mathf.Max(0f, GameSettings.ChoiceTimeoutSeconds - (Time.time - _choiceStartedAt)),
                 resolvingDescription = _game.ResolvingDescription,
                 players = _game.Players.Select(player => new PlayerView
                 {

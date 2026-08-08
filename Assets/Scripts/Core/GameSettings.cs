@@ -45,6 +45,13 @@ namespace Indoctrination.Core
         public const float PhaseTimeoutSeconds = 90f;
 
         /// <summary>
+        /// How long a card waits for the player it questioned before answering
+        /// itself. Nothing else at the table may happen while a question is open,
+        /// so one player walking away would otherwise stop the game for good.
+        /// </summary>
+        public const float ChoiceTimeoutSeconds = 60f;
+
+        /// <summary>
         /// A ceiling on how much work one batch of card effects may do. Two cards
         /// that retaliate against each other would otherwise trade blows forever;
         /// this stops the server hanging on a board nobody expected.
