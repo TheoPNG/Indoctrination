@@ -251,8 +251,29 @@ namespace Indoctrination.Tools
         {
             if (!game.DiceRolled)
             {
-                game.RollPrimaryDice();
-                return;
+                // Each player presses their own Roll Die, which is the path the
+                // real game takes - rolling the whole table at once is only the
+                // timeout fallback, and would leave the per-seat rules untested.
+                // Sometimes one is left unrolled so that fallback gets exercised too.
+                var rollers = game.LivingPlayers.Where(p => !game.HasRolled(p.PlayerId)).ToList();
+                var leaveOneOut = rollers.Count > 1 && random.Next(6) == 0;
+
+                foreach (var player in leaveOneOut ? rollers.Skip(1) : rollers)
+                {
+                    game.RollPrimaryDie(player.PlayerId);
+
+                    // Rolling twice must always be refused.
+                    if (random.Next(8) == 0
+                        && !Throws(() => game.RollPrimaryDie(player.PlayerId)))
+                    {
+                        throw new FuzzFailure($"{player.Name} was allowed to roll twice in one turn");
+                    }
+                }
+
+                if (!leaveOneOut)
+                {
+                    return;
+                }
             }
 
             // Try again's reroll, when somebody has it and the dice went badly.
@@ -374,6 +395,24 @@ namespace Indoctrination.Tools
         /// unaffordable, claiming a bonus you did not win. A refusal is the rules
         /// working; anything else is a real fault and is left to propagate.
         /// </summary>
+        /// <summary>Whether an action was refused, for checks that expect a refusal.</summary>
+        private static bool Throws(Action action)
+        {
+            try
+            {
+                action();
+                return false;
+            }
+            catch (InvalidOperationException)
+            {
+                return true;
+            }
+            catch (ArgumentException)
+            {
+                return true;
+            }
+        }
+
         private static void TryAction(Action action)
         {
             try

@@ -24,10 +24,22 @@ namespace Indoctrination.Net
         // ------------------------------------------------------------ Server only
         private GameState _game;
 
-        /// <summary>Seat index is the Core player id; the value is the Netcode client id.</summary>
-        private readonly List<ulong> _seats = new();
+        /// <summary>
+        /// One seat at the table. The index into <see cref="_seats"/> is the Core
+        /// player id, and stays fixed for the whole game - the connection sitting
+        /// in it can come and go without the board behind it going anywhere.
+        /// </summary>
+        private class Seat
+        {
+            /// <summary>The Netcode client here now, or null if nobody is.</summary>
+            public ulong? ClientId;
 
-        private readonly Dictionary<ulong, string> _names = new();
+            public string Name;
+
+            public bool IsOccupied => ClientId.HasValue;
+        }
+
+        private readonly List<Seat> _seats = new();
 
         /// <summary>Time.time when the current phase began, for the timeout.</summary>
         private float _phaseStartedAt;
@@ -66,7 +78,7 @@ namespace Indoctrination.Net
             // The host's own client is already connected by the time this runs.
             foreach (var clientId in NetworkManager.ConnectedClientsIds)
             {
-                Seat(clientId);
+                TakeSeat(clientId);
             }
 
             BroadcastLobby();
@@ -93,7 +105,7 @@ namespace Indoctrination.Net
 
         private void OnClientConnected(ulong clientId)
         {
-            Seat(clientId);
+            TakeSeat(clientId);
             BroadcastLobby();
 
             // A reconnecting or late-spawning client needs the current state.
@@ -105,28 +117,52 @@ namespace Indoctrination.Net
 
         private void OnClientDisconnected(ulong clientId)
         {
-            // Mid-game the seat is kept, so the player keeps their board if they
-            // come back. Before the game starts there is nothing to keep.
+            var seat = SeatIndexOf(clientId);
+            if (seat < 0)
+            {
+                BroadcastLobby();
+                return;
+            }
+
             if (_game == null)
             {
-                var seat = _seats.IndexOf(clientId);
-                if (seat >= 0)
-                {
-                    _seats.RemoveAt(seat);
-                    _names.Remove(clientId);
-                }
+                // Nothing has been built yet, so the seat goes with them.
+                _seats.RemoveAt(seat);
+            }
+            else
+            {
+                // Mid-game the seat and its board are kept, and the next client
+                // through the door takes it over. Netcode issues a fresh client
+                // id on every connection, so a player who crashes and relaunches
+                // cannot be recognised as themselves - claiming the empty seat is
+                // what lets them back into their own game at all.
+                _seats[seat].ClientId = null;
             }
 
             BroadcastLobby();
         }
 
-        /// <summary>Gives a client a seat, or returns its existing one. -1 if there is no room.</summary>
-        private int Seat(ulong clientId)
+        private int SeatIndexOf(ulong clientId) =>
+            _seats.FindIndex(seat => seat.ClientId == clientId);
+
+        /// <summary>
+        /// Seats a client: their existing seat, an empty one left by somebody who
+        /// dropped, or a new one if the game has not started. -1 if the table is
+        /// full and every seat is occupied.
+        /// </summary>
+        private int TakeSeat(ulong clientId)
         {
-            var existing = _seats.IndexOf(clientId);
+            var existing = SeatIndexOf(clientId);
             if (existing >= 0)
             {
                 return existing;
+            }
+
+            var vacant = _seats.FindIndex(seat => !seat.IsOccupied);
+            if (vacant >= 0)
+            {
+                _seats[vacant].ClientId = clientId;
+                return vacant;
             }
 
             if (_game != null || _seats.Count >= GameSettings.MaxPlayers)
@@ -134,8 +170,7 @@ namespace Indoctrination.Net
                 return -1;
             }
 
-            _seats.Add(clientId);
-            _names[clientId] = $"Leader {_seats.Count}";
+            _seats.Add(new Seat { ClientId = clientId, Name = $"Leader {_seats.Count + 1}" });
             return _seats.Count - 1;
         }
 
@@ -152,9 +187,9 @@ namespace Indoctrination.Net
                 return;
             }
 
-            var placeholderId = ulong.MaxValue - (ulong)_seats.Count;
-            _seats.Add(placeholderId);
-            _names[placeholderId] = name;
+            // No connection behind it, so it is never sent a view - it exists
+            // purely to make the table big enough to start.
+            _seats.Add(new Seat { ClientId = null, Name = name });
             BroadcastLobby();
         }
 
@@ -162,7 +197,7 @@ namespace Indoctrination.Net
         {
             var lobby = new LobbyView
             {
-                playerNames = _seats.Select(id => _names[id]).ToArray(),
+                playerNames = _seats.Select(seat => seat.Name).ToArray(),
                 minPlayers = GameSettings.MinPlayers,
                 maxPlayers = GameSettings.MaxPlayers
             };
@@ -204,7 +239,7 @@ namespace Indoctrination.Net
                 return;
             }
 
-            var names = _seats.Select(id => _names[id]).ToList();
+            var names = _seats.Select(seat => seat.Name).ToList();
             var seed = Environment.TickCount;
 
             _game = new GameState(names, CardDatabase.Instance.All, seed)
@@ -426,7 +461,7 @@ namespace Indoctrination.Net
                 return;
             }
 
-            var playerId = _seats.IndexOf(senderId);
+            var playerId = SeatIndexOf(senderId);
             if (playerId < 0)
             {
                 ReportError("You are not seated at this table.", senderId);
@@ -483,23 +518,22 @@ namespace Indoctrination.Net
                 _choiceStartedAt = -1f;
             }
 
-            foreach (var clientId in _seats)
+            foreach (var seat in _seats.Where(seat => seat.IsOccupied))
             {
-                SendStateTo(clientId);
+                SendStateTo(seat.ClientId.Value);
             }
         }
 
         private void SendStateTo(ulong clientId)
         {
-            var playerId = _seats.IndexOf(clientId);
+            var playerId = SeatIndexOf(clientId);
             if (playerId < 0)
             {
                 return;
             }
 
-            // A seat can outlive its connection - a player who dropped keeps their
-            // board in case they come back, and tests seat opponents with no
-            // client at all. Netcode has nowhere to deliver either.
+            // A seat can outlive its connection, and Netcode has nowhere to
+            // deliver to a client that is no longer there.
             if (!NetworkManager.ConnectedClients.ContainsKey(clientId))
             {
                 return;

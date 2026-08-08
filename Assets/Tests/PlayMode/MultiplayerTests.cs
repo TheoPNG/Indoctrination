@@ -265,6 +265,91 @@ namespace Indoctrination.Tests
             yield return WaitForFrames(6);
         }
 
+        /// <summary>
+        /// A player who drops mid-game must be able to get back into their own
+        /// game. Netcode hands out a fresh client id on every connection, so a
+        /// returning player cannot be recognised as themselves - the seat they
+        /// left has to still be there, and has to be claimable.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ASeatOutlivesTheConnectionThatLeftIt()
+        {
+            yield return StartTwoPlayerGame();
+
+            var game = ServerGame();
+            Assert.IsNotNull(game, "a game should be running");
+            Assert.AreEqual(2, SeatCount(), "with two seats at the table");
+
+            // Give seat 0 something to come back to, so the board is identifiable.
+            var boardBefore = game.Players[0].Hand.Count;
+
+            // The host's own client drops. Its seat must stay, holding its board.
+            DisconnectSeat(NetworkManager.ServerClientId);
+            yield return WaitForFrames(2);
+
+            Assert.AreEqual(2, SeatCount(), "the empty seat is kept, not removed");
+            Assert.AreEqual(boardBefore, game.Players[0].Hand.Count,
+                            "and the board behind it is untouched");
+
+            // Somebody arrives on a new client id, as a relaunched game would.
+            const ulong returningClient = 4242UL;
+            ConnectAs(returningClient);
+            yield return WaitForFrames(2);
+
+            Assert.AreEqual(2, SeatCount(), "they take the empty seat rather than a new one");
+            Assert.AreEqual(0, SeatIndexOf(returningClient),
+                            "and it is the seat that was left, with its board still in it");
+            Assert.AreEqual(boardBefore, game.Players[0].Hand.Count,
+                            "which still holds the same cards");
+        }
+
+        /// <summary>Before a game starts there is no board to keep, so the seat goes too.</summary>
+        [UnityTest]
+        public IEnumerator LeavingTheLobbyGivesUpTheSeat()
+        {
+            _manager.AddTestSeat("Test Opponent");
+            yield return WaitForFrames(2);
+            Assert.AreEqual(2, SeatCount(), "two seats before anybody leaves");
+
+            DisconnectSeat(NetworkManager.ServerClientId);
+            yield return WaitForFrames(2);
+
+            Assert.AreEqual(1, SeatCount(), "the seat is released back to the lobby");
+        }
+
+        private int SeatCount() => SeatList().Count;
+
+        private int SeatIndexOf(ulong clientId)
+        {
+            var seats = SeatList();
+            for (var i = 0; i < seats.Count; i++)
+            {
+                var field = seats[i].GetType().GetField("ClientId");
+                if ((ulong?)field.GetValue(seats[i]) == clientId)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private System.Collections.IList SeatList()
+        {
+            var field = typeof(NetworkGameManager).GetField("_seats", BindingFlags.Instance | BindingFlags.NonPublic);
+            return (System.Collections.IList)field.GetValue(_manager);
+        }
+
+        private void DisconnectSeat(ulong clientId) => InvokePrivate("OnClientDisconnected", clientId);
+
+        private void ConnectAs(ulong clientId) => InvokePrivate("OnClientConnected", clientId);
+
+        private void InvokePrivate(string name, ulong clientId)
+        {
+            var method = typeof(NetworkGameManager).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic);
+            method.Invoke(_manager, new object[] { clientId });
+        }
+
         private GameState ServerGame()
         {
             var field = typeof(NetworkGameManager).GetField("_game", BindingFlags.Instance | BindingFlags.NonPublic);
