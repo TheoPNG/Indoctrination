@@ -66,8 +66,25 @@ namespace Indoctrination.Net
         private string _amountInput = "0";
         private int _baalTargetPlayerId = -1;
 
-        private void Awake()
+        private bool _built;
+
+        private void Awake() => BuildInterface();
+
+        /// <summary>
+        /// Builds the whole interface, once. Play mode reaches this through
+        /// Awake; the smoke test calls it directly, because the Editor does not
+        /// run Awake outside play mode and would otherwise be handed a board with
+        /// no widgets in it.
+        /// </summary>
+        public void BuildInterface()
         {
+            if (_built)
+            {
+                return;
+            }
+
+            _built = true;
+
             SetUpOverheadCamera();
 
             var canvas = UIFactory.CreateCanvas("Board Canvas");
@@ -451,6 +468,22 @@ namespace Indoctrination.Net
         }
 
         // ------------------------------------------------------------ Refresh
+
+        /// <summary>
+        /// Renders a supplied view straight into the board with no live
+        /// connection behind it, so the smoke test can drive a whole game through
+        /// every layout path and catch anything that throws while building.
+        /// Nothing in normal play calls this.
+        /// </summary>
+        public void RenderForTesting(GameView view)
+        {
+            BuildInterface();
+            ShowOnly(_gameRoot);
+
+            // Button callbacks capture the manager but only run on a click, so a
+            // board built without one is safe to construct and inspect.
+            RefreshGame(NetworkGameManager.Instance, view);
+        }
 
         private void Refresh()
         {

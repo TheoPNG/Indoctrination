@@ -28,8 +28,23 @@ namespace Indoctrination.Net
 
         public CardView Card { get; private set; }
 
-        private void Awake()
+        private bool _built;
+
+        private void Awake() => Build();
+
+        /// <summary>
+        /// Builds the card, once. Called from the factory rather than left to
+        /// Awake, which the Editor does not run outside play mode.
+        /// </summary>
+        private void Build()
         {
+            if (_built)
+            {
+                return;
+            }
+
+            _built = true;
+
             var rect = (RectTransform)transform;
             UIFactory.SetSize(rect, Width, Height);
 
@@ -147,7 +162,10 @@ namespace Indoctrination.Net
             // layout code there needs the RectTransform to already exist.
             var go = new GameObject("Card", typeof(RectTransform));
             go.transform.SetParent(parent, false);
-            return go.AddComponent<BoardCardView>();
+
+            var card = go.AddComponent<BoardCardView>();
+            card.Build();
+            return card;
         }
 
         private static Color ColorFor(ResourceColor color)

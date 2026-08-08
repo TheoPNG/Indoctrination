@@ -84,3 +84,6 @@ Tools/**/obj/
 
 # macOS
 .DS_Store
+
+# Smoke test output from Tools/SmokeTest/run.sh
+Tools/SmokeTest/last-run.log

@@ -17,8 +17,24 @@ namespace Indoctrination.Net
         private Image _followerFill;
         private Text _followerText;
 
-        private void Awake()
+        private bool _built;
+
+        private void Awake() => Build();
+
+        /// <summary>
+        /// Builds the widget, once. Called from the factory rather than left to
+        /// Awake, which the Editor does not run outside play mode - relying on it
+        /// made this impossible to build in a test.
+        /// </summary>
+        private void Build()
         {
+            if (_built)
+            {
+                return;
+            }
+
+            _built = true;
+
             var rect = (RectTransform)transform;
             UIFactory.SetSize(rect, 260, 78);
             gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.35f);
@@ -85,7 +101,10 @@ namespace Indoctrination.Net
             // away, and the layout code there needs it to already be there.
             var go = new GameObject("StatBar", typeof(RectTransform));
             go.transform.SetParent(parent, false);
-            return go.AddComponent<StatBar>();
+
+            var bar = go.AddComponent<StatBar>();
+            bar.Build();
+            return bar;
         }
     }
 }

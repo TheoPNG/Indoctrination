@@ -237,7 +237,18 @@ namespace Indoctrination.Net
             {
                 var child = parent.GetChild(i).gameObject;
                 child.transform.SetParent(null, false);
-                UnityEngine.Object.Destroy(child);
+
+                // Destroy only takes effect at the end of the frame, and outside
+                // play mode there is no frame - the old widgets would pile up
+                // forever. Detaching first keeps the layout correct either way.
+                if (Application.isPlaying)
+                {
+                    UnityEngine.Object.Destroy(child);
+                }
+                else
+                {
+                    UnityEngine.Object.DestroyImmediate(child);
+                }
             }
         }
     }
