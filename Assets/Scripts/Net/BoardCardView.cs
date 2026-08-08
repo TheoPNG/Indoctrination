@@ -28,6 +28,14 @@ namespace Indoctrination.Net
 
         public CardView Card { get; private set; }
 
+        /// <summary>The card's definition, or null if this client does not know it.</summary>
+        public CardDefinition Definition { get; private set; }
+
+        /// <summary>Set when this card has an action behind it, for the preview to offer.</summary>
+        public Action Action { get; private set; }
+
+        public string ActionLabel { get; private set; }
+
         private bool _built;
 
         private void Awake() => Build();
@@ -139,12 +147,14 @@ namespace Indoctrination.Net
         public void Populate(CardView card, string tag, Action onClick)
         {
             Card = card;
+            SetAction(null, onClick);
             _tagText.text = tag ?? "";
             _tagText.gameObject.SetActive(!string.IsNullOrEmpty(tag));
 
             try
             {
                 var definition = CardDatabase.Instance.TryGet(card.definitionId, out var found) ? found : null;
+                Definition = definition;
                 if (definition == null)
                 {
                     _headerText.text = card.definitionId;
@@ -186,12 +196,33 @@ namespace Indoctrination.Net
                 _effectText.text = "";
             }
 
+            // Every card opens its own preview, whether or not it can be acted on -
+            // reading a card should never depend on it being your turn. The action,
+            // when there is one, is offered from inside the preview.
             _button.onClick.RemoveAllListeners();
-            _button.interactable = onClick != null;
-            if (onClick != null)
-            {
-                _button.onClick.AddListener(() => onClick());
-            }
+            _button.interactable = true;
+            _button.onClick.AddListener(() => CardPreview.Show(this));
+        }
+
+        /// <summary>
+        /// Gives this card an action, shown as the primary button on its preview.
+        /// </summary>
+        public void SetAction(string label, Action action)
+        {
+            ActionLabel = label;
+            Action = action;
+        }
+
+        /// <summary>
+        /// Scales the card to fit the space available. The card is laid out once
+        /// at its natural size and then scaled, so every card shrinks by the same
+        /// amount and the text keeps its proportions instead of reflowing into a
+        /// different shape at every size.
+        /// </summary>
+        public void ScaleTo(float width)
+        {
+            var factor = Mathf.Clamp(width / Width, 0.1f, 1f);
+            transform.localScale = new Vector3(factor, factor, 1f);
         }
 
         public static BoardCardView Create(Transform parent)

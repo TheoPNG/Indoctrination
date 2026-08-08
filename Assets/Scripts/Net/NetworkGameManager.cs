@@ -284,20 +284,91 @@ namespace Indoctrination.Net
         [Rpc(SendTo.Server)]
         public void RequestRollRpc(RpcParams rpcParams = default)
         {
-            Apply(rpcParams, playerId => _game.RollPrimaryDie(playerId));
+            Apply(rpcParams, playerId =>
+            {
+                _game.RollPrimaryDie(playerId);
+                FinishPhaseIfNothingLeftToDo(playerId);
+            });
         }
 
         [Rpc(SendTo.Server)]
         public void RequestClaimHighRollResourceRpc(int color, RpcParams rpcParams = default)
         {
-            Apply(rpcParams, playerId => _game.ClaimHighRollResource(playerId, (ResourceColor)color));
+            Apply(rpcParams, playerId =>
+            {
+                _game.ClaimHighRollResource(playerId, (ResourceColor)color);
+                FinishPhaseIfNothingLeftToDo(playerId);
+            });
         }
 
         [Rpc(SendTo.Server)]
         public void RequestCollectResourcesRpc(int[] colors, RpcParams rpcParams = default)
         {
             Apply(rpcParams, playerId =>
-                _game.CollectResources(playerId, colors.Select(c => (ResourceColor)c).ToList()));
+            {
+                _game.CollectResources(playerId, colors.Select(c => (ResourceColor)c).ToList());
+                FinishPhaseIfNothingLeftToDo(playerId);
+            });
+        }
+
+        /// <summary>
+        /// Marks a player finished once they have done everything the current
+        /// phase actually asks of them, so picking your resources is the whole
+        /// interaction rather than picking them and then confirming it.
+        ///
+        /// Only phases with a definite "done" state qualify. The Buy phase has no
+        /// natural end - a player may buy nothing, or keep buying - so it still
+        /// waits for them to say so.
+        /// </summary>
+        private void FinishPhaseIfNothingLeftToDo(int playerId)
+        {
+            var everyoneReady = false;
+
+            switch (_game.Phase)
+            {
+                // SetReady refuses a Rolling ready-up until every die is down, so
+                // this can only run once the last one lands. At that point the
+                // only thing still owed is the high roll bonus, and at most one
+                // player can be owed it.
+                case TurnPhase.Rolling when _game.DiceRolled:
+                    foreach (var player in _game.LivingPlayers.ToList())
+                    {
+                        if (!IsOwedTheHighRollBonus(player.PlayerId))
+                        {
+                            everyoneReady |= _game.SetReady(player.PlayerId, true);
+                        }
+                    }
+
+                    break;
+
+                case TurnPhase.Resource when _game.HasCollectedResources(playerId):
+                    everyoneReady = _game.SetReady(playerId, true);
+                    break;
+            }
+
+            if (everyoneReady)
+            {
+                AdvancePhase();
+            }
+        }
+
+        /// <summary>
+        /// Whether this player still has the high roll bonus to take. They must
+        /// not be marked finished before claiming it, or the phase could move on
+        /// and take the bonus with it.
+        /// </summary>
+        private bool IsOwedTheHighRollBonus(int playerId)
+        {
+            if (_game.HighRollResourceClaimed || !_game.DiceRolled)
+            {
+                return false;
+            }
+
+            var living = _game.LivingPlayers.ToList();
+            var highest = living.Max(player => player.PrimaryDie);
+            var tiedAtTop = living.Where(player => player.PrimaryDie == highest).ToList();
+
+            return tiedAtTop.Count == 1 && tiedAtTop[0].PlayerId == playerId;
         }
 
         [Rpc(SendTo.Server)]

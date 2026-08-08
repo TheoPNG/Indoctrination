@@ -261,8 +261,8 @@ namespace Indoctrination.Tests
 
             for (var i = 0; i < GameSettings.ResourcesPerTurn; i++)
             {
-                var button = FindButtonLabelled("Red");
-                Assert.IsNotNull(button, $"pick {i + 1}: {WhyUnusable("Red")}");
+                var button = FindButtonLabelled("R");
+                Assert.IsNotNull(button, $"pick {i + 1}: {WhyUnusable("R")}");
                 Assert.IsTrue(button.interactable, "and it has to be clickable");
 
                 button.onClick.Invoke();
@@ -396,7 +396,7 @@ namespace Indoctrination.Tests
 
             var row = FindVisibleResourceRow();
             Assert.IsNotNull(row, "your own resources have to be visible somewhere on the board");
-            StringAssert.Contains("R", WithoutMarkup(row.text), "and name each colour");
+            StringAssert.Contains("R", row, "and show every colour");
 
             // Collect a known amount and watch the row follow.
             var game = ServerGame();
@@ -407,24 +407,150 @@ namespace Indoctrination.Tests
 
             var updated = FindVisibleResourceRow();
             Assert.IsNotNull(updated, "the row must still be on screen after collecting");
-            var shown = WithoutMarkup(updated.text);
-            StringAssert.Contains($"G {GameSettings.ResourcesPerTurn}", shown,
-                                  $"the row should show the collected Green. It reads: '{shown}'");
+            StringAssert.Contains($"G {GameSettings.ResourcesPerTurn}", updated,
+                                  $"the pips should show the collected Green. They read: '{updated}'");
         }
 
         /// <summary>The text as a player reads it, with the colour markup taken out.</summary>
         private static string WithoutMarkup(string text) =>
             System.Text.RegularExpressions.Regex.Replace(text, "<.*?>", "");
 
-        /// <summary>The viewer's own resource row, if a player could actually see it.</summary>
-        private Text FindVisibleResourceRow()
+        /// <summary>
+        /// The viewer's own resource pips, as a player would read them: the
+        /// colour's initial from its disc, then the count inside it.
+        /// </summary>
+        private string FindVisibleResourceRow()
         {
-            return Object.FindObjectsByType<StatBar>(FindObjectsSortMode.None)
-                .Where(bar => (bar.GetComponentInChildren<Text>()?.text ?? "").Contains("(you)"))
-                .SelectMany(bar => bar.GetComponentsInChildren<Text>())
-                .FirstOrDefault(text => text.name == "Resources"
-                                        && text.gameObject.activeInHierarchy
-                                        && IsFullyVisibleThroughEveryMask(text));
+            var bar = Object.FindObjectsByType<StatBar>(FindObjectsSortMode.None)
+                .FirstOrDefault(b => (b.GetComponentInChildren<Text>()?.text ?? "").Contains("(you)"));
+
+            if (bar == null)
+            {
+                return null;
+            }
+
+            var row = bar.transform.Find("Resources");
+            if (row == null)
+            {
+                return null;
+            }
+
+            var parts = new System.Collections.Generic.List<string>();
+            foreach (Transform pip in row)
+            {
+                var count = pip.GetComponentInChildren<Text>();
+                if (count == null || !IsFullyVisibleThroughEveryMask(count))
+                {
+                    return null;
+                }
+
+                parts.Add($"{pip.name[..1]} {count.text}");
+            }
+
+            return parts.Count == 0 ? null : string.Join("  ", parts);
+        }
+
+
+        /// <summary>
+        /// Every draft card has to be on screen at once. Choosing from a draft you
+        /// can only see a third of is not a choice.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator EveryDraftCardIsOnScreenAtOnce()
+        {
+            yield return StartGame();
+            yield return WaitForFrames(3);
+            Canvas.ForceUpdateCanvases();
+
+            var expected = _manager.View.draftZone.Length;
+            Assert.Greater(expected, 0, "the draft should have cards in it");
+
+            var onScreen = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None)
+                .Count(card => IsFullyVisibleThroughEveryMask(card.GetComponent<Image>()));
+
+            Assert.GreaterOrEqual(onScreen, expected,
+                $"only {onScreen} of {expected} draft cards are fully on screen");
+        }
+
+        /// <summary>
+        /// Clicking any card opens its preview, so a card too small to read on the
+        /// board can still be read. This is what makes shrinking them acceptable.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ClickingACardOpensItsPreview()
+        {
+            yield return StartGame();
+            yield return WaitForFrames(3);
+
+            Assert.IsFalse(CardPreview.IsOpen, "nothing should be previewed to begin with");
+
+            var card = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None)
+                .FirstOrDefault(c => c.Definition != null);
+            Assert.IsNotNull(card, "there should be a recognisable card on the board");
+
+            card.GetComponent<Button>().onClick.Invoke();
+            yield return WaitForFrames(2);
+
+            Assert.IsTrue(CardPreview.IsOpen, "clicking a card has to open its preview");
+
+            var shown = Object.FindObjectsByType<Text>(FindObjectsSortMode.None)
+                .Any(t => t.text == card.Definition.Title && t.fontSize >= 24);
+            Assert.IsTrue(shown, $"the preview should show '{card.Definition.Title}' at a readable size");
+
+            CardPreview.Hide();
+            yield return WaitForFrames(2);
+            Assert.IsFalse(CardPreview.IsOpen, "and close again");
+        }
+
+        /// <summary>
+        /// The control that ends a phase must never be scrolled or covered away,
+        /// including with the hand tray open over the bottom of the board.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ReadyStaysReachableWithTheHandOpen()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Buy);
+            yield return ExpandHand();
+
+            Assert.IsNotNull(FindButtonLabelled("Ready") ?? FindButtonLabelled("Not Ready"),
+                             $"Ready has to stay reachable with the hand open: {WhyUnusable("Ready")}");
+        }
+
+        /// <summary>
+        /// Taking the last resource finishes the phase by itself. The player asked
+        /// for one interaction, not a pick followed by a confirmation.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TakingTheLastResourceEndsThePhaseWithoutConfirming()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Resource);
+
+            var game = ServerGame();
+
+            // The other seat has no client behind it, so its collection is done
+            // server-side - including the ready-up its own request would have
+            // triggered, so the table is genuinely waiting only on the host.
+            ApplyAsHost(_ =>
+            {
+                game.CollectResources(
+                    1, Enumerable.Repeat(ResourceColor.Blue, game.ResourcesPerTurnFor(1)).ToList());
+                game.SetReady(1, true);
+            });
+            yield return WaitForFrames(2);
+
+            for (var i = 0; i < GameSettings.ResourcesPerTurn; i++)
+            {
+                var disc = FindButtonLabelled("R");
+                Assert.IsNotNull(disc, $"pick {i + 1}: {WhyUnusable("R")}");
+                disc.onClick.Invoke();
+                yield return WaitForFrames(3);
+            }
+
+            Assert.AreNotEqual(nameof(TurnPhase.Resource), _manager.View.phase,
+                               "picking the last resource should move the game on by itself, "
+                               + "with no separate confirmation step");
         }
 
         private static int TotalResources(PlayerView player) =>

@@ -2,6 +2,66 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
+## 2026-08-08 — Claude (presentation pass: sizing, preview, fewer confirms, motion)
+
+### Direction from playtest
+
+Seven refinements, the loop otherwise working: all cards visible at once, a
+card preview on click, less text in the action panel, fewer confirmation steps
+when collecting resources, a Ready button that is always visible, animated bars
+with card glow and camera shake, and resources drawn as coloured discs that fly
+from the picker to the player.
+
+### Edits
+
+- `Assets/Scripts/Net/BoardArt.cs` (new) — the resource palette, and two sprites
+  generated at runtime rather than imported: a hard disc for resource pips and a
+  soft one for the glow behind an activating card. Keeps the interface free of
+  asset dependencies, like the rest of the Net layer.
+- `Assets/Scripts/Net/BoardEffects.cs` (new) — bar slides, card swell-and-glow,
+  arcing resource pips, and screen shake. Presentation only; it reacts to state
+  the server has already decided, so a skipped frame never costs a player
+  anything.
+- `Assets/Scripts/Net/CardPreview.cs` (new) — a card blown up over the board with
+  its rules text readable and its action offered. This is what makes shrinking
+  the cards acceptable.
+- `Assets/Scripts/Net/BoardUI.cs` — card rows are now wrapping grids sized so
+  every card fits on screen (`CardWidthThatFits`), cards scale rather than
+  scroll. Ready moved out of the scrolling action panel into the dock, so the
+  control that ends a phase can never be covered by the hand tray. Action text
+  cut down to the phase's action and nothing already shown elsewhere. The
+  resource picker is now coloured discs that throw a pip toward the player's own
+  pips.
+- `Assets/Scripts/Net/StatBar.cs` — resources are coloured discs with the count
+  inside; both bars animate to their new value.
+- `Assets/Scripts/Net/NetworkGameManager.cs` — collecting resources, and the last
+  die landing, now finish the phase for that player rather than needing a
+  separate Ready press.
+
+### One trap worth recording
+
+`GameState.SetReady` throws during Rolling until every die is down. The first
+version of the auto-ready called it unconditionally, so the exception aborted
+the enclosing request and the roll that had already succeeded was never
+broadcast - the player pressed Roll and nothing happened. Auto-ready now only
+runs when it is known to be legal. Anything added inside `Apply` after a
+successful mutation must not be able to throw, or it discards the mutation.
+
+### Verification
+
+- `./Tools/PlayModeTests/run.sh` — 20 tests pass. Four are new: every draft card
+  is on screen at once, clicking a card opens its preview, Ready stays reachable
+  with the hand open, and taking the last resource ends the phase with no
+  confirmation.
+- `./Tools/CompileCheck/run.sh`, `./Tools/RulesCheck/run.sh`,
+  `./Tools/RulesCheck/run.sh --fuzz 1500`, `./Tools/SmokeTest/run.sh` all pass.
+
+### Incomplete work
+
+- Card art is still a coloured rectangle with text. The preview is where a real
+  card face would go first.
+
+
 ## 2026-08-08 — Claude (unreachable buttons, invisible resources, overlapping card text)
 
 ### Player report

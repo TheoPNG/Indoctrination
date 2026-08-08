@@ -44,6 +44,15 @@ namespace Indoctrination.Net
 
         /// <summary>A card in hand plus the buttons beneath it, and the gap between.</summary>
         private const float HandCardHeight = BoardCardView.Height + 4f + HandCardButtonHeight;
+        /// <summary>Smallest a card may shrink to and still be recognisable.</summary>
+        private const float MinCardWidth = 72f;
+
+        /// <summary>Gap between cards in a battlefield grid.</summary>
+        private const float CardGap = 6f;
+
+        /// <summary>Diameter of a resource-picker disc.</summary>
+        private const float ResourceButtonSize = 44f;
+
         private const int BoardSafeInset = 14;
         private const int DraftZoneLeftInset = 12;
 
@@ -66,6 +75,9 @@ namespace Indoctrination.Net
         private RectTransform _actionViewport;
         private RectTransform _actionPanel;
         private ScrollRect _actionScroll;
+        private Button _readyButton;
+        private Text _readyLabel;
+        private Text _waitingLabel;
         private RectTransform _handRow;
         private LayoutElement _handRowPin;
         private LayoutElement _dockPin;
@@ -80,6 +92,12 @@ namespace Indoctrination.Net
         private float _choiceSecondsLeft;
         private bool _handExpanded;
         private string _renderedPhase;
+
+        /// <summary>Die faces showing this turn, for lighting up the units they wake.</summary>
+        private readonly HashSet<int> _rolledThisTurn = new();
+
+        /// <summary>Set for the one refresh that enters the Activation phase.</summary>
+        private bool _pulseActivationsThisRefresh;
 
         private readonly List<ResourceColor> _pendingResources = new();
         private readonly List<ResourceColor> _pendingMealPayment = new();
@@ -113,6 +131,9 @@ namespace Indoctrination.Net
             _lobbyPanel = BuildLobbyPanel(canvas.transform);
             _gameRoot = BuildGameRoot(canvas.transform);
             BuildErrorLabel(canvas.transform);
+
+            // Built last so it sits above the board it covers.
+            CardPreview.CreateOn(canvas.transform);
 
             ShowOnly(_connectPanel);
         }
@@ -502,8 +523,26 @@ namespace Indoctrination.Net
             _viewerStatBar = StatBar.Create(dockTop);
 
             _handToggleButton = UIFactory.ButtonWithLabel(
-                "Hand Toggle", dockTop, "Hand", ToggleHand, new Color(0.2f, 0.2f, 0.26f), 200, 36);
+                "Hand Toggle", dockTop, "Hand", ToggleHand, new Color(0.2f, 0.2f, 0.26f), 190, 36);
             _handToggleLabel = _handToggleButton.GetComponentInChildren<Text>();
+
+            // Ready sits in the dock rather than the action panel. The panel
+            // scrolls, so the one control that ends a phase could be pushed out of
+            // sight behind the hand tray exactly when it was needed.
+            _readyButton = UIFactory.ButtonWithLabel(
+                "Ready", dockTop, "Ready", ToggleReady, new Color(0.2f, 0.4f, 0.2f), 190, 36);
+            _readyLabel = _readyButton.GetComponentInChildren<Text>();
+
+            _waitingLabel = UIFactory.Label("Waiting", dockTop, "", 13, TextAnchor.MiddleLeft,
+                new Color(0.8f, 0.8f, 0.7f));
+            AddFlexibleWidth(_waitingLabel.rectTransform);
+
+            // Pips in flight are drawn above everything, so one crossing the board
+            // is never hidden behind a panel it passes over.
+            var flightLayer = UIFactory.Group("Flight Layer", root.parent);
+            UIFactory.Stretch(flightLayer);
+            flightLayer.SetAsLastSibling();
+            BoardEffects.Instance.SetFlightLayer(flightLayer);
 
             _handRow = UIFactory.Group("Hand Row", dock);
             _handRowPin = _handRow.gameObject.AddComponent<LayoutElement>();
@@ -587,6 +626,10 @@ namespace Indoctrination.Net
 
         private void RefreshGame(NetworkGameManager manager, GameView view)
         {
+            // Captured before _renderedPhase moves on, so "we have just arrived in
+            // this phase" is still answerable further down.
+            var previousPhase = _renderedPhase;
+
             if (!string.Equals(_renderedPhase, view.phase, StringComparison.Ordinal))
             {
                 // Keep the battlefield and the phase action usable by default.
@@ -600,9 +643,27 @@ namespace Indoctrination.Net
                 : $"{view.phase}   draft {view.draftNumber}, turn {view.turnInRound}/{GameSettings.TurnsPerRound}   " +
                   $"deck {view.deckCount}, discard {view.discardCount}";
 
+            // Entering Activation is the moment the board should react: the dice
+            // are settled and the units they woke are about to resolve.
+            var enteringActivation = view.phase == nameof(TurnPhase.Activation)
+                                     && previousPhase != nameof(TurnPhase.Activation);
+
+            _pulseActivationsThisRefresh = enteringActivation;
+            if (enteringActivation)
+            {
+                _rolledThisTurn.Clear();
+                foreach (var player in view.players.Where(p => p.isAlive && p.primaryDie > 0))
+                {
+                    _rolledThisTurn.Add(player.primaryDie);
+                }
+
+                BoardEffects.Instance.Shake(_gameRoot);
+            }
+
             RefreshTopBar(view);
             RefreshBattlefield(manager, view);
             RefreshActionPanel(manager, view);
+            RefreshReadyControl(view);
             // Dynamic phase contents replace the old children in-place. Always
             // return the scroll position to the primary action at the top.
             _actionPanel.anchoredPosition = new Vector2(_actionPanel.anchoredPosition.x, 0f);
@@ -633,7 +694,8 @@ namespace Indoctrination.Net
                     card => isMyPick && IsDraftable(view, card),
                     card => manager.RequestDraftRpc(card.instanceId),
                     card => DraftMarkTag(view, card),
-                    DraftZoneLeftInset);
+                    actionLabel: "Draft this card",
+                    leftInset: DraftZoneLeftInset);
             }
 
             foreach (var player in view.players.Where(p => p.playerId != view.viewerPlayerId))
@@ -650,30 +712,111 @@ namespace Indoctrination.Net
             }
         }
 
+        /// <summary>
+        /// Lays a set of cards out so that all of them are on screen at once,
+        /// shrinking them to fit rather than scrolling them out of sight. A player
+        /// has to be able to see the whole draft to choose from it, and the whole
+        /// board to plan against it; a card too small to read is opened by
+        /// clicking it, which is what <see cref="CardPreview"/> is for.
+        /// </summary>
         private void BuildCardRow(
             Transform parent, string label, CardView[] cards,
             Func<CardView, bool> isClickable, Action<CardView> onClick, Func<CardView, string> tagFor,
-            int leftInset = 0)
+            string actionLabel = null, int leftInset = 0)
         {
             var row = UIFactory.Group(label, parent);
             var rowLayout = UIFactory.VerticalLayout(
                 row, 4, new RectOffset(leftInset, 0, 0, 0), controlHeight: true);
             rowLayout.childAlignment = TextAnchor.UpperLeft;
-            var rowPin = row.gameObject.AddComponent<LayoutElement>();
-            rowPin.preferredHeight = BattlefieldRowHeight;
-            rowPin.flexibleWidth = 1;
 
             var header = UIFactory.Label("Header", row, label, 14, TextAnchor.MiddleLeft);
             header.fontStyle = FontStyle.Bold;
-            AddFixedHeight(header.rectTransform, 20);
+            AddFixedHeight(header.rectTransform, 18);
 
-            var content = UIFactory.HorizontalScroll("Scroll", row, CardStripHeight);
+            var cellWidth = CardWidthThatFits(cards.Length, leftInset);
+            var cellHeight = cellWidth * (BoardCardView.Height / BoardCardView.Width);
+
+            var grid = UIFactory.Group("Cards", row);
+            var gridLayout = grid.gameObject.AddComponent<GridLayoutGroup>();
+            gridLayout.cellSize = new Vector2(cellWidth, cellHeight);
+            gridLayout.spacing = new Vector2(CardGap, CardGap);
+            gridLayout.childAlignment = TextAnchor.UpperLeft;
+            gridLayout.padding = new RectOffset(0, 0, 2, 2);
+
+            var rows = Mathf.Max(1, Mathf.CeilToInt(cards.Length / (float)Mathf.Max(1, ColumnsThatFit(cellWidth, leftInset))));
+            var gridHeight = (rows * cellHeight) + ((rows - 1) * CardGap) + 4f;
+            AddFixedHeight(grid, gridHeight);
+
+            var rowPin = row.gameObject.AddComponent<LayoutElement>();
+            rowPin.preferredHeight = gridHeight + 22f;
+            rowPin.minHeight = gridHeight + 22f;
+            rowPin.flexibleWidth = 1;
+
             foreach (var card in cards)
             {
+                // The grid sizes each cell; the card is laid out at its natural
+                // size inside and scaled down to match.
+                var cell = UIFactory.Group("Cell", grid);
+                var cardView = BoardCardView.Create(cell);
+                var cardRect = (RectTransform)cardView.transform;
+                cardRect.anchorMin = cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+                cardRect.pivot = new Vector2(0.5f, 0.5f);
+
                 var clickable = isClickable != null && isClickable(card);
-                var cardView = BoardCardView.Create(content);
                 cardView.Populate(card, tagFor?.Invoke(card), clickable ? () => onClick(card) : null);
+                cardView.SetAction(clickable ? actionLabel : null, clickable ? () => onClick(card) : null);
+                cardView.ScaleTo(cellWidth);
+
+                RegisterForActivationPulse(cardView);
             }
+        }
+
+        /// <summary>How wide each card can be and still fit every one of them on screen.</summary>
+        private float CardWidthThatFits(int count, int leftInset)
+        {
+            var available = Mathf.Max(200f, _battlefield.rect.width - leftInset - 12f);
+
+            // Try progressively more rows until the cards are a workable size.
+            for (var rows = 1; rows <= 4; rows++)
+            {
+                var perRow = Mathf.CeilToInt(count / (float)rows);
+                var width = (available - ((perRow - 1) * CardGap)) / Mathf.Max(1, perRow);
+
+                if (width >= MinCardWidth || rows == 4)
+                {
+                    return Mathf.Clamp(width, MinCardWidth, BoardCardView.Width);
+                }
+            }
+
+            return MinCardWidth;
+        }
+
+        private int ColumnsThatFit(float cellWidth, int leftInset)
+        {
+            var available = Mathf.Max(200f, _battlefield.rect.width - leftInset - 12f);
+            return Mathf.Max(1, Mathf.FloorToInt((available + CardGap) / (cellWidth + CardGap)));
+        }
+
+        /// <summary>
+        /// Lights up a card if the dice just woke it. Only during Activation, and
+        /// only once per entry into that phase, so the board reacts to the roll
+        /// rather than flashing on every incidental refresh.
+        /// </summary>
+        private void RegisterForActivationPulse(BoardCardView card)
+        {
+            if (!_pulseActivationsThisRefresh || card.Definition == null)
+            {
+                return;
+            }
+
+            if (card.Definition.Type != CardType.Unit
+                || !card.Definition.ActivationNumbers.Any(_rolledThisTurn.Contains))
+            {
+                return;
+            }
+
+            BoardEffects.Instance.PulseCard(
+                (RectTransform)card.transform, BoardArt.ColorOf(card.Definition.Color));
         }
 
         private static bool IsDraftable(GameView view, CardView card)
@@ -787,7 +930,13 @@ namespace Indoctrination.Net
                 wrapperPin.preferredHeight = HandCardHeight;
                 wrapperPin.minHeight = HandCardHeight;
 
-                BoardCardView.Create(wrapper).Populate(card, null, null);
+                var handCard = BoardCardView.Create(wrapper);
+                handCard.Populate(card, null, null);
+
+                // The same action as the button beneath it, so a card read in the
+                // preview can be played without closing it first.
+                var playing = card.instanceId;
+                handCard.SetAction("Play", () => NetworkGameManager.Instance?.RequestBuyRpc(playing));
 
                 var buttons = UIFactory.Group("Buttons", wrapper);
                 AddFixedHeight(buttons, HandCardButtonHeight);
@@ -851,12 +1000,11 @@ namespace Indoctrination.Net
                     RenderResource(manager, view);
                     break;
                 case nameof(TurnPhase.Buy):
-                    ActionLabel("Play cards from your hand below, or recycle them for a resource.");
+                    ActionLabel("Play or recycle from your hand.", 16);
                     break;
             }
 
             RenderCardActions(manager, view);
-            RenderReadyCheck(manager, view);
         }
 
         /// <summary>
@@ -902,8 +1050,8 @@ namespace Indoctrination.Net
         private void RenderDraftHint(GameView view)
         {
             ActionLabel(view.currentDrafterId == view.viewerPlayerId
-                ? "Your pick - choose a card from the draft zone below."
-                : $"Waiting for {FindPlayer(view, view.currentDrafterId)?.name} to draft.");
+                ? "Your pick."
+                : $"{FindPlayer(view, view.currentDrafterId)?.name} is picking.", 17);
         }
 
         private void RenderRolling(NetworkGameManager manager, GameView view)
@@ -916,53 +1064,33 @@ namespace Indoctrination.Net
                     new Color(0.22f, 0.5f, 0.24f), width: 240, height: 54);
             }
 
-            var rolled = view.players
-                .Where(player => player.isAlive && player.hasRolled)
-                .Select(player => $"{player.name}: {player.primaryDie}")
-                .ToList();
-
-            ActionLabel(rolled.Count == 0
-                ? "No dice rolled yet."
-                : $"Rolled so far: {string.Join("  |  ", rolled)}");
-
+            // Who has rolled what is on the dice row above; who the table is
+            // waiting on is on the dock. Neither belongs here as well.
             if (!view.diceRolled)
             {
-                var waiting = view.players
-                    .Where(player => player.isAlive && !player.hasRolled)
-                    .Select(player => player.name);
-                ActionLabel($"Waiting to roll: {string.Join(", ", waiting)}");
                 return;
             }
 
-            ActionLabel("All dice are down. Ready up to see which units activate.");
             RenderActivationPreview(view);
 
             if (you != null && you.compound.Any(c => c.definitionId == CardIds.TryAgain))
             {
-                UIFactory.ButtonWithLabel("Reroll", _actionPanel, "Try Again (reroll)",
-                    () => manager.RequestRerollRpc(), width: 220);
+                UIFactory.ButtonWithLabel("Reroll", _actionPanel, "Try Again",
+                    () => manager.RequestRerollRpc(), width: 200);
             }
 
             if (view.highRollResourceClaimed)
             {
-                ActionLabel("The high roll bonus has been taken.");
                 return;
             }
 
             var highRoller = HighestUniqueRoller(view);
-            if (highRoller < 0)
+            if (highRoller < 0 || highRoller != view.viewerPlayerId)
             {
-                ActionLabel("The top roll was tied, so nobody takes the bonus resource.");
                 return;
             }
 
-            if (highRoller != view.viewerPlayerId)
-            {
-                ActionLabel($"{FindPlayer(view, highRoller)?.name} rolled highest.");
-                return;
-            }
-
-            ActionLabel("You rolled highest. Take one resource:");
+            ActionLabel("Highest roll - take one:", 16);
             RenderColorButtons(color => manager.RequestClaimHighRollResourceRpc((int)color));
         }
 
@@ -1002,38 +1130,34 @@ namespace Indoctrination.Net
         private void RenderActivation(GameView view)
         {
             var values = view.players.Where(p => p.isAlive && p.primaryDie > 0).Select(p => p.primaryDie).ToList();
-            ActionLabel($"Dice showing: {string.Join(", ", values)}. Every player's units on those numbers activate.");
+            ActionLabel($"Units on {string.Join(", ", values.Distinct().OrderBy(v => v))} are firing.", 16);
         }
 
         private void RenderResource(NetworkGameManager manager, GameView view)
         {
             if (view.Viewer is { collectedResources: true })
             {
-                ActionLabel("You have taken your resources for this turn.");
                 return;
             }
 
-            ActionLabel($"Choose {GameSettings.ResourcesPerTurn} resources: {string.Join(", ", _pendingResources)}");
+            // The last pick submits and finishes the phase, so there is no
+            // confirm step and nothing to undo - just take what you want.
+            var left = GameSettings.ResourcesPerTurn - _pendingResources.Count;
+            ActionLabel(left == 1 ? "Take 1 more" : $"Take {left}", 17);
+
             RenderColorButtons(color =>
             {
                 _pendingResources.Add(color);
-                if (_pendingResources.Count == GameSettings.ResourcesPerTurn)
+
+                if (_pendingResources.Count < GameSettings.ResourcesPerTurn)
                 {
-                    manager.RequestCollectResourcesRpc(_pendingResources.ConvertAll(c => (int)c).ToArray());
-                    _pendingResources.Clear();
+                    RefreshActionPanel(manager, view);
+                    return;
                 }
 
-                RefreshActionPanel(manager, view);
+                manager.RequestCollectResourcesRpc(_pendingResources.ConvertAll(c => (int)c).ToArray());
+                _pendingResources.Clear();
             });
-
-            if (_pendingResources.Count > 0)
-            {
-                UIFactory.ButtonWithLabel("Clear", _actionPanel, "Clear", () =>
-                {
-                    _pendingResources.Clear();
-                    RefreshActionPanel(manager, view);
-                }, width: 100);
-            }
         }
 
         /// <summary>Suspicious Chef's paid meal counter, and Baal's Scheme-counter reroll.</summary>
@@ -1114,44 +1238,49 @@ namespace Indoctrination.Net
             }
         }
 
-        private void RenderReadyCheck(NetworkGameManager manager, GameView view)
+        private void ToggleReady()
         {
-            if (view.phase == nameof(TurnPhase.Draft) || view.isGameOver)
+            var view = NetworkGameManager.Instance?.View;
+            if (view?.Viewer != null)
             {
-                return;
+                NetworkGameManager.Instance.RequestSetReadyRpc(!view.Viewer.isReady);
             }
+        }
 
+        /// <summary>
+        /// Updates the dock's Ready control. It is always present during play, so
+        /// the control that ends a phase can never be scrolled or covered away.
+        /// </summary>
+        private void RefreshReadyControl(GameView view)
+        {
             var you = view.Viewer;
-            if (you == null)
+            var usable = you is { isAlive: true }
+                         && view.phase != nameof(TurnPhase.Draft)
+                         && !view.isGameOver;
+
+            _readyButton.gameObject.SetActive(usable);
+            _waitingLabel.gameObject.SetActive(usable || you is { isAlive: false });
+
+            if (you is { isAlive: false })
+            {
+                _waitingLabel.text = "You are out. Watching the rest play out.";
+                return;
+            }
+
+            if (!usable)
             {
                 return;
             }
 
-            // A leader who is out takes no more actions, so there is nothing for
-            // them to be ready for - and the table is not waiting on them either.
-            if (!you.isAlive)
-            {
-                ActionLabel("You are out of the game. Watching the rest play out.", 13);
-                return;
-            }
-
-            if (view.phase == nameof(TurnPhase.Rolling) && !view.diceRolled)
-            {
-                return;
-            }
+            _readyLabel.text = you.isReady ? "Not Ready" : "Ready";
+            _readyButton.targetGraphic.color = you.isReady
+                ? new Color(0.4f, 0.3f, 0.15f)
+                : new Color(0.2f, 0.4f, 0.2f);
 
             var waitingOn = view.players.Where(p => p.isAlive && !p.isReady).Select(p => p.name).ToList();
-
-            var spacer = UIFactory.Group("Spacer", _actionPanel);
-            var spacerElement = spacer.gameObject.AddComponent<LayoutElement>();
-            spacerElement.flexibleHeight = 1;
-
-            UIFactory.ButtonWithLabel(
-                "Ready", _actionPanel, you.isReady ? "Not Ready" : "Ready",
-                () => manager.RequestSetReadyRpc(!you.isReady),
-                you.isReady ? new Color(0.4f, 0.3f, 0.15f) : new Color(0.2f, 0.4f, 0.2f), 200, 36);
-
-            ActionLabel(waitingOn.Count > 0 ? $"Waiting on: {string.Join(", ", waitingOn)}" : "Everyone is ready.", 13);
+            _waitingLabel.text = waitingOn.Count > 0
+                ? $"Waiting on {string.Join(", ", waitingOn)}"
+                : "Everyone ready.";
         }
 
         // -------------------------------------------------------- Pending choice
@@ -1242,16 +1371,63 @@ namespace Indoctrination.Net
             }
         }
 
+        /// <summary>
+        /// Throws a resource across the board from the button that granted it to
+        /// the pip that now counts it, so a collected resource is something you
+        /// watch arrive rather than a number that changed while you looked away.
+        /// </summary>
+        private void FlyResourceToStatBar(ResourceColor color, Component from)
+        {
+            if (from == null || _viewerStatBar == null)
+            {
+                return;
+            }
+
+            BoardEffects.Instance.FlyResource(
+                from.transform.position, _viewerStatBar.PipPosition(color), color);
+        }
+
+        /// <summary>
+        /// The resource picker: one disc per colour, in the colour it grants. The
+        /// pip that flies out of a pressed disc is the same shape as the pip it
+        /// lands in, so where a resource went is never in doubt.
+        /// </summary>
         private void RenderColorButtons(Action<ResourceColor> onPicked, IEnumerable<ResourceColor> colors = null)
         {
             var row = UIFactory.Group("Colors", _actionPanel);
-            AddFixedHeight(row, 34);
-            UIFactory.HorizontalLayout(row, 6, new RectOffset(0, 0, 0, 0));
-            foreach (var color in colors ?? Enum.GetValues(typeof(ResourceColor)).Cast<ResourceColor>())
+            AddFixedHeight(row, ResourceButtonSize + 6f);
+            var layout = UIFactory.HorizontalLayout(row, 10, new RectOffset(0, 0, 0, 0));
+            layout.childAlignment = TextAnchor.MiddleCenter;
+
+            foreach (var color in colors ?? BoardArt.Colors.AsEnumerable())
             {
                 var chosen = color;
-                UIFactory.ButtonWithLabel(color.ToString(), row, color.ToString(),
-                    () => onPicked(chosen), ColorSwatch(chosen), 84, 30);
+
+                var button = UIFactory.Group(color.ToString(), row);
+                UIFactory.SetSize(button, ResourceButtonSize, ResourceButtonSize);
+                var pin = button.gameObject.AddComponent<LayoutElement>();
+                pin.minWidth = pin.preferredWidth = ResourceButtonSize;
+                pin.minHeight = pin.preferredHeight = ResourceButtonSize;
+
+                var disc = button.gameObject.AddComponent<Image>();
+                disc.sprite = BoardArt.Disc;
+                disc.color = BoardArt.ColorOf(chosen);
+
+                var press = button.gameObject.AddComponent<Button>();
+                press.targetGraphic = disc;
+                press.onClick.AddListener(() =>
+                {
+                    FlyResourceToStatBar(chosen, button);
+                    onPicked(chosen);
+                });
+
+                var label = UIFactory.Label("Name", button, chosen.ToString()[..1], 18,
+                    TextAnchor.MiddleCenter, Color.white);
+                label.fontStyle = FontStyle.Bold;
+                UIFactory.Stretch(label.rectTransform);
+                var outline = label.gameObject.AddComponent<Outline>();
+                outline.effectColor = new Color(0f, 0f, 0f, 0.85f);
+                outline.effectDistance = new Vector2(1f, -1f);
             }
         }
 

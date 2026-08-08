@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Indoctrination.Core;
 using UnityEngine;
 using UnityEngine.UI;
@@ -17,14 +18,20 @@ namespace Indoctrination.Net
     public class StatBar : MonoBehaviour
     {
         /// <summary>Name, health, followers, and the resource row.</summary>
-        public const float BarHeight = 98f;
+        public const float BarHeight = 104f;
+
+        /// <summary>Size of one resource disc.</summary>
+        public const float PipDiameter = 26f;
 
         private Text _nameText;
         private Image _healthFill;
         private Text _healthText;
         private Image _followerFill;
         private Text _followerText;
-        private Text _resourceText;
+
+        /// <summary>One pip per resource colour, in <see cref="BoardArt.Colors"/> order.</summary>
+        private readonly Dictionary<ResourceColor, Text> _resourcePips = new();
+        private RectTransform _resourceRow;
 
         private bool _built;
 
@@ -66,10 +73,18 @@ namespace Indoctrination.Net
             (_healthFill, _healthText) = MakeBar("Health", new Color(0.8f, 0.25f, 0.25f));
             (_followerFill, _followerText) = MakeBar("Followers", new Color(0.75f, 0.6f, 0.2f));
 
-            _resourceText = UIFactory.Label("Resources", transform, "", 13, TextAnchor.MiddleLeft);
-            // The colour tags are markup, so this row has to render rich text.
-            _resourceText.supportRichText = true;
-            SizeRow(_resourceText.rectTransform, 17);
+            // Coloured discs with the count inside, rather than letters and
+            // numbers - the colour is the thing being read, so it should be the
+            // thing that is seen.
+            _resourceRow = UIFactory.Group("Resources", transform);
+            SizeRow(_resourceRow, PipDiameter);
+            var pipLayout = UIFactory.HorizontalLayout(_resourceRow, 6, new RectOffset(0, 0, 0, 0));
+            pipLayout.childAlignment = TextAnchor.MiddleLeft;
+
+            foreach (var color in BoardArt.Colors)
+            {
+                _resourcePips[color] = BoardArt.ResourcePip(_resourceRow, color, PipDiameter);
+            }
         }
 
         private (Image Fill, Text Label) MakeBar(string name, Color color)
@@ -86,8 +101,9 @@ namespace Indoctrination.Net
             return (fill, label);
         }
 
-        private static string Swatch(string letter, int amount, string hex) =>
-            $"<color=#{hex}><b>{letter}</b></color> {amount}";
+        /// <summary>Where a resource pip sits on screen, for pips flying into it.</summary>
+        public Vector3 PipPosition(ResourceColor color) =>
+            _resourcePips.TryGetValue(color, out var pip) ? pip.rectTransform.position : transform.position;
 
         private static void SizeRow(RectTransform rect, float height)
         {
@@ -103,19 +119,20 @@ namespace Indoctrination.Net
                 : $"{player.name} (out)";
             _nameText.color = player.isAlive ? Color.white : new Color(0.6f, 0.6f, 0.6f);
 
-            var healthFraction = Mathf.Clamp01((float)player.health / GameSettings.StartingHealth);
-            _healthFill.fillAmount = healthFraction;
+            // The bars slide to their new value rather than jumping, so damage
+            // and recruitment are visible as they happen.
             _healthText.text = $"{player.health} HP";
+            BoardEffects.Instance.FillTo(
+                _healthFill, (float)player.health / GameSettings.StartingHealth);
 
-            var followerFraction = Mathf.Clamp01((float)player.followers / GameSettings.FollowersToWin);
-            _followerFill.fillAmount = followerFraction;
             _followerText.text = $"{player.followers}/{GameSettings.FollowersToWin} followers";
+            BoardEffects.Instance.FillTo(
+                _followerFill, (float)player.followers / GameSettings.FollowersToWin);
 
-            // Coloured so a glance tells you which pile is short, without having
-            // to read the letters.
-            _resourceText.text =
-                $"{Swatch("R", player.red, "e05a5a")}  {Swatch("G", player.green, "4fae55")}  " +
-                $"{Swatch("B", player.blue, "5588e0")}  {Swatch("Y", player.yellow, "d1a83d")}";
+            _resourcePips[ResourceColor.Red].text = player.red.ToString();
+            _resourcePips[ResourceColor.Green].text = player.green.ToString();
+            _resourcePips[ResourceColor.Blue].text = player.blue.ToString();
+            _resourcePips[ResourceColor.Yellow].text = player.yellow.ToString();
         }
 
         public static StatBar Create(Transform parent)
