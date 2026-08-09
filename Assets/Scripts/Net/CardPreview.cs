@@ -62,6 +62,7 @@ namespace Indoctrination.Net
             // refuses to run one on an inactive object, so a flash asked for while
             // the preview was closed would simply never happen.
             _instance.ShowDefinition(ritual, "Ritual");
+            _instance.transform.SetAsLastSibling();
 
             if (!Application.isPlaying)
             {
@@ -77,6 +78,12 @@ namespace Indoctrination.Net
         {
             ShowDefinition(ritual, "Ritual");
             _actionRow.gameObject.SetActive(false);
+
+            // Nothing behind this is actionable while it plays, so the board is
+            // dimmed harder than for an ordinary preview.
+            var backdrop = GetComponent<Image>();
+            var restingDim = backdrop.color;
+            backdrop.color = new Color(0f, 0f, 0f, 0.88f);
 
             var start = _panel.position;
             var startScale = _panel.localScale;
@@ -102,6 +109,7 @@ namespace Indoctrination.Net
             _panel.position = start;
             _panel.localScale = startScale;
             _actionRow.gameObject.SetActive(true);
+            backdrop.color = restingDim;
             gameObject.SetActive(false);
         }
 
@@ -115,6 +123,19 @@ namespace Indoctrination.Net
 
         /// <summary>Whether the preview is currently covering the board.</summary>
         public static bool IsOpen => _instance != null && _instance.gameObject.activeSelf;
+
+        /// <summary>
+        /// Puts the preview back on top. Anything else the board adds to the
+        /// canvas afterwards - the hand tray, the flight layer - would otherwise
+        /// be drawn over a Ritual that is meant to be covering everything.
+        /// </summary>
+        public static void BringToFront()
+        {
+            if (IsOpen)
+            {
+                _instance.transform.SetAsLastSibling();
+            }
+        }
 
         private void Build()
         {

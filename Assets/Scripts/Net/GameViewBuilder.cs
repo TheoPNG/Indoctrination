@@ -71,13 +71,32 @@ namespace Indoctrination.Net
 
                     // The whole point of building a view per player: only the
                     // holder is ever sent the contents of their own hand.
+                    // Only the holder is sent a hand, and only they are told what
+                    // each card would cost them - the discount depends on what is
+                    // in their own compound, so it is theirs to know.
                     hand = player.PlayerId == viewerPlayerId
-                        ? player.Hand.Select(ToCardView).ToArray()
+                        ? player.Hand.Select(card => ToPricedCardView(game, player, card)).ToArray()
                         : Array.Empty<CardView>(),
 
                     compound = player.Compound.Select(ToCardView).ToArray()
                 }).ToArray()
             };
+        }
+
+        /// <summary>
+        /// A card in its holder's hand, priced for them: what it costs after
+        /// their discounts, whether that is less than the printed cost, and
+        /// whether they can pay it.
+        /// </summary>
+        private static CardView ToPricedCardView(GameState game, PlayerState player, CardInstance card)
+        {
+            var view = ToCardView(card);
+            var cost = game.CostFor(player, card);
+
+            view.costForYou = cost.ToString();
+            view.isDiscounted = !cost.IsSpecial && cost.Total < card.Cost.Total;
+            view.canAfford = player.Resources.CanAfford(cost);
+            return view;
         }
 
         private static CardView ToCardView(CardInstance card)

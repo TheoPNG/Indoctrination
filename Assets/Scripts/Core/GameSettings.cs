@@ -38,6 +38,12 @@ namespace Indoctrination.Core
         /// <summary>Free resources every player collects during the Resource phase.</summary>
         public const int ResourcesPerTurn = 2;
 
+        /// <summary>
+        /// How many cards a leader may hold once the turn closes. Anything over
+        /// this is thrown away, so a hand cannot be hoarded indefinitely.
+        /// </summary>
+        public const int HandLimit = 7;
+
         /// <summary>Turns played between drafts.</summary>
         public const int TurnsPerRound = 3;
 
@@ -65,6 +71,13 @@ namespace Indoctrination.Core
         /// so one player walking away would otherwise stop the game for good.
         /// </summary>
         public const float ChoiceTimeoutSeconds = 60f;
+
+        /// <summary>
+        /// How long the board sits on the Activation phase once every unit has
+        /// resolved. Nothing there is a player's move, so it closes itself - but
+        /// not before there has been time to watch what the dice did.
+        /// </summary>
+        public const float ActivationDwellSeconds = 2.5f;
 
         /// <summary>
         /// A ceiling on how much work one batch of card effects may do. Two cards

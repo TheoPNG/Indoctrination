@@ -235,6 +235,54 @@ static class RulesCheck
         limits.DealDamage(null, limits.Players[1], 500);
         Check("health still floors at zero", limits.Players[1].Health == 0);
 
+        Console.WriteLine("\nDraft rotation, discounts, and the hand limit:");
+        var rotate = new GameState(new[] { "A", "B", "C" }, cards, randomSeed: 61) { FirstDrafterIndex = 0 };
+        var firstPickers = new List<int>();
+        for (var round = 0; round < 3; round++)
+        {
+            if (round > 0)
+            {
+                while (rotate.Phase != TurnPhase.Draft) rotate.AdvancePhase();
+            }
+            else
+            {
+                rotate.BeginDraft();
+            }
+
+            firstPickers.Add(rotate.CurrentDrafterId ?? -1);
+            while (rotate.CurrentDrafterId is int picker)
+                rotate.DraftCard(picker, rotate.DraftZone[0].InstanceId);
+        }
+
+        Check("the first pick moves round the table each draft",
+              firstPickers.SequenceEqual(new[] { 0, 1, 2 }), string.Join(",", firstPickers));
+
+        // A stone should discount a Ritual just as much as a Unit.
+        var stones = new GameState(new[] { "A", "B" }, cards, randomSeed: 62);
+        var ritual = cards.First(c => c.Type == CardType.Ritual
+                                      && c.Cost.Amounts.GetValueOrDefault(ResourceColor.Yellow) > 0);
+        var pricedRitual = new CardInstance(-60, ritual);
+        var beforeStone = stones.CostFor(stones.Players[0], pricedRitual).Total;
+        stones.Players[0].Compound.Add(new CardInstance(-61, cards.First(c => c.id == CardIds.Wealthstone)));
+        Check("Wealthstone discounts a Ritual, not just Units",
+              stones.CostFor(stones.Players[0], pricedRitual).Total == beforeStone - 1,
+              $"{beforeStone} -> {stones.CostFor(stones.Players[0], pricedRitual).Total}");
+
+        // Going over the hand limit costs the excess at the end of the turn.
+        var hoard = new GameState(new[] { "A", "B" }, cards, randomSeed: 63);
+        FinishDraft(hoard);
+        while (hoard.Phase != TurnPhase.Buy) hoard.AdvancePhase();
+        while (hoard.Players[0].Hand.Count < GameSettings.HandLimit + 3)
+            hoard.DrawCard(0);
+
+        var overLimit = hoard.Players[0].Hand.Count;
+        hoard.AdvancePhase();
+        while (hoard.PendingChoice != null) hoard.AnswerPendingChoiceWithDefault();
+
+        Check($"a hand over {GameSettings.HandLimit} is cut back as the turn closes",
+              hoard.Players[0].Hand.Count == GameSettings.HandLimit,
+              $"{overLimit} -> {hoard.Players[0].Hand.Count}");
+
         Console.WriteLine("\nWin conditions:");
         var g3 = new GameState(new[] { "A", "B" }, cards, randomSeed: 1);
         g3.Players[0].GainFollowers(19);

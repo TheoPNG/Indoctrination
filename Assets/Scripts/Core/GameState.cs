@@ -129,6 +129,14 @@ namespace Indoctrination.Core
         {
             RequirePhase(TurnPhase.Draft);
 
+            // The first pick moves one seat round the table each draft, so the
+            // advantage of choosing first is shared out rather than belonging to
+            // whoever happened to be drawn for it at the start.
+            if (DraftNumber > 0)
+            {
+                FirstDrafterIndex = (FirstDrafterIndex + 1) % _players.Count;
+            }
+
             DraftNumber++;
             _draftPickIndex = 0;
             _draftMarks.Clear();
@@ -557,51 +565,26 @@ namespace Indoctrination.Core
                 return cost;
             }
 
-            var unitsOnly = card.Type == CardType.Unit;
-
-            // "all cards in your hand"
-            if (player.HasInPlay(CardIds.Mindstone))
+            // Every stone discounts every card in hand, Units and otherwise. The
+            // cursed ones do the same and charge a point of maximum health for it.
+            if (player.HasInPlay(CardIds.Mindstone) || player.HasInPlay(CardIds.CursedMindstone))
             {
                 cost = cost.Reduced(ResourceColor.Blue, 1);
             }
 
-            if (player.HasInPlay(CardIds.Shieldstone))
+            if (player.HasInPlay(CardIds.Shieldstone) || player.HasInPlay(CardIds.CursedShieldstone))
             {
                 cost = cost.Reduced(ResourceColor.Green, 1);
             }
 
-            // "all Units in your hand"
-            if (unitsOnly)
+            if (player.HasInPlay(CardIds.Bloodstone) || player.HasInPlay(CardIds.CursedBloodstone))
             {
-                if (player.HasInPlay(CardIds.Bloodstone))
-                {
-                    cost = cost.Reduced(ResourceColor.Red, 1);
-                }
+                cost = cost.Reduced(ResourceColor.Red, 1);
+            }
 
-                if (player.HasInPlay(CardIds.Wealthstone))
-                {
-                    cost = cost.Reduced(ResourceColor.Yellow, 1);
-                }
-
-                if (player.HasInPlay(CardIds.CursedMindstone))
-                {
-                    cost = cost.Reduced(ResourceColor.Blue, 1);
-                }
-
-                if (player.HasInPlay(CardIds.CursedShieldstone))
-                {
-                    cost = cost.Reduced(ResourceColor.Green, 1);
-                }
-
-                if (player.HasInPlay(CardIds.CursedBloodstone))
-                {
-                    cost = cost.Reduced(ResourceColor.Red, 1);
-                }
-
-                if (player.HasInPlay(CardIds.CursedWealthstone))
-                {
-                    cost = cost.Reduced(ResourceColor.Yellow, 1);
-                }
+            if (player.HasInPlay(CardIds.Wealthstone) || player.HasInPlay(CardIds.CursedWealthstone))
+            {
+                cost = cost.Reduced(ResourceColor.Yellow, 1);
             }
 
             if (card.Definition.Id == CardIds.BelleOfTheBall)
@@ -853,6 +836,8 @@ namespace Indoctrination.Core
                     break;
 
                 case TurnPhase.Buy:
+                    QueueHandLimitDiscards();
+
                     // The turn does not close here. End-of-turn Blessings look back
                     // at this turn's tallies, and some of them stop to ask who to
                     // hit, so the tallies have to survive until the queue drains.
@@ -865,6 +850,25 @@ namespace Indoctrination.Core
             }
 
             ResolveEffects();
+        }
+
+        /// <summary>
+        /// Asks anybody holding more than the hand limit to throw the extras away
+        /// as the turn closes. Done here rather than by refusing draws or picks:
+        /// the draft hands out a fixed number of cards, so a player at the limit
+        /// mid-draft would otherwise have nowhere to put them and stall the table.
+        /// </summary>
+        private void QueueHandLimitDiscards()
+        {
+            foreach (var player in LivingPlayers.ToList())
+            {
+                var excess = player.Hand.Count - GameSettings.HandLimit;
+                if (excess > 0)
+                {
+                    EnqueueEffect(null, player, CommonEffects.DiscardDownToHandLimit(excess),
+                                  $"{player.Name} is over the hand limit");
+                }
+            }
         }
 
         private void EndOfTurn()

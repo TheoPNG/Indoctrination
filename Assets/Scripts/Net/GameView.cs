@@ -180,6 +180,19 @@ namespace Indoctrination.Net
     {
         public int instanceId;
         public string definitionId;
+
+        /// <summary>
+        /// What this card costs its holder right now, after the stones and
+        /// anything else that discounts it. Only filled in for the viewer's own
+        /// hand, where it is the number that actually matters; empty elsewhere.
+        /// </summary>
+        public string costForYou;
+
+        /// <summary>Whether the printed cost has been reduced, for the board to mark it.</summary>
+        public bool isDiscounted;
+
+        /// <summary>Whether the viewer can afford it right now.</summary>
+        public bool canAfford;
     }
 
     /// <summary>

@@ -532,6 +532,20 @@ namespace Indoctrination.Net
 
             _choiceStartedAt = -1f;
 
+            // Nothing in Activation is a player's move - the dice already decided
+            // everything and the effects resolve themselves. Once they have, the
+            // phase closes on its own, after a beat long enough to watch it happen.
+            if (_game.Phase == TurnPhase.Activation && !_game.HasEffectsPending)
+            {
+                if (Time.time - _phaseStartedAt >= GameSettings.ActivationDwellSeconds)
+                {
+                    AdvancePhase();
+                    BroadcastState();
+                }
+
+                return;
+            }
+
             // A draft pick nobody makes is taken for them once the clock runs
             // out. This check must stay below PendingChoice, or draft-related
             // card questions reach zero seconds and can never answer themselves.

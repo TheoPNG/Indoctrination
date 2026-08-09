@@ -26,6 +26,9 @@ namespace Indoctrination.Net
         /// <summary>Height of the health and follower bars.</summary>
         private const float BarRowHeight = 22f;
 
+        /// <summary>The die face shown beside a player's name.</summary>
+        private const float DieSize = 20f;
+
         private Text _nameText;
         private Image _healthFill;
         private Text _healthText;
@@ -35,6 +38,8 @@ namespace Indoctrination.Net
         /// <summary>One pip per resource colour, in <see cref="BoardArt.Colors"/> order.</summary>
         private readonly Dictionary<ResourceColor, Text> _resourcePips = new();
         private RectTransform _resourceRow;
+        private RectTransform _dieBox;
+        private Text _dieText;
 
         private bool _built;
 
@@ -69,9 +74,29 @@ namespace Indoctrination.Net
             var layout = UIFactory.VerticalLayout(rect, 3, new RectOffset(10, 10, 6, 6), controlHeight: true);
             layout.childAlignment = TextAnchor.UpperLeft;
 
-            _nameText = UIFactory.Label("Name", transform, "", 15, TextAnchor.MiddleLeft);
+            // Name on the left, this turn's die on the right. The die has to be
+            // visible for Try Again and Baal to mean anything - you cannot decide
+            // to change a roll you were never shown.
+            var nameRow = UIFactory.Group("Name Row", transform);
+            SizeRow(nameRow, 20);
+            var nameLayout = UIFactory.HorizontalLayout(nameRow, 6, new RectOffset(0, 0, 0, 0));
+            nameLayout.childAlignment = TextAnchor.MiddleLeft;
+
+            _nameText = UIFactory.Label("Name", nameRow, "", 15, TextAnchor.MiddleLeft);
             _nameText.fontStyle = FontStyle.Bold;
-            SizeRow(_nameText.rectTransform, 18);
+            var nameFlex = _nameText.gameObject.AddComponent<LayoutElement>();
+            nameFlex.flexibleWidth = 1;
+
+            _dieBox = UIFactory.Panel("Die", nameRow, new Color(0.95f, 0.95f, 0.98f));
+            UIFactory.SetSize(_dieBox, DieSize, DieSize);
+            var diePin = _dieBox.gameObject.AddComponent<LayoutElement>();
+            diePin.minWidth = diePin.preferredWidth = DieSize;
+            diePin.minHeight = diePin.preferredHeight = DieSize;
+
+            _dieText = UIFactory.Label("Die Face", _dieBox, "", 14, TextAnchor.MiddleCenter,
+                new Color(0.1f, 0.1f, 0.12f));
+            _dieText.fontStyle = FontStyle.Bold;
+            UIFactory.Stretch(_dieText.rectTransform);
 
             (_healthFill, _healthText) = MakeBar("Health", new Color(0.8f, 0.25f, 0.25f));
             (_followerFill, _followerText) = MakeBar("Followers", new Color(0.75f, 0.6f, 0.2f));
@@ -138,6 +163,11 @@ namespace Indoctrination.Net
                 ? $"{player.name}{(isViewer ? " (you)" : "")}"
                 : $"{player.name} (out)";
             _nameText.color = player.isAlive ? Color.white : new Color(0.6f, 0.6f, 0.6f);
+
+            // Blank until they have actually rolled, so an old face never lingers
+            // as though this turn's roll had already happened.
+            _dieBox.gameObject.SetActive(player.hasRolled && player.primaryDie > 0);
+            _dieText.text = player.primaryDie.ToString();
 
             // The bars slide to their new value rather than jumping, so damage
             // and recruitment are visible as they happen.

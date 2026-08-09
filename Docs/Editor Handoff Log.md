@@ -2,6 +2,50 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
+## 2026-08-08 — Claude (nine refinements: fewer confirmations, priced hands, visible dice)
+
+### Rules
+
+- The first pick moves one seat round the table each draft, so choosing first is
+  shared out rather than belonging to whoever was drawn for it at the start.
+- Every stone discounts every card in hand, not only Units. The cursed ones do
+  the same and still charge a point of maximum health.
+- A hand limit of seven, enforced as the turn closes: anybody over it chooses
+  which cards to throw away. Deliberately not enforced at draw or draft time -
+  the draft hands out a fixed number of picks, so a player at the limit
+  mid-draft would have nowhere to put them and would stall the table.
+
+### Presentation
+
+- The Activation phase closes itself once its effects have resolved, after a
+  short dwell. Nothing there is a player's move.
+- Cards in hand are priced for their holder: a discount shows the printed cost
+  struck through beside what it actually costs, and anything affordable right now
+  is marked. `CardView` carries `costForYou`, `isDiscounted`, and `canAfford`,
+  filled in only for the viewer's own hand - the discount depends on their own
+  compound, so it is theirs to know.
+- Each player's die is shown on their bar once they have rolled, which is what
+  makes Try Again and Baal decisions rather than guesses.
+- A Ritual dims the board harder than an ordinary preview and reclaims the top of
+  the canvas, so the hand tray cannot be drawn over it.
+- Hand cards are sized so a full hand of seven fits across without scrolling.
+
+### Verification
+
+- `./Tools/PlayModeTests/run.sh` — 26 pass; three new ones cover the dice being
+  visible, discounts and affordability being marked, and Activation closing
+  itself.
+- `./Tools/RulesCheck/run.sh` — three new checks cover draft rotation, a stone
+  discounting a Ritual, and a hand over the limit being cut back.
+- `./Tools/CompileCheck/run.sh`, `--fuzz 800`, `./Tools/SmokeTest/run.sh` pass.
+
+### Still outstanding
+
+Instant-speed Rituals (Close Enough after the dice land, before they resolve)
+remains unimplemented - it needs a priority and response system rather than a
+card fix.
+
+
 ## 2026-08-08 — Claude (thirteen refinements; one deferred)
 
 ### Edits

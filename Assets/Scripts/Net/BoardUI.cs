@@ -1128,9 +1128,16 @@ namespace Indoctrination.Net
 
             // Sized to the cards it holds and no wider, so the board stays visible
             // either side of it. It sits just above the dock.
+            // Sized so a full hand fits across without scrolling. The limit is
+            // what makes that possible: seven is the widest a hand can ever be.
+            var widest = Mathf.Min(_gameRoot.rect.width - 60f, 1100f);
+            var handCardWidth = Mathf.Min(
+                BoardCardView.Width,
+                (widest - ((GameSettings.HandLimit - 1) * CardGap)) / GameSettings.HandLimit);
+
             var handWidth = Mathf.Min(
                 _gameRoot.rect.width - 40f,
-                (you.hand.Length * (BoardCardView.Width + CardGap)) + 24f);
+                (you.hand.Length * (handCardWidth + CardGap)) + 24f);
 
             UIFactory.SetSize(_handRow, Mathf.Max(220f, handWidth), handStripHeight);
             _handRow.anchoredPosition = new Vector2(0f, DockTopHeight + BoardSafeInset);
@@ -1139,11 +1146,18 @@ namespace Indoctrination.Net
             var content = UIFactory.HorizontalScroll("Hand Scroll", _handRow, handStripHeight);
             UIFactory.Stretch(UIFactory.Child(_handRow, "Hand Scroll"));
 
+            // The hand has just taken the top of the canvas. A Ritual or a card
+            // preview covers the whole board and has to sit over it, so it
+            // reclaims the top here rather than being buried by the tray.
+            CardPreview.BringToFront();
+
             foreach (var card in you.hand)
             {
                 if (!canBuy)
                 {
-                    BoardCardView.Create(content).Populate(card, null, null);
+                    var idle = BoardCardView.Create(content);
+                    idle.Populate(card, null, null);
+                    idle.ScaleTo(handCardWidth);
                     continue;
                 }
 
@@ -1166,6 +1180,13 @@ namespace Indoctrination.Net
 
                 var handCard = BoardCardView.Create(wrapper);
                 handCard.Populate(card, null, null);
+                handCard.ScaleTo(handCardWidth);
+
+                // Only worth marking when playing is actually the move on offer.
+                if (canBuy)
+                {
+                    handCard.SetAffordable(card.canAfford);
+                }
 
                 // The same action as the button beneath it, so a card read in the
                 // preview can be played without closing it first.

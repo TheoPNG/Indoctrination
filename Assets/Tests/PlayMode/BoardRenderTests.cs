@@ -655,6 +655,107 @@ namespace Indoctrination.Tests
             Assert.Greater(after, before, "opening the discard should put its cards on the board");
         }
 
+
+        /// <summary>
+        /// A player has to be able to see the dice, or Try Again and Baal are
+        /// decisions about a number they were never shown.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RolledDiceAreShownOnScreen()
+        {
+            yield return StartGame();
+
+            var game = ServerGame();
+            while (game.Phase == TurnPhase.Draft)
+            {
+                var drafter = game.CurrentDrafterId.Value;
+                var card = game.DraftZone[0].InstanceId;
+                ApplyAsHost(_ => game.DraftCard(drafter, card));
+                yield return WaitForFrames(2);
+            }
+
+            Assert.IsNull(FindVisibleDieFace(), "no die should show before rolling");
+
+            FindButtonLabelled("ROLL DIE").onClick.Invoke();
+            yield return WaitForFrames(4);
+            Canvas.ForceUpdateCanvases();
+
+            var face = FindVisibleDieFace();
+            Assert.IsNotNull(face, "the die you rolled has to be visible somewhere");
+            Assert.AreEqual(_manager.View.Viewer.primaryDie.ToString(), face,
+                            "and show the face the server actually rolled");
+        }
+
+        /// <summary>
+        /// A discounted card shows what it really costs, and a card you can
+        /// afford is marked, so a hand can be read without pricing each card.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator DiscountsAndAffordableCardsAreMarked()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Buy);
+
+            var game = ServerGame();
+            ApplyAsHost(_ =>
+            {
+                // A stone in play discounts everything in hand.
+                game.Players[0].Compound.Add(new CardInstance(
+                    -70, CardDatabase.Instance.Get(CardIds.Wealthstone)));
+
+                foreach (var color in EffectContext.AllColors)
+                {
+                    game.Players[0].Resources.Add(color, 8);
+                }
+            });
+
+            yield return WaitForFrames(3);
+
+            var hand = _manager.View.Viewer.hand;
+            Assert.Greater(hand.Length, 0, "there should be cards in hand");
+            Assert.IsTrue(hand.Any(c => c.canAfford), "with eight of everything, something is affordable");
+
+            var discounted = hand.FirstOrDefault(c => c.isDiscounted);
+            if (discounted != null)
+            {
+                Assert.IsNotEmpty(discounted.costForYou,
+                                  "a discounted card has to say what it now costs");
+            }
+        }
+
+        /// <summary>The Activation phase has no player input, so it closes itself.</summary>
+        [UnityTest]
+        public IEnumerator ActivationClosesItselfWithoutAReadyPress()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Activation);
+
+            Assert.AreEqual(nameof(TurnPhase.Activation), _manager.View.phase);
+
+            // Wind the clock past the dwell rather than waiting it out.
+            ExpirePhaseClock();
+            yield return WaitForFrames(4);
+
+            Assert.AreNotEqual(nameof(TurnPhase.Activation), _manager.View.phase,
+                               "activation resolves itself and should not wait to be confirmed");
+        }
+
+        /// <summary>The face on the viewer's own die box, if a player could see it.</summary>
+        private string FindVisibleDieFace()
+        {
+            var bar = Object.FindObjectsByType<StatBar>(FindObjectsSortMode.None)
+                .FirstOrDefault(b => (b.GetComponentInChildren<Text>()?.text ?? "").Contains("(you)"));
+
+            var box = bar == null ? null : bar.transform.Find("Name Row/Die");
+            if (box == null || !box.gameObject.activeInHierarchy)
+            {
+                return null;
+            }
+
+            var face = box.GetComponentInChildren<Text>();
+            return face != null && IsFullyVisibleThroughEveryMask(face) ? face.text : null;
+        }
+
         private static int TotalResources(PlayerView player) =>
             player.red + player.green + player.blue + player.yellow;
 

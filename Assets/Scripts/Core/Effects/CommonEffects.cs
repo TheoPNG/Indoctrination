@@ -116,6 +116,41 @@ namespace Indoctrination.Core.Effects
             yield break;
         }
 
+        /// <summary>
+        /// Makes a player throw away cards until their hand is back to the limit.
+        /// They choose which, one at a time, so the limit costs them their worst
+        /// card rather than an arbitrary one.
+        /// </summary>
+        public static EffectRoutine DiscardDownToHandLimit(int excess)
+        {
+            return context => DiscardDownSteps(context, excess);
+        }
+
+        private static IEnumerator<ChoiceRequest> DiscardDownSteps(EffectContext context, int excess)
+        {
+            for (var i = 0; i < excess; i++)
+            {
+                // Re-checked each time round: something else may have emptied the
+                // hand while this was waiting on an answer.
+                if (context.Controller.Hand.Count <= GameSettings.HandLimit)
+                {
+                    yield break;
+                }
+
+                var choice = context.ChooseCard(
+                    $"Hand limit is {GameSettings.HandLimit}. Discard {excess - i} more:",
+                    context.Controller.Hand);
+
+                if (choice == null)
+                {
+                    yield break;
+                }
+
+                yield return choice;
+                context.Game.DiscardFromHand(context.Controller.PlayerId, choice.ChosenCardId);
+            }
+        }
+
         public static EffectRoutine DrawCards(int count)
         {
             return context => DrawCardsSteps(context, count);

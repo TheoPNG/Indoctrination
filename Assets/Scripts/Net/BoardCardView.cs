@@ -101,6 +101,8 @@ namespace Indoctrination.Net
             titleOutline.effectDistance = new Vector2(1f, -1f);
             _titleText = UIFactory.Label("Details", transform, "", 13, TextAnchor.UpperLeft);
             _costText = UIFactory.Label("Cost", transform, "", 12, TextAnchor.UpperLeft, new Color(0.85f, 0.85f, 0.6f));
+            // The struck-through printed price on a discounted card is markup.
+            _costText.supportRichText = true;
             _activatesText = UIFactory.Label("Activates", transform, "", 12, TextAnchor.UpperLeft, new Color(0.7f, 0.85f, 1f));
             _effectText = UIFactory.Label("Effect", transform, "", 12, TextAnchor.UpperLeft, new Color(0.9f, 0.9f, 0.9f));
 
@@ -170,7 +172,10 @@ namespace Indoctrination.Net
                     _headerText.color = Color.white;
                     _titleText.text = $"{definition.Color}  -  {definition.Type}";
                     _titleText.color = ColorFor(definition.Color);
-                    _costText.text = $"Cost: {(definition.Cost.IsSpecial ? "special" : definition.costRaw)}";
+                    _costText.text = CostLine(card, definition);
+                    _costText.color = card.isDiscounted
+                        ? new Color(0.55f, 0.95f, 0.6f)
+                        : new Color(0.85f, 0.85f, 0.6f);
 
                     if (definition.Type == CardType.Unit && definition.ActivationNumbers.Count > 0)
                     {
@@ -211,6 +216,44 @@ namespace Indoctrination.Net
         {
             ActionLabel = label;
             Action = action;
+        }
+
+        /// <summary>
+        /// The cost as it applies to whoever is holding it. A discounted card
+        /// shows the printed price struck through next to what it actually costs,
+        /// so the saving is visible rather than something to work out.
+        /// </summary>
+        private static string CostLine(CardView card, CardDefinition definition)
+        {
+            var printed = definition.Cost.IsSpecial ? "special" : definition.costRaw;
+
+            if (!card.isDiscounted || string.IsNullOrEmpty(card.costForYou))
+            {
+                return $"Cost: {printed}";
+            }
+
+            var actual = string.IsNullOrEmpty(card.costForYou) ? "free" : card.costForYou;
+            return $"Cost: <s>{printed}</s> {actual}";
+        }
+
+        /// <summary>
+        /// Marks this card as one its holder could play right now: a card you can
+        /// afford should be findable in a hand without pricing each one yourself.
+        /// </summary>
+        public void SetAffordable(bool affordable)
+        {
+            _background.color = affordable
+                ? new Color(0.17f, 0.26f, 0.18f)
+                : new Color(0.15f, 0.15f, 0.17f);
+
+            if (!affordable)
+            {
+                return;
+            }
+
+            var edge = gameObject.GetComponent<Outline>() ?? gameObject.AddComponent<Outline>();
+            edge.effectColor = new Color(0.4f, 0.85f, 0.45f, 0.9f);
+            edge.effectDistance = new Vector2(2f, -2f);
         }
 
         /// <summary>
