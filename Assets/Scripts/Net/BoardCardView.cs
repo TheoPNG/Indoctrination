@@ -1,6 +1,7 @@
 using System;
 using Indoctrination.Core;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace Indoctrination.Net
@@ -76,6 +77,19 @@ namespace Indoctrination.Net
             _button = gameObject.AddComponent<Button>();
             _button.targetGraphic = _background;
             _button.interactable = false;
+
+            // The board answers the pointer, not only the click. Handled through
+            // EventTrigger rather than the Button's own transition, because the
+            // lift is a transform change and Button only tints its graphic.
+            var hover = gameObject.AddComponent<EventTrigger>();
+
+            var enter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
+            enter.callback.AddListener(_ => BoardEffects.Instance.Hover(rect, hovering: true));
+            hover.triggers.Add(enter);
+
+            var exit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
+            exit.callback.AddListener(_ => BoardEffects.Instance.Hover(rect, hovering: false));
+            hover.triggers.Add(exit);
 
             // controlHeight lets each label report its own wrapped-text height
             // (Text is a native ILayoutElement), so rows stack snugly instead of
@@ -280,6 +294,10 @@ namespace Indoctrination.Net
         {
             var factor = Mathf.Clamp(width / Width, 0.1f, 1f);
             transform.localScale = new Vector3(factor, factor, 1f);
+
+            // This is the card's resting size now, so a hover that ends knows
+            // what to return to rather than snapping back to full size.
+            BoardEffects.Instance.ForgetRestingScale((RectTransform)transform);
         }
 
         public static BoardCardView Create(Transform parent)

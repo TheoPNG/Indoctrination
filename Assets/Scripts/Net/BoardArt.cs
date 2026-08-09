@@ -50,6 +50,45 @@ namespace Indoctrination.Net
             ResourceColor.Red, ResourceColor.Green, ResourceColor.Blue, ResourceColor.Yellow
         };
 
+        private static Sprite _backdrop;
+
+        /// <summary>
+        /// A soft vertical gradient, laid behind the whole board. Flat colour
+        /// makes every panel read as a separate box; a gradient gives them all
+        /// one surface to sit on.
+        /// </summary>
+        public static Sprite Backdrop => _backdrop ??= BuildGradientSprite(4, 128);
+
+        private static Sprite BuildGradientSprite(int width, int height)
+        {
+            var texture = new Texture2D(width, height, TextureFormat.RGBA32, mipChain: false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            var pixels = new Color32[width * height];
+
+            for (var y = 0; y < height; y++)
+            {
+                // Darker at the edges than the middle, which draws the eye to the
+                // table rather than to the corners of the window.
+                var distance = Mathf.Abs((y / (float)(height - 1)) - 0.5f) * 2f;
+                var shade = Mathf.Lerp(1f, 0.55f, distance * distance);
+                var colour = new Color(0.09f * shade, 0.15f * shade, 0.11f * shade, 1f);
+
+                for (var x = 0; x < width; x++)
+                {
+                    pixels[(y * width) + x] = colour;
+                }
+            }
+
+            texture.SetPixels32(pixels);
+            texture.Apply();
+
+            return Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f));
+        }
+
         /// <summary>A flat filled circle, for the resource pips.</summary>
         public static Sprite Disc => _disc ??= BuildRadialSprite(64, hard: true);
 

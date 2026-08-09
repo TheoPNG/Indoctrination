@@ -150,6 +150,13 @@ namespace Indoctrination.Net
         public Vector3 PipPosition(ResourceColor color) =>
             _resourcePips.TryGetValue(color, out var pip) ? pip.rectTransform.position : transform.position;
 
+        /// <summary>The pip itself, so an arriving resource can knock it.</summary>
+        public RectTransform Pip(ResourceColor color) =>
+            _resourcePips.TryGetValue(color, out var pip) ? (RectTransform)pip.transform.parent : null;
+
+        /// <summary>The health bar, so a wound landing can knock it.</summary>
+        public RectTransform HealthBar => _healthFill == null ? null : _healthFill.rectTransform;
+
         private static void SizeRow(RectTransform rect, float height)
         {
             var element = rect.gameObject.AddComponent<LayoutElement>();

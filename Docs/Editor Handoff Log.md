@@ -2,6 +2,48 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
+## 2026-08-08 — Claude (presentation polish: motion, entrances, phase banner)
+
+### Edits
+
+- `Assets/Scripts/Net/PhaseBanner.cs` (new) — each phase is announced as it
+  begins: the name sweeps across the board, holds, and fades, with a line saying
+  what the phase wants. The status line already named the phase, but a line of
+  text that quietly changes is easy to play straight past.
+- `Assets/Scripts/Net/BoardEffects.cs` — added `FadeIn`, `Pop`, `Hover`, and
+  `CancelAll`. Cards are dealt in with a staggered fade; a resource or a wound
+  landing knocks the pip or bar it lands in, so a count changing has a visible
+  cause; cards lift under the pointer.
+- `Assets/Scripts/Net/BoardArt.cs` — a generated vertical gradient behind the
+  whole board, darker at the edges, so the panels read as one surface rather
+  than boxes on flat colour.
+- `Assets/Scripts/Net/BoardUI.cs` — tighter margins and a larger share of width
+  to the battlefield.
+
+### Two traps worth recording
+
+- **Entrance animations are alpha only, deliberately.** Sliding or scaling a card
+  in would move it while the tests are measuring whether it is fully visible
+  inside its mask, and those tests are the only thing standing between us and
+  another round of "passing tests, broken board". A fade changes nothing the
+  layout decided.
+- **`??` does not work on Unity objects.** `GetComponent<T>() ?? AddComponent<T>()`
+  uses reference equality, so a destroyed component is treated as present and
+  handed back, throwing the moment it is touched. Only Unity's own `== null`
+  understands destroyed objects. This produced a `MissingComponentException` in
+  eighteen tests at once.
+- `BoardEffects` survives scene changes, so it outlives any one board. `BoardUI`
+  now calls `CancelAll` as it is destroyed; without it the driver's coroutines
+  keep reaching for widgets that have gone.
+
+### Verification
+
+- `./Tools/PlayModeTests/run.sh` — 26 pass. They fail on any logged exception,
+  which is what caught the `??` bug.
+- `./Tools/CompileCheck/run.sh`, `./Tools/RulesCheck/run.sh`,
+  `--fuzz 1200`, `./Tools/SmokeTest/run.sh` all pass.
+
+
 ## 2026-08-08 — Claude (nine refinements: fewer confirmations, priced hands, visible dice)
 
 ### Rules

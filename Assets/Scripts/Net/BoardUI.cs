@@ -59,7 +59,7 @@ namespace Indoctrination.Net
         /// <summary>Breathing room between one row of the board and the next.</summary>
         private const float RowGap = 8f;
 
-        private const int BoardSafeInset = 14;
+        private const int BoardSafeInset = 10;
         private const int DraftZoneLeftInset = 12;
 
         // --------------------------------------------------------------- Panels
@@ -120,6 +120,7 @@ namespace Indoctrination.Net
         private int _ritualsSeen = -1;
 
         private Button _discardButton;
+        private PhaseBanner _phaseBanner;
 
         private readonly List<ResourceColor> _pendingResources = new();
         private readonly List<ResourceColor> _pendingMealPayment = new();
@@ -149,12 +150,21 @@ namespace Indoctrination.Net
 
             var canvas = UIFactory.CreateCanvas("Board Canvas");
 
+            // Behind everything, so the panels read as parts of one surface
+            // rather than boxes floating on a flat colour.
+            var backdrop = UIFactory.Panel("Backdrop", canvas.transform, Color.white);
+            UIFactory.Stretch(backdrop);
+            var backdropImage = backdrop.GetComponent<Image>();
+            backdropImage.sprite = BoardArt.Backdrop;
+            backdropImage.raycastTarget = false;
+
             _connectPanel = BuildConnectPanel(canvas.transform);
             _lobbyPanel = BuildLobbyPanel(canvas.transform);
             _gameRoot = BuildGameRoot(canvas.transform);
             BuildErrorLabel(canvas.transform);
 
-            // Built last so it sits above the board it covers.
+            // Built last so they sit above the board they cover.
+            _phaseBanner = PhaseBanner.CreateOn(canvas.transform);
             CardPreview.CreateOn(canvas.transform);
 
             ShowOnly(_connectPanel);
@@ -199,6 +209,10 @@ namespace Indoctrination.Net
             {
                 _subscribedManager.Changed -= Refresh;
             }
+
+            // The effects driver outlives this board, so anything still animating
+            // has to be stopped before the widgets it is animating disappear.
+            BoardEffects.Instance.CancelAll();
         }
 
         private void SubscribeIfNeeded(NetworkGameManager manager)
@@ -474,7 +488,7 @@ namespace Indoctrination.Net
             // Battlefield is a vertical stack of rows, not a horizontal strip, so
             // it gets its own scroll rect rather than reusing the horizontal helper.
             var battlefieldPanel = UIFactory.Panel("Battlefield Panel", middle, new Color(1, 1, 1, 0.04f));
-            AddResponsiveWidth(battlefieldPanel, 360, 760, 3);
+            AddResponsiveWidth(battlefieldPanel, 380, 900, 4);
             var battlefieldViewport = UIFactory.Panel("Battlefield Viewport", battlefieldPanel, Color.clear);
             battlefieldViewport.gameObject.AddComponent<RectMask2D>();
             UIFactory.Stretch(battlefieldViewport);
@@ -670,6 +684,13 @@ namespace Indoctrination.Net
                 _renderedPhase = view.phase;
             }
 
+            if (!string.Equals(previousPhase, view.phase, StringComparison.Ordinal)
+                && !string.IsNullOrEmpty(previousPhase)
+                && !view.isGameOver)
+            {
+                _phaseBanner.Announce(view.phase, PhaseHint(view), PhaseTint(view.phase));
+            }
+
             _statusText.text = view.isGameOver
                 ? $"<b>{GameOverHeadline(view)}</b>"
                 : $"{view.phase}   draft {view.draftNumber}, turn {view.turnInRound}/{GameSettings.TurnsPerRound}   " +
@@ -712,6 +733,27 @@ namespace Indoctrination.Net
             _actionScroll.verticalNormalizedPosition = 1f;
             RefreshHand(view);
         }
+
+        /// <summary>One line saying what this phase wants, for the banner.</summary>
+        private static string PhaseHint(GameView view) => view.phase switch
+        {
+            nameof(TurnPhase.Draft) => "Pick a card",
+            nameof(TurnPhase.Rolling) => "Roll your die",
+            nameof(TurnPhase.Activation) => "Your units are firing",
+            nameof(TurnPhase.Resource) => $"Take {GameSettings.ResourcesPerTurn} resources",
+            nameof(TurnPhase.Buy) => "Play or recycle from your hand",
+            _ => ""
+        };
+
+        private static Color PhaseTint(string phase) => phase switch
+        {
+            nameof(TurnPhase.Draft) => new Color(0.7f, 0.85f, 1f),
+            nameof(TurnPhase.Rolling) => new Color(0.95f, 0.95f, 0.98f),
+            nameof(TurnPhase.Activation) => new Color(0.95f, 0.5f, 0.45f),
+            nameof(TurnPhase.Resource) => new Color(0.55f, 0.9f, 0.6f),
+            nameof(TurnPhase.Buy) => new Color(0.95f, 0.82f, 0.4f),
+            _ => Color.white
+        };
 
         private void RefreshTopBar(GameView view)
         {
@@ -793,7 +835,7 @@ namespace Indoctrination.Net
                     BoardEffects.Instance.FlyPip(
                         _battlefield.position, bar.HealthBarPosition,
                         BoardArt.ColorOfCategory(ActivationCategory.Damage),
-                        delay: i * 0.07f, size: 22f);
+                        delay: i * 0.07f, size: 22f, landsIn: bar.HealthBar);
                 }
 
                 _somethingHitThisRefresh = true;
@@ -969,6 +1011,8 @@ namespace Indoctrination.Net
             rowPin.minHeight = gridHeight + RowHeaderHeight + RowGap;
             rowPin.flexibleWidth = 1;
 
+            var dealt = 0;
+
             foreach (var card in plan.Cards)
             {
                 var cell = UIFactory.Group("Cell", grid);
@@ -985,6 +1029,12 @@ namespace Indoctrination.Net
 
                 MarkIfDueToActivate(cardView, view);
                 RegisterForActivationPulse(cardView);
+
+                // Dealt out rather than appearing all at once. Alpha only, so the
+                // card is where the layout put it from the first frame and nothing
+                // measuring the board catches it part-way through moving.
+                BoardEffects.Instance.FadeIn(cell.gameObject, delay: dealt * 0.025f);
+                dealt++;
             }
         }
 
@@ -1734,7 +1784,8 @@ namespace Indoctrination.Net
             }
 
             BoardEffects.Instance.FlyResource(
-                from.transform.position, _viewerStatBar.PipPosition(color), color);
+                from.transform.position, _viewerStatBar.PipPosition(color), color,
+                landsIn: _viewerStatBar.Pip(color));
         }
 
         /// <summary>

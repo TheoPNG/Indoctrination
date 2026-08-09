@@ -172,9 +172,11 @@ namespace Indoctrination.Net
         /// resource is something you watch arrive rather than a number that
         /// changes when you look away.
         /// </summary>
-        public void FlyResource(Vector3 fromWorld, Vector3 toWorld, ResourceColor color, float delay = 0f)
+        public void FlyResource(
+            Vector3 fromWorld, Vector3 toWorld, ResourceColor color,
+            float delay = 0f, RectTransform landsIn = null)
         {
-            FlyPip(fromWorld, toWorld, BoardArt.ColorOf(color), delay);
+            FlyPip(fromWorld, toWorld, BoardArt.ColorOf(color), delay, landsIn: landsIn);
         }
 
         /// <summary>
@@ -182,18 +184,21 @@ namespace Indoctrination.Net
         /// card that dealt it into the bar it empties makes the number changing
         /// something you can follow, rather than something you notice afterwards.
         /// </summary>
-        public void FlyPip(Vector3 fromWorld, Vector3 toWorld, Color color, float delay = 0f, float size = 30f)
+        public void FlyPip(
+            Vector3 fromWorld, Vector3 toWorld, Color color,
+            float delay = 0f, float size = 30f, RectTransform landsIn = null)
         {
-            if (_flightLayer == null)
+            if (_flightLayer == null || !Application.isPlaying)
             {
                 return;
             }
 
-            StartCoroutine(FlyRoutine(fromWorld, toWorld, color, delay, size));
+            StartCoroutine(FlyRoutine(fromWorld, toWorld, color, delay, size, landsIn));
         }
 
         private IEnumerator FlyRoutine(
-            Vector3 fromWorld, Vector3 toWorld, Color color, float delay, float size)
+            Vector3 fromWorld, Vector3 toWorld, Color color, float delay, float size,
+            RectTransform landsIn = null)
         {
             if (delay > 0f)
             {
@@ -239,6 +244,10 @@ namespace Indoctrination.Net
             {
                 Destroy(pipObject);
             }
+
+            // The thing it landed in takes the hit, so the count changing has a
+            // visible cause rather than simply being a different number.
+            Pop(landsIn);
         }
 
         // ------------------------------------------------------------- Pulsing
@@ -300,6 +309,186 @@ namespace Indoctrination.Net
                 var wave = (Mathf.Sin(Time.time * 4f) + 1f) * 0.5f;
                 graphic.color = Color.Lerp(baseColor, Color.Lerp(baseColor, Color.white, 0.45f), wave);
                 yield return null;
+            }
+        }
+
+        // ------------------------------------------------------------ Entrances
+
+        /// <summary>
+        /// Fades something in where it already sits. Deliberately alpha only:
+        /// sliding or scaling an entrance would move the thing while it arrives,
+        /// and everything on this board is positioned by a layout that has
+        /// already decided where it goes.
+        /// </summary>
+        public void FadeIn(GameObject target, float duration = 0.22f, float delay = 0f)
+        {
+            if (target == null || !Application.isPlaying)
+            {
+                return;
+            }
+
+            // Deliberately not "?? AddComponent": ?? uses reference equality and
+            // so treats a destroyed component as present, handing back something
+            // that throws the moment it is touched. Unity's own == null is the
+            // only check that understands destroyed objects.
+            var group = target.GetComponent<CanvasGroup>();
+            if (group == null)
+            {
+                group = target.AddComponent<CanvasGroup>();
+            }
+
+            group.alpha = 0f;
+            StartCoroutine(FadeRoutine(group, duration, delay));
+        }
+
+        private IEnumerator FadeRoutine(CanvasGroup group, float duration, float delay)
+        {
+            var waited = 0f;
+            while (waited < delay)
+            {
+                if (group == null)
+                {
+                    yield break;
+                }
+
+                waited += Time.deltaTime;
+                yield return null;
+            }
+
+            var elapsed = 0f;
+            while (elapsed < duration)
+            {
+                if (group == null)
+                {
+                    yield break;
+                }
+
+                elapsed += Time.deltaTime;
+                group.alpha = Smooth(elapsed / duration);
+                yield return null;
+            }
+
+            if (group != null)
+            {
+                group.alpha = 1f;
+            }
+        }
+
+        /// <summary>
+        /// Knocks something briefly larger and lets it settle - a resource pip
+        /// taking a hit as one lands in it, so the count changing has a cause you
+        /// can see rather than just being a different number.
+        /// </summary>
+        public void Pop(RectTransform target, float strength = 1.35f, float duration = 0.28f)
+        {
+            if (target == null || !Application.isPlaying)
+            {
+                return;
+            }
+
+            StopFor(target);
+            _running[target] = StartCoroutine(PopRoutine(target, strength, duration));
+        }
+
+        private IEnumerator PopRoutine(RectTransform target, float strength, float duration)
+        {
+            // Read from the transform rather than remembered, so overlapping pops
+            // cannot compound into a permanently enlarged widget.
+            var baseScale = Vector3.one;
+            var elapsed = 0f;
+
+            while (elapsed < duration && target != null)
+            {
+                elapsed += Time.deltaTime;
+                var t = Mathf.Clamp01(elapsed / duration);
+
+                // Straight up, then an eased fall back, which reads as impact.
+                var swell = t < 0.3f
+                    ? Mathf.SmoothStep(0f, 1f, t / 0.3f)
+                    : 1f - Mathf.SmoothStep(0f, 1f, (t - 0.3f) / 0.7f);
+
+                target.localScale = baseScale * (1f + ((strength - 1f) * swell));
+                yield return null;
+            }
+
+            if (target != null)
+            {
+                target.localScale = baseScale;
+            }
+
+            _running.Remove(target);
+        }
+
+        /// <summary>
+        /// Lifts a card slightly under the pointer, so the board answers back
+        /// when it is pointed at rather than only when it is clicked.
+        /// </summary>
+        public void Hover(RectTransform target, bool hovering, float lift = 1.06f)
+        {
+            if (target == null || !Application.isPlaying)
+            {
+                return;
+            }
+
+            StopFor(target);
+            _running[target] = StartCoroutine(HoverRoutine(target, hovering, lift));
+        }
+
+        private IEnumerator HoverRoutine(RectTransform target, bool hovering, float lift)
+        {
+            // The board scales cards to fit, so "back to normal" is whatever scale
+            // the layout gave this card, not one.
+            var from = target.localScale;
+            var baseScale = _restingScales.TryGetValue(target, out var known) ? known : from;
+
+            if (!_restingScales.ContainsKey(target))
+            {
+                _restingScales[target] = from;
+                baseScale = from;
+            }
+
+            var to = hovering ? baseScale * lift : baseScale;
+            const float duration = 0.12f;
+            var elapsed = 0f;
+
+            while (elapsed < duration && target != null)
+            {
+                elapsed += Time.deltaTime;
+                target.localScale = Vector3.Lerp(from, to, Smooth(elapsed / duration));
+                yield return null;
+            }
+
+            if (target != null)
+            {
+                target.localScale = to;
+            }
+
+            _running.Remove(target);
+        }
+
+        private readonly Dictionary<RectTransform, Vector3> _restingScales = new();
+
+        /// <summary>
+        /// Drops every animation in flight. The driver outlives any one board -
+        /// it survives scene changes - so a board being torn down has to say so,
+        /// or its coroutines carry on reaching for widgets that no longer exist.
+        /// </summary>
+        public void CancelAll()
+        {
+            StopAllCoroutines();
+            _running.Clear();
+            _pulsing.Clear();
+            _pulseBaseColors.Clear();
+            _restingScales.Clear();
+            _shake = null;
+        }
+
+        /// <summary>Forgets a card's resting scale, for when the board is rebuilt.</summary>
+        public void ForgetRestingScale(RectTransform target)
+        {
+            if (target != null)
+            {
+                _restingScales.Remove(target);
             }
         }
 
