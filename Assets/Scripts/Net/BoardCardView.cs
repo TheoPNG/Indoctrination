@@ -103,7 +103,14 @@ namespace Indoctrination.Net
             // single-line width and long effect text never wraps at all.
             layout.childForceExpandWidth = true;
 
-            _tagText = UIFactory.Label("Tag", transform, "", 12, TextAnchor.UpperLeft, new Color(1f, 0.6f, 0.35f));
+            // A draft marker decides whether a card can be taken at all, so it is
+            // the loudest thing on the card rather than a caption above the title.
+            _tagText = UIFactory.Label("Tag", transform, "", 16, TextAnchor.MiddleCenter, Color.white);
+            _tagText.fontStyle = FontStyle.Bold;
+
+            var tagPlate = _tagText.gameObject.AddComponent<Outline>();
+            tagPlate.effectColor = new Color(0f, 0f, 0f, 0.95f);
+            tagPlate.effectDistance = new Vector2(1.5f, -1.5f);
             // Put the title in the first permanent text row. The former separate
             // title label was the field disappearing during layout; the old header
             // (colour/type) was already rendering reliably in every card row.
@@ -135,7 +142,12 @@ namespace Indoctrination.Net
                 var element = child.gameObject.AddComponent<LayoutElement>();
                 element.flexibleWidth = 1;
 
-                if (child == _headerText.transform)
+                if (child == _tagText.transform)
+                {
+                    element.minHeight = 22;
+                    element.preferredHeight = 22;
+                }
+                else if (child == _headerText.transform)
                 {
                     element.minHeight = 76;
                     element.preferredHeight = 76;
@@ -166,6 +178,20 @@ namespace Indoctrination.Net
             SetAction(null, onClick);
             _tagText.text = tag ?? "";
             _tagText.gameObject.SetActive(!string.IsNullOrEmpty(tag));
+
+            // The whole card takes the marker's colour, so a blocked or reserved
+            // card is obvious from across the board rather than on inspection.
+            if (!string.IsNullOrEmpty(tag))
+            {
+                var marked = tag.StartsWith("BLOCKED")
+                    ? new Color(0.55f, 0.16f, 0.16f)
+                    : tag.StartsWith("RESERVED")
+                        ? new Color(0.18f, 0.34f, 0.55f)
+                        : new Color(0.5f, 0.34f, 0.12f);
+
+                _background.color = marked;
+                _tagText.color = Color.white;
+            }
 
             try
             {
@@ -241,13 +267,16 @@ namespace Indoctrination.Net
         {
             var printed = definition.Cost.IsSpecial ? "special" : definition.costRaw;
 
-            if (!card.isDiscounted || string.IsNullOrEmpty(card.costForYou))
+            if (!card.isDiscounted)
             {
-                return $"Cost: {printed}";
+                return $"Cost: {(string.IsNullOrEmpty(printed) ? "free" : printed)}";
             }
 
+            // Only the price that actually applies, in green. Unity's Text has no
+            // strikethrough - <s> is not one of its tags and printed straight
+            // through as literal angle brackets.
             var actual = string.IsNullOrEmpty(card.costForYou) ? "free" : card.costForYou;
-            return $"Cost: <s>{printed}</s> {actual}";
+            return $"Cost: {actual}  (down from {printed})";
         }
 
         /// <summary>

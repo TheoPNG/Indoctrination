@@ -65,9 +65,24 @@ namespace Indoctrination.Net
                 return;
             }
 
+            target = Mathf.Clamp01(target);
+
+            // A bar already at, or already heading to, this value is left alone.
+            // Restarting the tween on every refresh made the bars visibly stutter
+            // whenever anything at all redrew the board.
+            if (_fillTargets.TryGetValue(bar, out var existing)
+                && Mathf.Approximately(existing, target))
+            {
+                return;
+            }
+
+            _fillTargets[bar] = target;
+
             StopFor(bar);
-            _running[bar] = StartCoroutine(FillRoutine(bar, Mathf.Clamp01(target), duration));
+            _running[bar] = StartCoroutine(FillRoutine(bar, target, duration));
         }
+
+        private readonly Dictionary<Image, float> _fillTargets = new();
 
         private readonly Dictionary<Object, Coroutine> _running = new();
 
@@ -477,6 +492,7 @@ namespace Indoctrination.Net
         {
             StopAllCoroutines();
             _running.Clear();
+            _fillTargets.Clear();
             _pulsing.Clear();
             _pulseBaseColors.Clear();
             _restingScales.Clear();

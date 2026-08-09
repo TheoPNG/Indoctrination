@@ -1374,12 +1374,22 @@ namespace Indoctrination.Core
         /// Lines an effect up to run. Triggered abilities queue rather than run
         /// inline so they cannot cut into the middle of whatever set them off.
         /// </summary>
+        /// <summary>
+        /// Raised as each effect joins the queue, with the card and whose it is.
+        /// Exists so the order activations are dealt out in can be observed and
+        /// checked - it is the one thing about activation a player can feel but
+        /// no amount of reading the final board state can confirm.
+        /// </summary>
+        public event Action<CardInstance, PlayerState> EffectQueued;
+
         public void EnqueueEffect(CardInstance source, PlayerState controller, EffectRoutine routine, string description)
         {
             if (routine == null || controller == null)
             {
                 return;
             }
+
+            EffectQueued?.Invoke(source, controller);
 
             _effectQueue.Enqueue(new PendingEffect
             {
@@ -1632,14 +1642,40 @@ namespace Indoctrination.Core
                 }
             }
 
-            // OrderBy is a stable sort, so within a category units still queue in
-            // the same seat-then-die order they were collected in.
-            foreach (var entry in activating.OrderBy(
-                         e => (int)CardEffects.CategoryFor(e.Unit.Definition.Id, e.DieValue)))
+            foreach (var entry in InterleaveByPlayer(activating))
             {
                 entry.Player.UnitsTriggeredThisTurn++;
                 EnqueueEffect(entry.Unit, entry.Player,
                     CardEffects.For(entry.Unit.Definition.Id, entry.DieValue), entry.Unit.Title);
+            }
+        }
+
+        /// <summary>
+        /// Deals the activations out one player at a time, round the table: one of
+        /// P1's, then one of P2's, and so on until everybody's are spent.
+        ///
+        /// This replaced grouping the whole table's activations by what they do
+        /// (all Block, then all Damage, and so on). Taking turns is easier to
+        /// follow and gives each player a say in their own sequence, since their
+        /// units go in the order they hold them. It does mean a Block from one
+        /// player can now land after another player's Damage in the same round -
+        /// the earlier category ordering guaranteed it never did.
+        /// </summary>
+        private static IEnumerable<(PlayerState Player, CardInstance Unit, int DieValue)> InterleaveByPlayer(
+            List<(PlayerState Player, CardInstance Unit, int DieValue)> activating)
+        {
+            var queues = activating
+                .GroupBy(entry => entry.Player.PlayerId)
+                .OrderBy(group => group.Key)
+                .Select(group => new Queue<(PlayerState Player, CardInstance Unit, int DieValue)>(group))
+                .ToList();
+
+            while (queues.Any(queue => queue.Count > 0))
+            {
+                foreach (var queue in queues.Where(queue => queue.Count > 0))
+                {
+                    yield return queue.Dequeue();
+                }
             }
         }
 

@@ -775,7 +775,8 @@ namespace Indoctrination.Tests
 
             foreach (var name in new[] { "Health", "Followers" })
             {
-                var fill = bar.transform.Find($"{name}/{name} Fill")?.GetComponent<Image>();
+                // Health lives inside a row it shares with the Block box.
+                var fill = FindFill(bar, name);
                 Assert.IsNotNull(fill, $"the {name} bar needs a fill");
                 Assert.IsNotNull(fill.sprite,
                     $"the {name} fill has no sprite, so Unity ignores fillAmount and it renders full always");
@@ -784,7 +785,7 @@ namespace Indoctrination.Tests
 
             // Drive health down and watch the bar follow it.
             var game = ServerGame();
-            var healthFill = bar.transform.Find("Health/Health Fill").GetComponent<Image>();
+            var healthFill = FindFill(bar, "Health");
             var before = healthFill.fillAmount;
 
             ApplyAsHost(_ => game.DealDamage(null, game.Players[0], 10));
@@ -806,6 +807,11 @@ namespace Indoctrination.Tests
             Assert.AreEqual(expected, healthFill.fillAmount, 0.02f,
                             $"and settle at the fraction of health left after {waited:0.00}s");
         }
+
+        /// <summary>A stat bar's fill by name, wherever it sits in the bar.</summary>
+        private static Image FindFill(StatBar bar, string name) =>
+            bar.GetComponentsInChildren<Image>(includeInactive: true)
+                .FirstOrDefault(image => image.name == $"{name} Fill");
 
         private static int TotalResources(PlayerView player) =>
             player.red + player.green + player.blue + player.yellow;

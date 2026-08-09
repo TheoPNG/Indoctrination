@@ -193,6 +193,38 @@ namespace Indoctrination.Net
             BroadcastLobby();
         }
 
+        /// <summary>
+        /// Renames the seat this client is sitting in. Only before the game
+        /// starts - a name is how the table refers to you all game, and letting
+        /// it change mid-play makes the log and the board disagree.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void RequestSetNameRpc(string name, RpcParams rpcParams = default)
+        {
+            var seat = SeatIndexOf(rpcParams.Receive.SenderClientId);
+            if (seat < 0 || _game != null)
+            {
+                return;
+            }
+
+            var trimmed = (name ?? "").Trim();
+            if (trimmed.Length == 0)
+            {
+                return;
+            }
+
+            // Names go on the board, so they are capped to what a stat bar can
+            // show rather than trusted at whatever length arrives.
+            _seats[seat].Name = trimmed.Length > MaxNameLength
+                ? trimmed[..MaxNameLength]
+                : trimmed;
+
+            BroadcastLobby();
+        }
+
+        /// <summary>Longest name a stat bar can show without being crowded out.</summary>
+        public const int MaxNameLength = 16;
+
         private void BroadcastLobby()
         {
             var lobby = new LobbyView

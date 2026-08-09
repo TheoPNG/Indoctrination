@@ -668,16 +668,19 @@ static class RulesCheck
     }
 
     /// <summary>
-    /// Two Units belonging to different players, activating on the same die
-    /// roll: one grants Block, the other deals damage aimed (by the house rule)
-    /// at whoever its controller chooses. If the table resolved seat by seat,
-    /// whichever player went second would have their Block queued after the
-    /// damage that was supposed to be reduced by it. Grouping by
-    /// ActivationCategory instead means Block always lands first.
+    /// Activations are dealt out round the table: one of P1's, then one of P2's,
+    /// and so on until everybody's are spent. This replaced grouping the whole
+    /// table's activations by what they do (all Block, then all Damage) - taking
+    /// turns is easier to follow and leaves each player's own sequence in the
+    /// order they hold their cards.
+    ///
+    /// The trade is real and worth stating plainly: a Block from one player can
+    /// now land after a different player's Damage in the same round. The old
+    /// grouping guaranteed it never did.
     /// </summary>
     static void CheckActivationOrder(List<CardDefinition> cards)
     {
-        Console.WriteLine("\nActivation order (Block before Damage, same roll):");
+        Console.WriteLine("\nActivation order (alternating round the table):");
 
         CardDefinition ActivatingOn(string id, int face) => new()
         {
@@ -694,26 +697,32 @@ static class RulesCheck
         var game = new GameState(new[] { "A", "B" }, cards, randomSeed: 40);
         FinishDraft(game);
 
-        // A deals damage, aimed by the house rule at its only opponent, B - who
-        // holds the Block. Seat order alone would resolve A (seat 0) before B
-        // (seat 1), so if the table only grouped by category and not truly
-        // across seats, this is the arrangement that would still let the damage
-        // through first. Both players roll the same face, so each Unit fires
-        // twice (RolledValues has two 3s), doubling the stakes if the order is wrong.
-        game.Players[0].Compound.Add(new CardInstance(-30, ActivatingOn(CardIds.AsherPirozzi, 3)));
-        game.Players[1].Compound.Add(new CardInstance(-31, ActivatingOn(CardIds.WallBuilder, 3)));
+        // Two each, all waking on the same face, so the only thing deciding the
+        // order they resolve in is the interleaving. Resource gains, so nothing
+        // stops to ask anybody a question part-way through.
+        game.Players[0].Compound.Add(new CardInstance(-30, ActivatingOn(CardIds.SolarPanels, 3)));
+        game.Players[0].Compound.Add(new CardInstance(-31, ActivatingOn(CardIds.CrystalMine, 3)));
+        game.Players[1].Compound.Add(new CardInstance(-32, ActivatingOn(CardIds.MoneyTree, 3)));
+        game.Players[1].Compound.Add(new CardInstance(-33, ActivatingOn(CardIds.GoldMine, 3)));
 
-        game.RollPrimaryDice();
+        foreach (var player in game.LivingPlayers.ToList()) game.RollPrimaryDie(player.PlayerId);
         game.SetPrimaryDie(game.Players[0], 3);
         game.SetPrimaryDie(game.Players[1], 3);
-        game.AdvancePhase();   // Rolling -> Activation, queues and resolves both
 
-        Check("nothing was left waiting on a choice",
-              game.PendingChoice == null,
-              game.PendingChoice?.Prompt ?? "none");
-        Check("Block absorbed both hits rather than letting them through",
-              game.Players[1].Health == GameSettings.StartingHealth && game.Players[1].Block == 0,
-              $"{game.Players[1].Health} health, {game.Players[1].Block} block");
+        var order = new List<int>();
+        game.EffectQueued += (_, controller) => order.Add(controller.PlayerId);
+
+        game.AdvancePhase();   // Rolling -> Activation
+
+        // Four units, and both players rolled the same face - every unit answers
+        // to every die showing its number, so each fires twice.
+        Check("every unit fires once per die showing its number", order.Count == 8,
+              $"{order.Count} activations");
+
+        Check("and they alternate between the players",
+              order.Count > 1 && !order.Where((id, i) => i > 0 && id == order[i - 1]).Any(),
+              string.Join(",", order));
+        Check("nothing was left waiting on a choice", game.PendingChoice == null);
     }
 
     /// <summary>

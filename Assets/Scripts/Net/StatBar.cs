@@ -29,6 +29,9 @@ namespace Indoctrination.Net
         /// <summary>The die face shown beside a player's name.</summary>
         private const float DieSize = 20f;
 
+        /// <summary>The Block box on the end of the health bar.</summary>
+        private const float BlockWidth = 34f;
+
         private Text _nameText;
         private Image _healthFill;
         private Text _healthText;
@@ -40,6 +43,10 @@ namespace Indoctrination.Net
         private RectTransform _resourceRow;
         private RectTransform _dieBox;
         private Text _dieText;
+        private RectTransform _blockBox;
+        private Text _blockText;
+
+        private int _shownBlock = -1;
 
         private bool _built;
 
@@ -98,8 +105,25 @@ namespace Indoctrination.Net
             _dieText.fontStyle = FontStyle.Bold;
             UIFactory.Stretch(_dieText.rectTransform);
 
-            (_healthFill, _healthText) = MakeBar("Health", new Color(0.8f, 0.25f, 0.25f));
-            (_followerFill, _followerText) = MakeBar("Followers", new Color(0.75f, 0.6f, 0.2f));
+            // Health, with Block bolted onto its right-hand end. Block is armour in
+            // front of health rather than a separate pool, so it reads as an
+            // extension of the same track instead of a third bar to scan.
+            var healthRow = UIFactory.Group("Health Row", transform);
+            SizeRow(healthRow, BarRowHeight);
+            var healthLayout = UIFactory.HorizontalLayout(healthRow, 3, new RectOffset(0, 0, 0, 0), controlHeight: true);
+            healthLayout.childAlignment = TextAnchor.MiddleLeft;
+
+            (_healthFill, _healthText) = MakeBar("Health", new Color(0.8f, 0.25f, 0.25f), healthRow, flexible: true);
+
+            _blockBox = UIFactory.Panel("Block", healthRow, new Color(0.42f, 0.55f, 0.72f));
+            var blockPin = _blockBox.gameObject.AddComponent<LayoutElement>();
+            blockPin.minWidth = blockPin.preferredWidth = BlockWidth;
+            blockPin.minHeight = blockPin.preferredHeight = BarRowHeight;
+
+            _blockText = UIFactory.Label("Block Count", _blockBox, "", 12, TextAnchor.MiddleCenter, Color.white);
+            _blockText.fontStyle = FontStyle.Bold;
+            UIFactory.Stretch(_blockText.rectTransform);
+            (_followerFill, _followerText) = MakeBar("Followers", new Color(0.75f, 0.6f, 0.2f), transform);
 
             // Coloured discs with the count inside, rather than letters and
             // numbers - the colour is the thing being read, so it should be the
@@ -120,10 +144,22 @@ namespace Indoctrination.Net
         /// across it, and the number laid over the top so the exact value is
         /// readable without counting pixels.
         /// </summary>
-        private (Image Fill, Text Label) MakeBar(string name, Color color)
+        private (Image Fill, Text Label) MakeBar(
+            string name, Color color, Transform parent, bool flexible = false)
         {
-            var track = UIFactory.Panel(name, transform, new Color(0f, 0f, 0f, 0.55f));
-            SizeRow(track, BarRowHeight);
+            var track = UIFactory.Panel(name, parent, new Color(0f, 0f, 0f, 0.55f));
+
+            if (flexible)
+            {
+                var element = track.gameObject.AddComponent<LayoutElement>();
+                element.flexibleWidth = 1;
+                element.minHeight = BarRowHeight;
+                element.preferredHeight = BarRowHeight;
+            }
+            else
+            {
+                SizeRow(track, BarRowHeight);
+            }
 
             var fill = UIFactory.FillBar($"{name} Fill", track, color);
             UIFactory.Stretch(fill.rectTransform);
@@ -149,6 +185,21 @@ namespace Indoctrination.Net
         /// <summary>Where a resource pip sits on screen, for pips flying into it.</summary>
         public Vector3 PipPosition(ResourceColor color) =>
             _resourcePips.TryGetValue(color, out var pip) ? pip.rectTransform.position : transform.position;
+
+        /// <summary>
+        /// Bumps a pip's count straight away, before the server has replied.
+        /// Picking a resource should look instant; the authoritative number
+        /// arrives a moment later and overwrites this either way, so the worst a
+        /// wrong guess can do is be corrected.
+        /// </summary>
+        public void ShowResourceGain(ResourceColor color)
+        {
+            if (_resourcePips.TryGetValue(color, out var pip)
+                && int.TryParse(pip.text, out var current))
+            {
+                pip.text = (current + 1).ToString();
+            }
+        }
 
         /// <summary>The pip itself, so an arriving resource can knock it.</summary>
         public RectTransform Pip(ResourceColor color) =>
@@ -179,6 +230,20 @@ namespace Indoctrination.Net
             // The bars slide to their new value rather than jumping, so damage
             // and recruitment are visible as they happen.
             _healthText.text = $"{player.health} / {GameSettings.MaxHealth} HP";
+
+            // Only present when there is any, so an empty box is never mistaken
+            // for armour that is not there. It pops when it changes.
+            var hadBlock = _blockBox.gameObject.activeSelf;
+            var previous = _shownBlock;
+
+            _blockBox.gameObject.SetActive(player.block > 0);
+            _blockText.text = player.block.ToString();
+            _shownBlock = player.block;
+
+            if (player.block > 0 && (!hadBlock || player.block != previous))
+            {
+                BoardEffects.Instance.Pop(_blockBox);
+            }
             BoardEffects.Instance.FillTo(
                 _healthFill, (float)player.health / GameSettings.MaxHealth);
 

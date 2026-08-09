@@ -162,6 +162,16 @@ namespace Indoctrination.Net
         /// <summary>Whether this player has taken their free resources this turn.</summary>
         public bool collectedResources;
 
+        /// <summary>
+        /// How many free resources this player takes each turn. Resourceful
+        /// raises it, so the client cannot assume the default without refusing
+        /// its owner the third pick.
+        /// </summary>
+        public int resourceAllowance;
+
+        /// <summary>Block standing in front of this player's health.</summary>
+        public int block;
+
         public bool isReady;
 
         /// <summary>Only filled in on the holder's own view; empty for everyone else.</summary>

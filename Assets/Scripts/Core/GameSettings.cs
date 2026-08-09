@@ -63,14 +63,14 @@ namespace Indoctrination.Core
         /// moves on regardless. Stops one player who has stepped away from
         /// stalling the table indefinitely.
         /// </summary>
-        public const float PhaseTimeoutSeconds = 90f;
+        public const float PhaseTimeoutSeconds = 25f;
 
         /// <summary>
         /// How long a card waits for the player it questioned before answering
         /// itself. Nothing else at the table may happen while a question is open,
         /// so one player walking away would otherwise stop the game for good.
         /// </summary>
-        public const float ChoiceTimeoutSeconds = 60f;
+        public const float ChoiceTimeoutSeconds = 25f;
 
         /// <summary>
         /// How long the board sits on the Activation phase once every unit has

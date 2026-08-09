@@ -67,6 +67,8 @@ namespace Indoctrination.Net
                     yellow = player.Resources[ResourceColor.Yellow],
                     handCount = player.Hand.Count,
                     collectedResources = game.HasCollectedResources(player.PlayerId),
+                    resourceAllowance = game.ResourcesPerTurnFor(player.PlayerId),
+                    block = player.Block,
                     isReady = game.PlayersReady.Contains(player.PlayerId),
 
                     // The whole point of building a view per player: only the

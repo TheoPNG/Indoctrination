@@ -279,10 +279,10 @@ namespace Indoctrination.EditorTools
                             $"viewport y {viewportRect.yMin:0}..{viewportRect.yMax:0}, " +
                             $"button y {rollBounds.min.y:0}..{rollBounds.max.y:0}");
 
-                // The hand floats over the board as a canvas-level overlay rather
-                // than living in the dock, so that opening it no longer resizes
-                // the battlefield underneath.
-                var handRow = gameRoot?.parent?.Find("Hand Row");
+                // The hand is back inside the dock: it reserves real space in the
+                // layout so it can never overlap the board or be clipped at the
+                // window edge.
+                var handRow = gameRoot?.Find("Bottom Dock/Hand Row");
                 Check($"player {player.PlayerId} enters Rolling with the hand collapsed",
                       handRow != null && !handRow.gameObject.activeSelf,
                       handRow == null ? "hand row not found" : "still showing");
@@ -320,8 +320,11 @@ namespace Indoctrination.EditorTools
                   battlefield.rect.width > actions.rect.width
                   && battlefield.rect.width >= 360f,
                   $"battlefield {battlefield.rect.width:0}, actions {actions.rect.width:0}");
+            // Deliberately narrow now: the compounds are the main event, and the
+            // side panel only has to fit one column of controls. Its buttons size
+            // themselves to it rather than assuming a fixed width.
             Check("the action panel keeps a readable responsive width",
-                  actions.rect.width >= 280f,
+                  actions.rect.width >= 230f,
                   $"{actions.rect.width:0} wide");
             Check("the action panel scrolls vertically inside a clipped viewport",
                   actionScroll.vertical
