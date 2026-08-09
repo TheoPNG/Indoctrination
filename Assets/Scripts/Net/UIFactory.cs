@@ -10,10 +10,11 @@ namespace Indoctrination.Net
     /// is built this way rather than from prefabs, so the layout lives in source
     /// control as readable C# instead of scene/prefab YAML nobody can diff.
     ///
-    /// Every widget uses plain solid-colour Images (no sprite asset needed - an
-    /// Image with no sprite already renders as a flat rect) and Unity's built-in
-    /// legacy font, so none of this depends on an asset import step that has to
-    /// happen inside the Editor before Play mode works.
+    /// Widgets use plain solid-colour Images and Unity's built-in legacy font,
+    /// so none of this depends on an asset import step that has to happen inside
+    /// the Editor before Play mode works. Sprites that are genuinely needed -
+    /// discs, the glow, the solid rect a fill bar requires - are generated at
+    /// runtime by BoardArt.
     /// </summary>
     public static class UIFactory
     {
@@ -128,15 +129,24 @@ namespace Indoctrination.Net
             return field;
         }
 
-        /// <summary>An Image configured to fill left-to-right, for health/follower bars.</summary>
+        /// <summary>
+        /// A bar that genuinely fills and empties from the left.
+        ///
+        /// The sprite is not decoration - Unity's Image ignores Filled entirely
+        /// when it has none, drawing a plain full quad and quietly discarding
+        /// fillAmount. Without it this is a coloured rectangle wearing the name
+        /// of a progress bar.
+        /// </summary>
         public static Image FillBar(string name, Transform parent, Color color)
         {
             var rect = Panel(name, parent, color);
             var image = rect.GetComponent<Image>();
+            image.sprite = BoardArt.Solid;
             image.type = Image.Type.Filled;
             image.fillMethod = Image.FillMethod.Horizontal;
             image.fillOrigin = (int)Image.OriginHorizontal.Left;
             image.fillAmount = 1f;
+            image.raycastTarget = false;
             return image;
         }
 

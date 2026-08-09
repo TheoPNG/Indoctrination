@@ -756,6 +756,57 @@ namespace Indoctrination.Tests
             return face != null && IsFullyVisibleThroughEveryMask(face) ? face.text : null;
         }
 
+
+        /// <summary>
+        /// The health and follower bars have to actually fill and empty, not just
+        /// look like bars. Unity's Image discards fillAmount entirely when it has
+        /// no sprite, so a bar without one renders full at every value - which is
+        /// exactly how these shipped until this test existed.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator HealthAndFollowerBarsReallyFill()
+        {
+            yield return StartGame();
+            yield return WaitForFrames(3);
+
+            var bar = Object.FindObjectsByType<StatBar>(FindObjectsSortMode.None)
+                .FirstOrDefault(b => (b.GetComponentInChildren<Text>()?.text ?? "").Contains("(you)"));
+            Assert.IsNotNull(bar, "the viewer should have a stat bar");
+
+            foreach (var name in new[] { "Health", "Followers" })
+            {
+                var fill = bar.transform.Find($"{name}/{name} Fill")?.GetComponent<Image>();
+                Assert.IsNotNull(fill, $"the {name} bar needs a fill");
+                Assert.IsNotNull(fill.sprite,
+                    $"the {name} fill has no sprite, so Unity ignores fillAmount and it renders full always");
+                Assert.AreEqual(Image.Type.Filled, fill.type, $"the {name} fill must be a Filled image");
+            }
+
+            // Drive health down and watch the bar follow it.
+            var game = ServerGame();
+            var healthFill = bar.transform.Find("Health/Health Fill").GetComponent<Image>();
+            var before = healthFill.fillAmount;
+
+            ApplyAsHost(_ => game.DealDamage(null, game.Players[0], 10));
+            yield return WaitForFrames(3);
+
+            // The bar eases toward its target, so wait for it to arrive rather
+            // than sampling it mid-slide.
+            var expected = (float)_manager.View.Viewer.health / GameSettings.MaxHealth;
+            var waited = 0f;
+
+            while (Mathf.Abs(healthFill.fillAmount - expected) > 0.02f && waited < 4f)
+            {
+                waited += Time.deltaTime;
+                yield return null;
+            }
+
+            Assert.Less(healthFill.fillAmount, before,
+                        $"losing 10 health should empty the bar; it sat at {healthFill.fillAmount}");
+            Assert.AreEqual(expected, healthFill.fillAmount, 0.02f,
+                            $"and settle at the fraction of health left after {waited:0.00}s");
+        }
+
         private static int TotalResources(PlayerView player) =>
             player.red + player.green + player.blue + player.yellow;
 

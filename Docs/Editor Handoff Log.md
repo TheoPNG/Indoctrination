@@ -2,6 +2,47 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
+## 2026-08-08 — Claude (bars that actually fill, and a build for LAN testing)
+
+### The bar bug
+
+The health and follower bars never filled. `UIFactory.FillBar` set
+`type = Filled` and `fillAmount`, but gave the Image no sprite - and Unity's
+`Image.OnPopulateMesh` short-circuits to a plain quad when `sprite == null`,
+discarding the fill entirely. They rendered full at every value from the day
+they were written, and the animation driving them was moving a number nothing
+read.
+
+Fixed by generating a solid rectangle sprite in `BoardArt.Solid` and assigning
+it. `HealthAndFollowerBarsReallyFill` now asserts the sprite is present, the
+type is Filled, and the bar converges on the right fraction after damage - it
+fails without the sprite.
+
+**Anything that fills must have a sprite.** There is no warning for this; it
+just silently looks like a full bar.
+
+### Running it on another machine
+
+- `Assets/Scripts/Editor/PlayerBuild.cs` (new) — builds a standalone player,
+  driven from the command line or the Indoctrination menu.
+- `Tools/Build/run.sh` (new) — `./Tools/Build/run.sh` for this Mac,
+  `./Tools/Build/run.sh win` for Windows. Output lands in `Build/`, gitignored.
+  Verified: produces a 117 MB universal macOS app (x86_64 + arm64).
+- `Tools/Build/address.sh` (new) — prints this machine's LAN address, and checks
+  the two things that usually stop a LAN game connecting: being on different
+  networks, and the macOS firewall prompt.
+
+The transport already binds `0.0.0.0` on the host, so no networking change was
+needed - only a way to build and a way to find the address.
+
+### Verification
+
+- `./Tools/PlayModeTests/run.sh` — 27 pass.
+- `./Tools/CompileCheck/run.sh`, `./Tools/RulesCheck/run.sh`,
+  `./Tools/SmokeTest/run.sh` all pass.
+- `./Tools/Build/run.sh` produces a running player.
+
+
 ## 2026-08-08 — Claude (presentation polish: motion, entrances, phase banner)
 
 ### Edits

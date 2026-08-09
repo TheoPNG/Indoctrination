@@ -94,3 +94,7 @@ mono_crash.*.blob
 # PlayMode test output from Tools/PlayModeTests/run.sh
 Tools/PlayModeTests/last-run.log
 Tools/PlayModeTests/results.xml
+
+# Standalone player builds from Tools/Build/run.sh
+Build/
+Tools/Build/last-build.log

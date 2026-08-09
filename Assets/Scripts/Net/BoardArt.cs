@@ -89,6 +89,38 @@ namespace Indoctrination.Net
             return Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f));
         }
 
+        private static Sprite _solid;
+
+        /// <summary>
+        /// A plain white rectangle.
+        ///
+        /// Needed because Unity's Image ignores <c>type = Filled</c> outright when
+        /// it has no sprite: OnPopulateMesh short-circuits to a simple quad, so
+        /// fillAmount has no effect at all and a "progress bar" silently renders
+        /// full at every value. Any bar that fills must have a sprite.
+        /// </summary>
+        public static Sprite Solid => _solid ??= BuildSolidSprite();
+
+        private static Sprite BuildSolidSprite()
+        {
+            var texture = new Texture2D(4, 4, TextureFormat.RGBA32, mipChain: false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            var pixels = new Color32[16];
+            for (var i = 0; i < pixels.Length; i++)
+            {
+                pixels[i] = new Color32(255, 255, 255, 255);
+            }
+
+            texture.SetPixels32(pixels);
+            texture.Apply();
+
+            return Sprite.Create(texture, new Rect(0, 0, 4, 4), new Vector2(0.5f, 0.5f));
+        }
+
         /// <summary>A flat filled circle, for the resource pips.</summary>
         public static Sprite Disc => _disc ??= BuildRadialSprite(64, hard: true);
 
