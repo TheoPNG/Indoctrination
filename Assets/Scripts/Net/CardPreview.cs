@@ -245,6 +245,20 @@ namespace Indoctrination.Net
                 }, new Color(0.22f, 0.5f, 0.24f), 200, 40);
             }
 
+            // Re-ordering is offered here rather than on the board, so a card can
+            // be read and repositioned in the same place.
+            if (card.MoveEarlier != null)
+            {
+                var earlier = card.MoveEarlier;
+                var later = card.MoveLater;
+
+                UIFactory.ButtonWithLabel("Earlier", _actionRow, "< Earlier",
+                    () => { Hide(); earlier(); }, new Color(0.28f, 0.32f, 0.42f), 100, 40);
+
+                UIFactory.ButtonWithLabel("Later", _actionRow, "Later >",
+                    () => { Hide(); later(); }, new Color(0.28f, 0.32f, 0.42f), 100, 40);
+            }
+
             UIFactory.ButtonWithLabel("Close", _actionRow, "Close", Hide,
                 new Color(0.3f, 0.3f, 0.34f), 120, 40);
         }

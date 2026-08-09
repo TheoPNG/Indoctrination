@@ -74,6 +74,15 @@ namespace Indoctrination.Net
         public float phaseSecondsRemaining;
 
         /// <summary>
+        /// Whether the clocks are running at all. When off, nothing is ever taken
+        /// or answered on a player's behalf and no countdown is shown.
+        /// </summary>
+        public bool timersEnabled;
+
+        /// <summary>Whose pick opens this draft, and whose units activate first.</summary>
+        public int firstPlayerId;
+
+        /// <summary>
         /// Seconds left before the open card question answers itself, as of the
         /// moment this view was sent. Zero when nothing is pending.
         /// </summary>

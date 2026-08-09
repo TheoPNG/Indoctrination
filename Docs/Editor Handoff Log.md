@@ -2,6 +2,51 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
+## 2026-08-08 — Claude (timers off by default, and player-ordered activation)
+
+### Timers
+
+Off unless the host turns them on, from a toggle in the lobby. A clock that
+takes your draft pick or answers a card's question for you is worse than a game
+that waits, and there was no warning that it was about to. With them on, the
+countdown says what will actually happen ("12s until a pick is made for you")
+rather than a bare number.
+
+Activation still closes itself either way - nothing in that phase is a player's
+move, so there is nobody to wait for. It keeps its own dwell clock
+(`_activationEnteredAt`), separate from the phase clock which is frozen when
+timers are off.
+
+### Activation order
+
+Now round the table from whoever drafts first, and within each player in the
+order they have arranged their own compound. A player whose units are spent is
+skipped rather than the round stalling on them.
+
+`GameState.MoveInCompound` moves one of your own cards earlier or later; the
+compound's order *is* the activation order. `BoardUI.OrderedForBoard` therefore
+no longer sorts compounds by activation number - doing so would have silently
+overruled the arrangement the player chose. Re-ordering is offered from a card's
+own preview, so a card can be read and repositioned in the same place.
+
+Still worth stating: a Block from one player can land after another player's
+Damage in the same round. The old category grouping guaranteed it never could.
+
+### Hand sizing
+
+Sized against both directions now. Width alone was not enough - during Buy the
+cards carry a row of buttons underneath, and on a short window the tray ran past
+the bottom of the screen, which is what kept cutting the hand off. It is now
+sized from whatever height is left after the board's own minimum.
+
+### Verification
+
+- `./Tools/RulesCheck/run.sh` — 8 new checks on activation order and re-ordering.
+- `./Tools/PlayModeTests/run.sh` — 30 pass, one new: nothing is taken for a
+  player while the clocks are off.
+- CompileCheck, fuzz 1200, and the smoke test all pass.
+
+
 ## 2026-08-08 — Claude (resigning and draws)
 
 ### Direction

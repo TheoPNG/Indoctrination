@@ -50,6 +50,13 @@ namespace Indoctrination.Net
         /// <summary>Gap between cards in a battlefield grid.</summary>
         private const float CardGap = 6f;
 
+        /// <summary>
+        /// The least the board itself may be squeezed to. The hand is sized around
+        /// whatever is left after this, so opening it can never push the board out
+        /// of the window - nor be pushed out of it itself.
+        /// </summary>
+        private const float MinBattlefieldHeight = 250f;
+
         /// <summary>Diameter of a resource-picker disc.</summary>
         private const float ResourceButtonSize = 44f;
 
@@ -75,6 +82,8 @@ namespace Indoctrination.Net
         private InputField _portField;
         private Text _lobbyPlayersText;
         private Button _startGameButton;
+        private Button _timerToggle;
+        private bool _timersOn;
 
         private Text _statusText;
         private Text _timerText;
@@ -342,13 +351,15 @@ namespace Indoctrination.Net
 
             if (_timerText != null && _gameRoot.gameObject.activeSelf)
             {
-                _timerText.text = view.isGameOver
+                // Nothing is decided for anybody without the board saying so first,
+                // and with the clocks off there is nothing to say.
+                _timerText.text = !view.timersEnabled || view.isGameOver
                     ? ""
                     : view.hasPendingChoice
-                        ? $"{_choiceSecondsLeft:0}s until the card decides for itself"
+                        ? $"{_choiceSecondsLeft:0}s until this is answered for you"
                         : view.phase == nameof(TurnPhase.Draft)
-                            ? ""
-                            : $"{_secondsLeft:0}s until phase advances";
+                            ? $"{_secondsLeft:0}s until a pick is made for you"
+                            : $"{_secondsLeft:0}s until the phase moves on";
             }
         }
 
@@ -451,6 +462,11 @@ namespace Indoctrination.Net
             _lobbyPlayersText = UIFactory.Label("Players", box, "", 15, TextAnchor.UpperCenter);
             AddFixedHeight(_lobbyPlayersText.rectTransform, 120);
 
+            // The host's settings. Timers are off unless a table asks for them,
+            // because a clock that takes your draft pick is worse than waiting.
+            _timerToggle = UIFactory.ButtonWithLabel(
+                "Timers", box, "Timers: off", ToggleTimers, new Color(0.24f, 0.26f, 0.32f), 240, 32);
+
             _startGameButton = UIFactory.ButtonWithLabel(
                 "Start Button", box, "Start Game",
                 () => NetworkGameManager.Instance?.RequestStartGameRpc(),
@@ -462,6 +478,20 @@ namespace Indoctrination.Net
             leaveButton.gameObject.name = "Leave Button";
 
             return panel;
+        }
+
+        private void ToggleTimers()
+        {
+            _timersOn = !_timersOn;
+            _timerToggle.GetComponentInChildren<Text>().text = _timersOn
+                ? "Timers: 25s"
+                : "Timers: off";
+
+            _timerToggle.targetGraphic.color = _timersOn
+                ? new Color(0.3f, 0.36f, 0.28f)
+                : new Color(0.24f, 0.26f, 0.32f);
+
+            NetworkGameManager.Instance?.RequestSetTimersRpc(_timersOn);
         }
 
         private void SubmitName(string name)
@@ -490,6 +520,7 @@ namespace Indoctrination.Net
 
             var isHost = network != null && network.IsHost;
             _startGameButton.gameObject.SetActive(isHost);
+            _timerToggle.gameObject.SetActive(isHost);
             _startGameButton.interactable = lobby.playerNames.Length >= lobby.minPlayers;
         }
 
@@ -1288,15 +1319,32 @@ namespace Indoctrination.Net
 
             // Sized so a full hand fits across without scrolling. The hand limit
             // is what makes that possible: seven is the widest it can ever be.
+            // Sized against both directions. Width alone was not enough: during Buy
+            // the cards carry a row of buttons underneath, and on a short window
+            // the whole tray ran past the bottom of the screen - which is what was
+            // cutting the hand off.
             var across = Mathf.Max(240f, _gameRoot.rect.width - 40f);
-            var handCardWidth = Mathf.Min(
-                BoardCardView.Width,
-                (across - ((GameSettings.HandLimit - 1) * CardGap) - 24f) / GameSettings.HandLimit);
+            var widthAllows = (across - ((GameSettings.HandLimit - 1) * CardGap) - 24f)
+                              / GameSettings.HandLimit;
+
+            var chrome = (UIFactory.ScrollContentPadding * 2f) + 6f
+                         + (canBuy ? HandCardButtonHeight + 4f : 0f);
+
+            var heightForTray = _gameRoot.rect.height
+                                - StatusRowHeight
+                                - (StatBar.BarHeight + (UIFactory.ScrollContentPadding * 2f) + 4f)
+                                - MinBattlefieldHeight
+                                - DockTopHeight
+                                - (BoardSafeInset * 2f) - 24f;
+
+            var heightAllows = (Mathf.Max(80f, heightForTray) - chrome)
+                               * (BoardCardView.Width / BoardCardView.Height);
+
+            var handCardWidth = Mathf.Clamp(
+                Mathf.Min(widthAllows, heightAllows), MinCardWidth, BoardCardView.Width);
 
             var handCardHeight = handCardWidth * (BoardCardView.Height / BoardCardView.Width);
-            var handStripHeight = handCardHeight
-                                  + (UIFactory.ScrollContentPadding * 2f) + 6f
-                                  + (canBuy ? HandCardButtonHeight + 4f : 0f);
+            var handStripHeight = handCardHeight + chrome;
 
             _handRowPin.preferredHeight = handStripHeight;
             _handRowPin.minHeight = handStripHeight;

@@ -669,19 +669,17 @@ static class RulesCheck
     }
 
     /// <summary>
-    /// Activations are dealt out round the table: one of P1's, then one of P2's,
-    /// and so on until everybody's are spent. This replaced grouping the whole
-    /// table's activations by what they do (all Block, then all Damage) - taking
-    /// turns is easier to follow and leaves each player's own sequence in the
-    /// order they hold their cards.
+    /// Activation goes round the table starting from whoever drafts first, and
+    /// within each player in the order they have arranged their own compound.
+    /// A player whose units are spent is skipped rather than stalling the round.
     ///
-    /// The trade is real and worth stating plainly: a Block from one player can
-    /// now land after a different player's Damage in the same round. The old
-    /// grouping guaranteed it never did.
+    /// The trade is worth stating plainly: a Block from one player can now land
+    /// after another player's Damage in the same round. Grouping the whole table
+    /// by what each card did - which this replaced - guaranteed it never could.
     /// </summary>
     static void CheckActivationOrder(List<CardDefinition> cards)
     {
-        Console.WriteLine("\nActivation order (alternating round the table):");
+        Console.WriteLine("\nActivation order (round the table, in each player's own order):");
 
         CardDefinition ActivatingOn(string id, int face) => new()
         {
@@ -695,35 +693,64 @@ static class RulesCheck
             activationNumbers = new[] { face }
         };
 
-        var game = new GameState(new[] { "A", "B" }, cards, randomSeed: 40);
+        // Player 1 drafts first, so player 1's units go first.
+        var game = new GameState(new[] { "A", "B" }, cards, randomSeed: 40) { FirstDrafterIndex = 1 };
         FinishDraft(game);
 
-        // Two each, all waking on the same face, so the only thing deciding the
-        // order they resolve in is the interleaving. Resource gains, so nothing
-        // stops to ask anybody a question part-way through.
-        game.Players[0].Compound.Add(new CardInstance(-30, ActivatingOn(CardIds.SolarPanels, 3)));
-        game.Players[0].Compound.Add(new CardInstance(-31, ActivatingOn(CardIds.CrystalMine, 3)));
-        game.Players[1].Compound.Add(new CardInstance(-32, ActivatingOn(CardIds.MoneyTree, 3)));
-        game.Players[1].Compound.Add(new CardInstance(-33, ActivatingOn(CardIds.GoldMine, 3)));
+        var first = game.Players[game.FirstDrafterIndex].PlayerId;
+
+        // Resource gains, so nothing stops to ask anybody a question part-way.
+        var early = new CardInstance(-30, ActivatingOn(CardIds.SolarPanels, 3));
+        var late = new CardInstance(-31, ActivatingOn(CardIds.CrystalMine, 3));
+        game.Players[first].Compound.Add(early);
+        game.Players[first].Compound.Add(late);
+        game.Players[1 - first].Compound.Add(new CardInstance(-32, ActivatingOn(CardIds.MoneyTree, 3)));
 
         foreach (var player in game.LivingPlayers.ToList()) game.RollPrimaryDie(player.PlayerId);
         game.SetPrimaryDie(game.Players[0], 3);
         game.SetPrimaryDie(game.Players[1], 3);
 
-        var order = new List<int>();
-        game.EffectQueued += (_, controller) => order.Add(controller.PlayerId);
+        var order = new List<(int Player, string Card)>();
+        game.EffectQueued += (card, controller) => order.Add((controller.PlayerId, card?.Definition.Id));
 
         game.AdvancePhase();   // Rolling -> Activation
 
-        // Four units, and both players rolled the same face - every unit answers
-        // to every die showing its number, so each fires twice.
-        Check("every unit fires once per die showing its number", order.Count == 8,
-              $"{order.Count} activations");
+        Check("the player who drafts first activates first",
+              order.Count > 0 && order[0].Player == first,
+              order.Count == 0 ? "nothing activated" : $"player {order[0].Player} went first");
 
-        Check("and they alternate between the players",
-              order.Count > 1 && !order.Where((id, i) => i > 0 && id == order[i - 1]).Any(),
-              string.Join(",", order));
+        Check("their own order decides which of their units goes first",
+              order.Count > 0 && order[0].Card == CardIds.SolarPanels,
+              order.Count == 0 ? "nothing activated" : order[0].Card);
+
+        Check("then it passes to the next player",
+              order.Count > 1 && order[1].Player != first,
+              string.Join(",", order.Select(e => e.Player)));
+
+        // Two units against one, both dice showing the same face: the player who
+        // runs out is skipped rather than the round stalling.
+        Check("a player with nothing left is skipped, not waited for",
+              order.Count == 6 && order.Count(e => e.Player == first) == 4,
+              $"{order.Count} activations, {order.Count(e => e.Player == first)} from the first player");
+
         Check("nothing was left waiting on a choice", game.PendingChoice == null);
+
+        // --- Re-ordering changes which unit fires first.
+        game.MoveInCompound(first, late.InstanceId, -1);
+        Check("moving a card earlier swaps it with the one in front",
+              game.Players[first].Compound.IndexOf(late) < game.Players[first].Compound.IndexOf(early));
+
+        Check("a card cannot be moved off the front of the compound",
+              DoesNotThrow(() => game.MoveInCompound(first, late.InstanceId, -1)));
+
+        Check("and only your own cards can be moved",
+              Throws(() => game.MoveInCompound(1 - first, late.InstanceId, -1)));
+    }
+
+    static bool DoesNotThrow(Action action)
+    {
+        try { action(); return true; }
+        catch { return false; }
     }
 
     /// <summary>

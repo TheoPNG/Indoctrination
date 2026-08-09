@@ -20,7 +20,8 @@ namespace Indoctrination.Net
             GameState game,
             int viewerPlayerId,
             float phaseSecondsRemaining = 0f,
-            float choiceSecondsRemaining = 0f)
+            float choiceSecondsRemaining = 0f,
+            bool timersEnabled = false)
         {
             return new GameView
             {
@@ -38,6 +39,10 @@ namespace Indoctrination.Net
                 highRollResourceClaimed = game.HighRollResourceClaimed,
                 playersReady = game.PlayersReady.ToArray(),
                 phaseSecondsRemaining = phaseSecondsRemaining,
+                timersEnabled = timersEnabled,
+                firstPlayerId = game.Players.Count == 0
+                    ? -1
+                    : game.Players[game.FirstDrafterIndex % game.Players.Count].PlayerId,
                 choiceSecondsRemaining = choiceSecondsRemaining,
                 draftZone = game.DraftZone.Select(ToCardView).ToArray(),
                 discardPile = game.Discard.Select(ToCardView).ToArray(),

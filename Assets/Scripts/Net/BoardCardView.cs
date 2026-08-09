@@ -176,6 +176,7 @@ namespace Indoctrination.Net
         {
             Card = card;
             SetAction(null, onClick);
+            SetReorder(null, null);
             _tagText.text = tag ?? "";
             _tagText.gameObject.SetActive(!string.IsNullOrEmpty(tag));
 
@@ -247,6 +248,22 @@ namespace Indoctrination.Net
             _button.onClick.RemoveAllListeners();
             _button.interactable = true;
             _button.onClick.AddListener(() => CardPreview.Show(this));
+        }
+
+        /// <summary>Moves this card earlier or later in its owner's compound, if it may be moved.</summary>
+        public Action MoveEarlier { get; private set; }
+
+        public Action MoveLater { get; private set; }
+
+        /// <summary>
+        /// Lets this card be re-ordered from its preview. Only the owner's own
+        /// compound offers this, since the order decides which of their units
+        /// activates first.
+        /// </summary>
+        public void SetReorder(Action earlier, Action later)
+        {
+            MoveEarlier = earlier;
+            MoveLater = later;
         }
 
         /// <summary>

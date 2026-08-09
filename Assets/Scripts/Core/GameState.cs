@@ -1721,72 +1721,89 @@ namespace Indoctrination.Core
         private void QueueActivations()
         {
             var shared = LivingPlayers.Select(p => p.PrimaryDie).ToList();
-            var activating = new List<(PlayerState Player, CardInstance Unit, int DieValue)>();
+            var queues = new List<Queue<(PlayerState Player, CardInstance Unit, int DieValue)>>();
 
-            foreach (var player in LivingPlayers.ToList())
+            // Round the table from whoever drafted first, and within each player
+            // in the order they have arranged their own compound. Both halves
+            // matter: the table order is fair, and the order inside it is theirs.
+            foreach (var player in SeatOrderFromFirstDrafter())
             {
-                foreach (var value in shared)
+                var queue = new Queue<(PlayerState, CardInstance, int)>();
+
+                foreach (var unit in player.Compound.ToList())
                 {
-                    CollectActivating(player, value, activating);
+                    foreach (var value in shared.Concat(player.PrivateDice).ToList())
+                    {
+                        if (!unit.ActivatesOn(value))
+                        {
+                            continue;
+                        }
+
+                        // Ominous Eye's static counters swallow an activation each.
+                        if (unit.GetCounter(Counters.Static) > 0)
+                        {
+                            unit.AddCounter(Counters.Static, -1);
+                            continue;
+                        }
+
+                        queue.Enqueue((player, unit, value));
+                    }
                 }
 
-                foreach (var value in player.PrivateDice.ToList())
+                if (queue.Count > 0)
                 {
-                    CollectActivating(player, value, activating);
+                    queues.Add(queue);
                 }
             }
 
-            foreach (var entry in InterleaveByPlayer(activating))
-            {
-                entry.Player.UnitsTriggeredThisTurn++;
-                EnqueueEffect(entry.Unit, entry.Player,
-                    CardEffects.For(entry.Unit.Definition.Id, entry.DieValue), entry.Unit.Title);
-            }
-        }
-
-        /// <summary>
-        /// Deals the activations out one player at a time, round the table: one of
-        /// P1's, then one of P2's, and so on until everybody's are spent.
-        ///
-        /// This replaced grouping the whole table's activations by what they do
-        /// (all Block, then all Damage, and so on). Taking turns is easier to
-        /// follow and gives each player a say in their own sequence, since their
-        /// units go in the order they hold them. It does mean a Block from one
-        /// player can now land after another player's Damage in the same round -
-        /// the earlier category ordering guaranteed it never did.
-        /// </summary>
-        private static IEnumerable<(PlayerState Player, CardInstance Unit, int DieValue)> InterleaveByPlayer(
-            List<(PlayerState Player, CardInstance Unit, int DieValue)> activating)
-        {
-            var queues = activating
-                .GroupBy(entry => entry.Player.PlayerId)
-                .OrderBy(group => group.Key)
-                .Select(group => new Queue<(PlayerState Player, CardInstance Unit, int DieValue)>(group))
-                .ToList();
-
+            // One each, round and round, skipping anybody who has run out.
             while (queues.Any(queue => queue.Count > 0))
             {
                 foreach (var queue in queues.Where(queue => queue.Count > 0))
                 {
-                    yield return queue.Dequeue();
+                    var (player, unit, dieValue) = queue.Dequeue();
+
+                    player.UnitsTriggeredThisTurn++;
+                    EnqueueEffect(unit, player, CardEffects.For(unit.Definition.Id, dieValue), unit.Title);
                 }
             }
         }
 
-        private static void CollectActivating(
-            PlayerState player, int dieValue, List<(PlayerState Player, CardInstance Unit, int DieValue)> activating)
+        /// <summary>
+        /// Living players in seat order, beginning with whoever drafts first this
+        /// round. Activation follows the same order as the draft, so "you picked
+        /// first, so you go first" holds throughout the turn.
+        /// </summary>
+        private IEnumerable<PlayerState> SeatOrderFromFirstDrafter()
         {
-            foreach (var unit in player.UnitsActivatingOn(dieValue).ToList())
-            {
-                // Ominous Eye's static counters swallow an activation each.
-                if (unit.GetCounter(Counters.Static) > 0)
-                {
-                    unit.AddCounter(Counters.Static, -1);
-                    continue;
-                }
+            return Enumerable.Range(0, _players.Count)
+                .Select(offset => _players[(FirstDrafterIndex + offset) % _players.Count])
+                .Where(player => player.IsAlive);
+        }
 
-                activating.Add((player, unit, dieValue));
+        /// <summary>
+        /// Moves one of a player's own cards earlier or later in their compound.
+        /// The compound's order is the order its units activate in, so this is
+        /// how a player decides what fires first.
+        /// </summary>
+        public void MoveInCompound(int playerId, int cardInstanceId, int direction)
+        {
+            var player = RequireAlive(playerId);
+            var index = player.Compound.FindIndex(card => card.InstanceId == cardInstanceId);
+
+            if (index < 0)
+            {
+                throw new ArgumentException($"Card {cardInstanceId} is not in player {playerId}'s compound.");
             }
+
+            var target = index + Math.Sign(direction);
+            if (target < 0 || target >= player.Compound.Count)
+            {
+                return;
+            }
+
+            (player.Compound[index], player.Compound[target]) =
+                (player.Compound[target], player.Compound[index]);
         }
 
         /// <summary>Human Zoo's die roll, and anything else that opens a turn.</summary>

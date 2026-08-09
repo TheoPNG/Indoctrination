@@ -41,6 +41,15 @@ namespace Indoctrination.Net
 
         private readonly List<Seat> _seats = new();
 
+        /// <summary>
+        /// Whether the clocks run at all. Off by default: a timer that takes a
+        /// draft pick for you, or answers a card's question on your behalf, is
+        /// worse than a game that waits. The host turns it on for a table that
+        /// wants it, and when it is on the board counts down in the open so
+        /// nothing is ever decided without warning.
+        /// </summary>
+        private bool _timersEnabled;
+
         /// <summary>Time.time when the current phase began, for the timeout.</summary>
         private float _phaseStartedAt;
 
@@ -308,6 +317,28 @@ namespace Indoctrination.Net
         }
 
         /// <summary>
+        /// Turns the clocks on or off for the whole table. The host's call, since
+        /// it changes how the game is played rather than how one player sees it.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void RequestSetTimersRpc(bool enabled, RpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != NetworkManager.ServerClientId)
+            {
+                return;
+            }
+
+            _timersEnabled = enabled;
+            _phaseStartedAt = Time.time;
+            _choiceStartedAt = _game?.PendingChoice == null ? -1f : Time.time;
+
+            if (_game != null)
+            {
+                BroadcastState();
+            }
+        }
+
+        /// <summary>
         /// Gives up. Deliberately not routed through anybody else - resigning is
         /// one player's call and nobody gets a say in it.
         /// </summary>
@@ -334,6 +365,16 @@ namespace Indoctrination.Net
         public void RequestOfferDrawRpc(bool offering, RpcParams rpcParams = default)
         {
             Apply(rpcParams, playerId => _game.SetDrawOffer(playerId, offering));
+        }
+
+        /// <summary>
+        /// Moves one of your own cards earlier or later in your compound, which
+        /// is the order its units activate in.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void RequestMoveInCompoundRpc(int cardInstanceId, int direction, RpcParams rpcParams = default)
+        {
+            Apply(rpcParams, playerId => _game.MoveInCompound(playerId, cardInstanceId, direction));
         }
 
         [Rpc(SendTo.Server)]
@@ -544,12 +585,20 @@ namespace Indoctrination.Net
             }
         }
 
+        /// <summary>Time.time the Activation phase began, for its own short dwell.</summary>
+        private float _activationEnteredAt;
+
         private void AdvancePhase()
         {
             // The rules engine deals each new draft itself as the turn loop comes
             // back around, so there is nothing to arrange here.
             _game.AdvancePhase();
             _phaseStartedAt = Time.time;
+
+            if (_game.Phase == TurnPhase.Activation)
+            {
+                _activationEnteredAt = Time.time;
+            }
         }
 
         /// <summary>
@@ -567,6 +616,28 @@ namespace Indoctrination.Net
         {
             if (!IsServer || _game == null)
             {
+                return;
+            }
+
+            // With the clocks off nothing is ever taken or answered for anybody.
+            // The table waits, which is the correct behaviour for a game being
+            // played in the same room.
+            if (!_timersEnabled)
+            {
+                _phaseStartedAt = Time.time;
+                _choiceStartedAt = _game.PendingChoice == null ? -1f : _choiceStartedAt;
+
+                // Activation still closes itself: nothing there is a player's
+                // move, so there is nobody to wait for.
+                if (_game.Phase == TurnPhase.Activation
+                    && _game.PendingChoice == null
+                    && !_game.HasEffectsPending
+                    && Time.time - _activationEnteredAt >= GameSettings.ActivationDwellSeconds)
+                {
+                    AdvancePhase();
+                    BroadcastState();
+                }
+
                 return;
             }
 
@@ -766,15 +837,18 @@ namespace Indoctrination.Net
         /// </summary>
         private GameView BuildViewFor(int viewerPlayerId)
         {
-            var phaseRemaining = _game.Phase is TurnPhase.Draft or TurnPhase.GameOver
+            // With the clocks off there is no countdown to report, and the board
+            // shows nothing rather than a number that never moves.
+            var phaseRemaining = !_timersEnabled || _game.Phase is TurnPhase.Draft or TurnPhase.GameOver
                 ? 0f
                 : Mathf.Max(0f, GameSettings.PhaseTimeoutSeconds - (Time.time - _phaseStartedAt));
 
-            var choiceRemaining = _game.PendingChoice == null || _choiceStartedAt < 0f
+            var choiceRemaining = !_timersEnabled || _game.PendingChoice == null || _choiceStartedAt < 0f
                 ? 0f
                 : Mathf.Max(0f, GameSettings.ChoiceTimeoutSeconds - (Time.time - _choiceStartedAt));
 
-            return GameViewBuilder.Build(_game, viewerPlayerId, phaseRemaining, choiceRemaining);
+            return GameViewBuilder.Build(
+                _game, viewerPlayerId, phaseRemaining, choiceRemaining, _timersEnabled);
         }
     }
 }

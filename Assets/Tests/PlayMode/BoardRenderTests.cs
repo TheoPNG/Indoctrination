@@ -219,6 +219,12 @@ namespace Indoctrination.Tests
 
             Assert.AreEqual(nameof(TurnPhase.Draft), _manager.View.phase);
 
+            // Timers are off unless the host asks for them, and nothing is ever
+            // taken for a player without one running.
+            _manager.RequestSetTimersRpc(true);
+            yield return WaitForFrames(2);
+            Assert.IsTrue(_manager.View.timersEnabled, "the host turned the clocks on");
+
             var zoneBefore = _manager.View.draftZone.Length;
 
             // Wind the phase clock back past the timeout rather than waiting it out.
@@ -732,8 +738,10 @@ namespace Indoctrination.Tests
 
             Assert.AreEqual(nameof(TurnPhase.Activation), _manager.View.phase);
 
-            // Wind the clock past the dwell rather than waiting it out.
-            ExpirePhaseClock();
+            // Activation keeps its own short dwell whether or not the clocks are
+            // running - nothing there is a player's move, so there is nobody to
+            // wait for. Wind that clock rather than the phase one.
+            ExpireActivationDwell();
             yield return WaitForFrames(4);
 
             Assert.AreNotEqual(nameof(TurnPhase.Activation), _manager.View.phase,
@@ -870,6 +878,39 @@ namespace Indoctrination.Tests
 
             Assert.IsTrue(_manager.View.isGameOver, "everybody agreeing ends it");
             Assert.IsTrue(_manager.View.isDraw, "as a draw");
+        }
+
+
+        /// <summary>
+        /// Nothing is taken or answered for a player unless the host has turned
+        /// the clocks on. An autopick that arrives without warning is worse than
+        /// a game that waits.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator NothingIsTakenForYouWhileTheClocksAreOff()
+        {
+            yield return StartGame();
+
+            Assert.IsFalse(_manager.View.timersEnabled, "clocks are off unless asked for");
+
+            var zoneBefore = _manager.View.draftZone.Length;
+            var drafterBefore = _manager.View.currentDrafterId;
+
+            // However far past any timeout, an untouched draft stays untouched.
+            ExpirePhaseClock();
+            yield return WaitForFrames(6);
+
+            Assert.AreEqual(zoneBefore, _manager.View.draftZone.Length,
+                            "no pick may be taken for anybody with the clocks off");
+            Assert.AreEqual(drafterBefore, _manager.View.currentDrafterId,
+                            "and the draft stays with whoever it was waiting on");
+            Assert.IsEmpty(_timerTextValue(), "with no countdown shown, since nothing is counting down");
+        }
+
+        private string _timerTextValue()
+        {
+            return Object.FindObjectsByType<Text>(FindObjectsSortMode.None)
+                .FirstOrDefault(t => t.name == "Timer")?.text ?? "";
         }
 
         private static int TotalResources(PlayerView player) =>
@@ -1049,6 +1090,13 @@ namespace Indoctrination.Tests
         {
             var method = typeof(NetworkGameManager).GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic);
             method.Invoke(_manager, new object[] { default(RpcParams), operation });
+        }
+
+        private void ExpireActivationDwell()
+        {
+            var field = typeof(NetworkGameManager).GetField(
+                "_activationEnteredAt", BindingFlags.Instance | BindingFlags.NonPublic);
+            field.SetValue(_manager, Time.time - GameSettings.ActivationDwellSeconds - 1f);
         }
 
         private void ExpirePhaseClock()
