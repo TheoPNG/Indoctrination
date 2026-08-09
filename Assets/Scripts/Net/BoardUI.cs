@@ -128,6 +128,15 @@ namespace Indoctrination.Net
         private PhaseBanner _phaseBanner;
         private Button _statusToggle;
         private bool _statusExpanded;
+        private Button _drawButton;
+        private Button _resignButton;
+        private Text _resignLabel;
+
+        /// <summary>
+        /// Set once Resign has been pressed and is waiting to be confirmed.
+        /// Resigning cannot be taken back, so it is never one click away.
+        /// </summary>
+        private bool _resignArmed;
 
         private readonly List<ResourceColor> _pendingResources = new();
         private readonly List<ResourceColor> _pendingMealPayment = new();
@@ -509,6 +518,18 @@ namespace Indoctrination.Net
             _statusText = UIFactory.Label("Status", status, "", 12, TextAnchor.MiddleLeft,
                 new Color(0.72f, 0.72f, 0.78f));
             AddFlexibleWidth(_statusText.rectTransform);
+
+            // Conceding and offering a draw live behind the same chip as the
+            // counters. Both are rare, and one of them ends your game - neither
+            // belongs next to the controls you press every turn.
+            _drawButton = UIFactory.ButtonWithLabel(
+                "Offer Draw", status, "Offer draw", ToggleDrawOffer,
+                new Color(0.24f, 0.26f, 0.32f), 110, StatusRowHeight);
+
+            _resignButton = UIFactory.ButtonWithLabel(
+                "Resign", status, "Resign", PressResign,
+                new Color(0.34f, 0.2f, 0.2f), 90, StatusRowHeight);
+            _resignLabel = _resignButton.GetComponentInChildren<Text>();
             _timerText = UIFactory.Label("Timer", status, "", 13, TextAnchor.MiddleRight, new Color(0.8f, 0.8f, 0.6f));
             AddResponsiveWidth(_timerText.rectTransform, 150, 230, 0);
 
@@ -769,6 +790,7 @@ namespace Indoctrination.Net
             RefreshBattlefield(manager, view);
             RefreshActionPanel(manager, view);
             RefreshReadyControl(view);
+            RefreshConcessionControls(view);
             ShowHealthLosses(view);
             ShowRitualIfOneJustResolved(view);
 
@@ -1372,7 +1394,9 @@ namespace Indoctrination.Net
         {
             if (view.isDraw)
             {
-                return "Everyone is out. The game is a draw.";
+                return view.players.Any(p => p.isAlive)
+                    ? "The table agreed to a draw."
+                    : "Everyone is out. The game is a draw.";
             }
 
             var winner = FindPlayer(view, view.winnerPlayerId);
@@ -1488,7 +1512,7 @@ namespace Indoctrination.Net
 
             var name = UIFactory.Label("Name", row, 
                 $"{(won ? "★ " : "")}{player.name}{(isViewer ? " (you)" : "")}"
-                + $"{(player.isAlive ? "" : "  -  out")}",
+                + $"{(player.isAlive ? "" : player.hasResigned ? "  -  resigned" : "  -  out")}",
                 14, TextAnchor.MiddleLeft);
             name.fontStyle = FontStyle.Bold;
             SetRowHeight(name.rectTransform, 18);
@@ -1740,6 +1764,78 @@ namespace Indoctrination.Net
         }
 
         private bool _discardOpen;
+
+        /// <summary>
+        /// Resigning takes two presses. It ends your game with no way back, so a
+        /// misclick must not be able to do it.
+        /// </summary>
+        private void PressResign()
+        {
+            if (!_resignArmed)
+            {
+                _resignArmed = true;
+                _resignLabel.text = "Sure?";
+                _resignButton.targetGraphic.color = new Color(0.6f, 0.2f, 0.2f);
+                return;
+            }
+
+            _resignArmed = false;
+            NetworkGameManager.Instance?.RequestResignRpc();
+        }
+
+        private void ToggleDrawOffer()
+        {
+            var you = NetworkGameManager.Instance?.View?.Viewer;
+            if (you != null)
+            {
+                NetworkGameManager.Instance.RequestOfferDrawRpc(!you.offeringDraw);
+            }
+        }
+
+        /// <summary>
+        /// Updates the two concession controls. A draw needs the whole table, so
+        /// it shows how many have agreed; resigning needs nobody, so it does not.
+        /// </summary>
+        private void RefreshConcessionControls(GameView view)
+        {
+            var you = view.Viewer;
+            var usable = you is { isAlive: true } && !view.isGameOver;
+
+            _drawButton.gameObject.SetActive(usable);
+            _resignButton.gameObject.SetActive(usable);
+
+            if (!usable)
+            {
+                return;
+            }
+
+            var offering = view.players.Count(p => p.isAlive && p.offeringDraw);
+            var alive = view.players.Count(p => p.isAlive);
+
+            _drawButton.GetComponentInChildren<Text>().text = you.offeringDraw
+                ? $"Draw {offering}/{alive}"
+                : "Offer draw";
+
+            _drawButton.targetGraphic.color = you.offeringDraw
+                ? new Color(0.3f, 0.42f, 0.3f)
+                : new Color(0.24f, 0.26f, 0.32f);
+
+            // A confirmation left armed from an earlier turn is stale, and would
+            // let a single press end the game much later.
+            if (_resignArmed && !ReferenceEquals(view, _armedForView))
+            {
+                _resignArmed = false;
+            }
+
+            _armedForView = _resignArmed ? view : null;
+
+            _resignLabel.text = _resignArmed ? "Sure?" : "Resign";
+            _resignButton.targetGraphic.color = _resignArmed
+                ? new Color(0.6f, 0.2f, 0.2f)
+                : new Color(0.34f, 0.2f, 0.2f);
+        }
+
+        private GameView _armedForView;
 
         private void ToggleStatusDetail()
         {

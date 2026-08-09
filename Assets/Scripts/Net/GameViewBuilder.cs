@@ -70,6 +70,8 @@ namespace Indoctrination.Net
                     resourceAllowance = game.ResourcesPerTurnFor(player.PlayerId),
                     block = player.Block,
                     isReady = game.PlayersReady.Contains(player.PlayerId),
+                    hasResigned = game.HasResigned(player.PlayerId),
+                    offeringDraw = game.HasOfferedDraw(player.PlayerId),
 
                     // The whole point of building a view per player: only the
                     // holder is ever sent the contents of their own hand.

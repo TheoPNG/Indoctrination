@@ -813,6 +813,65 @@ namespace Indoctrination.Tests
             bar.GetComponentsInChildren<Image>(includeInactive: true)
                 .FirstOrDefault(image => image.name == $"{name} Fill");
 
+
+        /// <summary>
+        /// Resigning ends your game with no way back, so it must never be one
+        /// click away - the first press only arms it.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ResigningTakesTwoPresses()
+        {
+            yield return StartGame();
+            yield return WaitForFrames(3);
+
+            var resign = FindButtonLabelled("Resign");
+            Assert.IsNotNull(resign, WhyUnusable("Resign"));
+
+            resign.onClick.Invoke();
+            yield return WaitForFrames(3);
+
+            Assert.IsTrue(_manager.View.Viewer.isAlive,
+                          "one press must not resign - it only asks for confirmation");
+            Assert.IsNotNull(FindButtonLabelled("Sure?"), "and the button should ask");
+
+            FindButtonLabelled("Sure?").onClick.Invoke();
+            yield return WaitForFrames(4);
+
+            Assert.IsFalse(_manager.View.Viewer.isAlive, "confirming resigns");
+            Assert.IsTrue(_manager.View.Viewer.hasResigned, "recorded as giving up");
+        }
+
+        /// <summary>
+        /// A draw needs the whole table, so one player offering does not end
+        /// anything - the button just reports how many have agreed.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator OfferingADrawWaitsForEverybody()
+        {
+            yield return StartGame();
+            yield return WaitForFrames(3);
+
+            var offer = FindButtonLabelled("Offer draw");
+            Assert.IsNotNull(offer, WhyUnusable("Offer draw"));
+
+            offer.onClick.Invoke();
+            yield return WaitForFrames(4);
+
+            Assert.IsFalse(_manager.View.isGameOver,
+                           "one player offering a draw must not end the game");
+            Assert.IsTrue(_manager.View.Viewer.offeringDraw, "but the offer stands");
+            Assert.IsNotNull(FindButtonLabelled("Draw 1/2"),
+                             "and the button says how many have agreed");
+
+            // The other seat agrees, and only then is it a draw.
+            var game = ServerGame();
+            ApplyAsHost(_ => game.SetDrawOffer(1, true));
+            yield return WaitForFrames(4);
+
+            Assert.IsTrue(_manager.View.isGameOver, "everybody agreeing ends it");
+            Assert.IsTrue(_manager.View.isDraw, "as a draw");
+        }
+
         private static int TotalResources(PlayerView player) =>
             player.red + player.green + player.blue + player.yellow;
 

@@ -880,6 +880,10 @@ namespace Indoctrination.Core
             _playersReady.Clear();
             _oncePerTurn.Clear();
 
+            // A draw offer is about the position as it stands. Carrying one into
+            // a turn that has changed the board would agree to something else.
+            _drawOffers.Clear();
+
             foreach (var player in _players)
             {
                 // Titanstopper is the one thing that keeps Block across the break.
@@ -944,11 +948,101 @@ namespace Indoctrination.Core
         }
 
         /// <summary>
-        /// Whether the game ended with nobody left standing. Cards that hit the
-        /// whole table at once - Friend of the Beasts, Bloody Mooner, a flame
-        /// counter burning out - can take the last two leaders down together.
+        /// Whether the game ended with no winner - everybody knocked out together,
+        /// or the table agreeing to a draw. Cards that hit the whole table at once
+        /// (Friend of the Beasts, Bloody Mooner, a flame counter burning out) can
+        /// take the last two leaders down in the same instant.
         /// </summary>
         public bool IsDraw => Phase == TurnPhase.GameOver && Winner == null;
+
+        // ------------------------------------------------- Conceding and draws
+
+        private readonly HashSet<int> _resigned = new();
+        private readonly HashSet<int> _drawOffers = new();
+
+        /// <summary>Players who walked away rather than being knocked out.</summary>
+        public IReadOnlyCollection<int> Resigned => _resigned;
+
+        /// <summary>Players currently offering a draw.</summary>
+        public IReadOnlyCollection<int> DrawOffers => _drawOffers;
+
+        public bool HasResigned(int playerId) => _resigned.Contains(playerId);
+
+        public bool HasOfferedDraw(int playerId) => _drawOffers.Contains(playerId);
+
+        /// <summary>
+        /// Gives up. One player's decision alone - nobody else is consulted,
+        /// because staying in a game you have decided is lost is not something
+        /// the table should be able to insist on.
+        ///
+        /// The board stays where it is and other cards can still read it; the
+        /// player is simply out, exactly as if they had been reduced to nothing.
+        /// </summary>
+        public void Resign(int playerId)
+        {
+            if (Phase == TurnPhase.GameOver)
+            {
+                throw new InvalidOperationException("The game is over.");
+            }
+
+            var player = RequireAlive(playerId);
+
+            _resigned.Add(playerId);
+            _drawOffers.Remove(playerId);
+            _playersReady.Remove(playerId);
+
+            // Not damage: nothing that pays out on wounds should pay out because
+            // somebody conceded.
+            player.LoseHealth(player.Health);
+
+            AbandonPendingChoiceIfAskedOfSomeoneOut();
+            ResolveEffects();
+        }
+
+        /// <summary>
+        /// Offers, or takes back, a draw. Unlike resigning this needs everybody:
+        /// a draw is a result the whole table has to accept, so the game only
+        /// ends once every living player is offering one.
+        /// </summary>
+        public void SetDrawOffer(int playerId, bool offering)
+        {
+            if (Phase == TurnPhase.GameOver)
+            {
+                throw new InvalidOperationException("The game is over.");
+            }
+
+            RequireAlive(playerId);
+
+            if (offering)
+            {
+                _drawOffers.Add(playerId);
+            }
+            else
+            {
+                _drawOffers.Remove(playerId);
+            }
+
+            if (LivingPlayers.All(player => _drawOffers.Contains(player.PlayerId)))
+            {
+                Phase = TurnPhase.GameOver;
+            }
+        }
+
+        /// <summary>
+        /// Drops a question whose player has just left the game. Nothing else at
+        /// the table may happen while a question is open, so one left behind by a
+        /// player resigning would stop the game for everybody.
+        /// </summary>
+        private void AbandonPendingChoiceIfAskedOfSomeoneOut()
+        {
+            if (PendingChoice == null || GetPlayer(PendingChoice.AskedOfPlayerId).IsAlive)
+            {
+                return;
+            }
+
+            PendingChoice = null;
+            _resolving = null;
+        }
 
         private bool CheckForGameOver()
         {

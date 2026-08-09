@@ -2,6 +2,48 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
+## 2026-08-08 — Claude (resigning and draws)
+
+### Direction
+
+Both should be available but tucked away, in the metadata menu or similar.
+Draws are mutual; resignation is not.
+
+### Edits
+
+- `Assets/Scripts/Core/GameState.cs` — `Resign(playerId)` and
+  `SetDrawOffer(playerId, offering)`.
+  - Resigning is one player's call and consults nobody. It takes the player out
+    the same way being reduced to nothing does, but through `LoseHealth` rather
+    than damage, so nothing that pays out on wounds pays out because somebody
+    conceded. It is recorded separately from being knocked out, so the board can
+    say which happened.
+  - A draw ends the game only once **every living player** is offering one.
+    Offers can be withdrawn, and are cleared at the end of each turn - an offer
+    is about the position as it stands, and carrying one into a turn that has
+    changed the board would be agreeing to something else.
+  - Resigning mid-question abandons that question. Nothing else at the table may
+    happen while one is open, so a question left behind by a player leaving
+    would have stopped the game for everybody.
+- `Assets/Scripts/Net/NetworkGameManager.cs` — `RequestResignRpc` and
+  `RequestOfferDrawRpc`. Resigning can leave a phase nobody is waiting on any
+  more, so it re-checks whether the phase can now advance.
+- `Assets/Scripts/Net/BoardUI.cs` — both controls sit in the status chip beside
+  the turn counters. Resigning takes two presses ("Resign" then "Sure?") and the
+  confirmation goes stale when the view changes, so a press armed on an earlier
+  turn cannot end the game much later. The draw button doubles as the tally
+  ("Draw 1/2"). Stat bars mark who is offering and who resigned.
+
+### Verification
+
+- `./Tools/RulesCheck/run.sh` — 17 new checks covering both, including that a
+  majority is not enough for a draw, that an out player is not waited on, and
+  that resigning mid-question does not strand the table.
+- `./Tools/PlayModeTests/run.sh` — 29 pass, two new: resigning takes two
+  presses, and one player offering a draw ends nothing.
+- CompileCheck, fuzz 1200, and the smoke test all pass.
+
+
 ## 2026-08-08 — Claude (bars that actually fill, and a build for LAN testing)
 
 ### The bar bug

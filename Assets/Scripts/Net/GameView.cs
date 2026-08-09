@@ -174,6 +174,12 @@ namespace Indoctrination.Net
 
         public bool isReady;
 
+        /// <summary>Whether this player gave up rather than being knocked out.</summary>
+        public bool hasResigned;
+
+        /// <summary>Whether this player is currently offering a draw.</summary>
+        public bool offeringDraw;
+
         /// <summary>Only filled in on the holder's own view; empty for everyone else.</summary>
         public CardView[] hand = Array.Empty<CardView>();
 

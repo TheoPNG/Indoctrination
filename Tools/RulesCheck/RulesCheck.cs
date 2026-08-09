@@ -311,6 +311,7 @@ static class RulesCheck
         CheckEffectResolution(cards);
         CheckSettledCards(cards);
         CheckActivationOrder(cards);
+        CheckConcessions(cards);
         CheckEndStates(cards);
         CheckPerPlayerViews(cards);
 
@@ -847,6 +848,75 @@ static class RulesCheck
         Check("and the effect still resolved",
               quiet.Players.Skip(1).Any(p => p.Health < GameSettings.StartingHealth),
               string.Join(",", quiet.Players.Select(p => p.Health)));
+    }
+
+    /// <summary>
+    /// The two ways to stop playing, which follow opposite rules: resigning is
+    /// one player's decision and nobody else is asked, while a draw is a result
+    /// the whole table has to accept.
+    /// </summary>
+    static void CheckConcessions(List<CardDefinition> cards)
+    {
+        Console.WriteLine("\nResigning and draws:");
+
+        // --- Resignation needs nobody's agreement.
+        var quit = new GameState(new[] { "A", "B", "C" }, cards, randomSeed: 61);
+        FinishDraft(quit);
+
+        quit.Resign(2);
+        Check("resigning takes that player out", !quit.Players[2].IsAlive);
+        Check("and is recorded as giving up, not being knocked out", quit.HasResigned(2));
+        Check("the game continues while two remain", quit.Phase != TurnPhase.GameOver);
+        Check("a player who resigned cannot act", Throws(() => quit.SetReady(2, true)));
+        Check("and cannot resign twice", Throws(() => quit.Resign(2)));
+
+        // Down to one leader, resigning ends it.
+        quit.Resign(1);
+        Check("the last resignation leaves a winner", quit.Phase == TurnPhase.GameOver);
+        Check("who is the player still standing", quit.Winner?.PlayerId == 0,
+              quit.Winner?.Name ?? "nobody");
+
+        // --- A draw needs everybody.
+        var talks = new GameState(new[] { "A", "B", "C" }, cards, randomSeed: 62);
+        FinishDraft(talks);
+
+        talks.SetDrawOffer(0, true);
+        Check("one player offering a draw does not end anything",
+              talks.Phase != TurnPhase.GameOver);
+
+        talks.SetDrawOffer(1, true);
+        Check("nor does a majority", talks.Phase != TurnPhase.GameOver);
+
+        talks.SetDrawOffer(1, false);
+        talks.SetDrawOffer(2, true);
+        Check("and an offer can be taken back", !talks.HasOfferedDraw(1));
+        Check("so the table is still playing", talks.Phase != TurnPhase.GameOver);
+
+        talks.SetDrawOffer(1, true);
+        Check("everybody agreeing ends the game", talks.Phase == TurnPhase.GameOver);
+        Check("with no winner", talks.Winner == null && talks.IsDraw);
+
+        // --- A player who is already out is not waited on for a draw.
+        var short_handed = new GameState(new[] { "A", "B", "C" }, cards, randomSeed: 63);
+        FinishDraft(short_handed);
+        short_handed.Resign(2);
+
+        short_handed.SetDrawOffer(0, true);
+        short_handed.SetDrawOffer(1, true);
+        Check("a draw only needs the players still in it",
+              short_handed.Phase == TurnPhase.GameOver && short_handed.IsDraw);
+
+        // --- Resigning must not leave a question nobody can answer.
+        var mid = new GameState(new[] { "A", "B", "C" }, cards, randomSeed: 64);
+        var supernatural = cards.First(c => c.id == CardIds.SupernaturalEvent);
+        mid.EnqueueEffect(new CardInstance(-60, supernatural), mid.Players[0],
+                          CardEffects.For(CardIds.SupernaturalEvent, 0), "Supernatural Event");
+        mid.ResolveEffects();
+
+        Check("a card is waiting on player 0", mid.PendingChoice?.AskedOfPlayerId == 0);
+        mid.Resign(0);
+        Check("resigning mid-question does not strand the table", mid.PendingChoice == null);
+        Check("and the game carries on", mid.Phase != TurnPhase.GameOver);
     }
 
     /// <summary>Runs a whole draft off, leaving the game in the Rolling phase.</summary>

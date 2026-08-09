@@ -307,6 +307,35 @@ namespace Indoctrination.Net
             StartGame(rpcParams.Receive.SenderClientId);
         }
 
+        /// <summary>
+        /// Gives up. Deliberately not routed through anybody else - resigning is
+        /// one player's call and nobody gets a say in it.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void RequestResignRpc(RpcParams rpcParams = default)
+        {
+            Apply(rpcParams, playerId =>
+            {
+                _game.Resign(playerId);
+
+                // Resigning can leave a phase nobody is waiting on any more.
+                if (_game.Phase != TurnPhase.GameOver && _game.AllPlayersReady)
+                {
+                    AdvancePhase();
+                }
+            });
+        }
+
+        /// <summary>
+        /// Offers or withdraws a draw. The game ends only once every living
+        /// player is offering one.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void RequestOfferDrawRpc(bool offering, RpcParams rpcParams = default)
+        {
+            Apply(rpcParams, playerId => _game.SetDrawOffer(playerId, offering));
+        }
+
         [Rpc(SendTo.Server)]
         public void RequestDraftRpc(int cardInstanceId, RpcParams rpcParams = default)
         {

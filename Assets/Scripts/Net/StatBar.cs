@@ -218,8 +218,8 @@ namespace Indoctrination.Net
         public void Populate(PlayerView player, bool isViewer)
         {
             _nameText.text = player.isAlive
-                ? $"{player.name}{(isViewer ? " (you)" : "")}"
-                : $"{player.name} (out)";
+                ? $"{player.name}{(isViewer ? " (you)" : "")}{(player.offeringDraw ? "  [draw?]" : "")}"
+                : $"{player.name} ({(player.hasResigned ? "resigned" : "out")})";
             _nameText.color = player.isAlive ? Color.white : new Color(0.6f, 0.6f, 0.6f);
 
             // Blank until they have actually rolled, so an old face never lingers
