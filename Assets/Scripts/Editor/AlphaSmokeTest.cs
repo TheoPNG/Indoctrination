@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Indoctrination.Core;
 using Indoctrination.Core.Effects;
 using Indoctrination.Net;
@@ -253,7 +254,7 @@ namespace Indoctrination.EditorTools
             {
                 board.RenderForTesting(GameViewBuilder.Build(game, player.PlayerId));
                 var gameRoot = canvas.transform.Find("Game Root") as RectTransform;
-                var actionViewport = gameRoot?.Find("Middle Area/Action Panel/Action Viewport") as RectTransform;
+                var actionViewport = gameRoot?.Find("Popup Panel/Action Viewport") as RectTransform;
                 var actionContent = actionViewport?.Find("Action Content") as RectTransform;
                 var roll = actionContent?.Find("Roll") as RectTransform;
                 LayoutRebuilder.ForceRebuildLayoutImmediate(gameRoot);
@@ -279,12 +280,15 @@ namespace Indoctrination.EditorTools
                             $"viewport y {viewportRect.yMin:0}..{viewportRect.yMax:0}, " +
                             $"button y {rollBounds.min.y:0}..{rollBounds.max.y:0}");
 
-                // The hand is back inside the dock: it reserves real space in the
-                // layout so it can never overlap the board or be clipped at the
-                // window edge.
+                // The hand is hover-based now: always present in the dock, but
+                // only reads as "open" while something is actually pointing at
+                // it. A fresh phase should always start collapsed.
                 var handRow = gameRoot?.Find("Bottom Dock/Hand Row");
+                var handExpanded = typeof(BoardUI)
+                    .GetField("_handExpanded", BindingFlags.NonPublic | BindingFlags.Instance)?
+                    .GetValue(board) as bool?;
                 Check($"player {player.PlayerId} enters Rolling with the hand collapsed",
-                      handRow != null && !handRow.gameObject.activeSelf,
+                      handRow != null && handExpanded == false,
                       handRow == null ? "hand row not found" : "still showing");
             }
         }
@@ -295,19 +299,26 @@ namespace Indoctrination.EditorTools
         /// both panels their 100-unit RectTransform defaults and piles the entire
         /// playable board against the left edge.
         /// </summary>
+        /// <summary>
+        /// Proves the middle row is using the widths its LayoutElements request,
+        /// and that the popup which replaced the old side panel is wired up
+        /// correctly wherever it now lives - floating over the board rather than
+        /// occupying a permanent column next to it.
+        /// </summary>
         private static void CheckBoardLayout()
         {
             var canvas = UnityEngine.Object.FindAnyObjectByType<Canvas>();
             var gameRoot = canvas?.transform.Find("Game Root") as RectTransform;
             var middle = gameRoot?.Find("Middle Area") as RectTransform;
             var battlefield = middle?.Find("Battlefield Panel") as RectTransform;
-            var actions = middle?.Find("Action Panel") as RectTransform;
-            var actionViewport = actions?.Find("Action Viewport") as RectTransform;
+            var hudColumn = middle?.Find("Resource HUD Column") as RectTransform;
+            var popupPanel = gameRoot?.Find("Popup Panel") as RectTransform;
+            var actionViewport = popupPanel?.Find("Action Viewport") as RectTransform;
             var actionContent = actionViewport?.Find("Action Content") as RectTransform;
-            var actionScroll = actions?.GetComponent<ScrollRect>();
+            var actionScroll = popupPanel?.GetComponent<ScrollRect>();
 
-            if (gameRoot == null || middle == null || battlefield == null || actions == null
-                || actionViewport == null || actionContent == null || actionScroll == null)
+            if (gameRoot == null || middle == null || battlefield == null || hudColumn == null
+                || popupPanel == null || actionViewport == null || actionContent == null || actionScroll == null)
             {
                 Check("the battlefield and controls have a measurable layout", false);
                 return;
@@ -316,17 +327,15 @@ namespace Indoctrination.EditorTools
             LayoutRebuilder.ForceRebuildLayoutImmediate(gameRoot);
             Canvas.ForceUpdateCanvases();
 
-            Check("the battlefield receives the larger flex share",
-                  battlefield.rect.width > actions.rect.width
+            // The compounds are the main event: everything that used to be a
+            // permanent side column is gone but the resource HUD, which stays
+            // just wide enough for its four circles.
+            Check("the battlefield takes almost all of the middle row, beside a slim resource column",
+                  battlefield.rect.width > hudColumn.rect.width
                   && battlefield.rect.width >= 360f,
-                  $"battlefield {battlefield.rect.width:0}, actions {actions.rect.width:0}");
-            // Deliberately narrow now: the compounds are the main event, and the
-            // side panel only has to fit one column of controls. Its buttons size
-            // themselves to it rather than assuming a fixed width.
-            Check("the action panel keeps a readable responsive width",
-                  actions.rect.width >= 230f,
-                  $"{actions.rect.width:0} wide");
-            Check("the action panel scrolls vertically inside a clipped viewport",
+                  $"battlefield {battlefield.rect.width:0}, HUD column {hudColumn.rect.width:0}");
+
+            Check("the popup scrolls vertically inside a clipped viewport",
                   actionScroll.vertical
                   && !actionScroll.horizontal
                   && actionViewport.GetComponent<RectMask2D>() != null
@@ -335,12 +344,12 @@ namespace Indoctrination.EditorTools
                   $"viewport {actionViewport.rect.width:0}x{actionViewport.rect.height:0}");
 
             var battlefieldBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(middle, battlefield);
-            var actionBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(middle, actions);
-            Check("the battlefield and controls remain inside the middle frame",
-                  battlefieldBounds.min.x >= middle.rect.xMin - 0.1f
-                  && actionBounds.max.x <= middle.rect.xMax + 0.1f,
+            var hudBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(middle, hudColumn);
+            Check("the battlefield and resource HUD remain inside the middle frame",
+                  hudBounds.min.x >= middle.rect.xMin - 0.1f
+                  && battlefieldBounds.max.x <= middle.rect.xMax + 0.1f,
                   $"frame {middle.rect.xMin:0}..{middle.rect.xMax:0}, " +
-                  $"content {battlefieldBounds.min.x:0}..{actionBounds.max.x:0}");
+                  $"content {hudBounds.min.x:0}..{battlefieldBounds.max.x:0}");
         }
 
         /// <summary>

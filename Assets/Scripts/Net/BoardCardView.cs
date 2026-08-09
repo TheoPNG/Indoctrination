@@ -19,6 +19,7 @@ namespace Indoctrination.Net
         public const float Height = 250f;
 
         private Image _background;
+        private Outline _frame;
         private Text _tagText;
         private Text _headerText;
         private Text _titleText;
@@ -68,7 +69,9 @@ namespace Indoctrination.Net
             pin.preferredHeight = Height;
 
             _background = gameObject.AddComponent<Image>();
-            _background.color = new Color(0.15f, 0.15f, 0.17f);
+            _background.color = UITheme.SurfaceRaised;
+            UITheme.Frame(_background, 1.15f);
+            _frame = gameObject.GetComponent<Outline>();
 
             // Effect text can run long; clipping it at the card's edge keeps every
             // card the same rectangle instead of growing to fit its own content.
@@ -105,7 +108,7 @@ namespace Indoctrination.Net
 
             // A draft marker decides whether a card can be taken at all, so it is
             // the loudest thing on the card rather than a caption above the title.
-            _tagText = UIFactory.Label("Tag", transform, "", 16, TextAnchor.MiddleCenter, Color.white);
+            _tagText = UIFactory.Label("Tag", transform, "", 16, TextAnchor.MiddleCenter, UITheme.Parchment);
             _tagText.fontStyle = FontStyle.Bold;
 
             var tagPlate = _tagText.gameObject.AddComponent<Outline>();
@@ -115,17 +118,17 @@ namespace Indoctrination.Net
             // title label was the field disappearing during layout; the old header
             // (colour/type) was already rendering reliably in every card row.
             _headerText = UIFactory.Label(
-                "Title", transform, "", 20, TextAnchor.UpperLeft, Color.white);
+                "Title", transform, "", 20, TextAnchor.UpperLeft, UITheme.Parchment);
             _headerText.fontStyle = FontStyle.Bold;
             var titleOutline = _headerText.gameObject.AddComponent<Outline>();
             titleOutline.effectColor = new Color(0f, 0f, 0f, 0.9f);
             titleOutline.effectDistance = new Vector2(1f, -1f);
             _titleText = UIFactory.Label("Details", transform, "", 13, TextAnchor.UpperLeft);
-            _costText = UIFactory.Label("Cost", transform, "", 12, TextAnchor.UpperLeft, new Color(0.85f, 0.85f, 0.6f));
+            _costText = UIFactory.Label("Cost", transform, "", 12, TextAnchor.UpperLeft, UITheme.RitualGold);
             // The struck-through printed price on a discounted card is markup.
             _costText.supportRichText = true;
-            _activatesText = UIFactory.Label("Activates", transform, "", 12, TextAnchor.UpperLeft, new Color(0.7f, 0.85f, 1f));
-            _effectText = UIFactory.Label("Effect", transform, "", 12, TextAnchor.UpperLeft, new Color(0.9f, 0.9f, 0.9f));
+            _activatesText = UIFactory.Label("Activates", transform, "", 12, TextAnchor.UpperLeft, new Color(0.67f, 0.58f, 0.82f));
+            _effectText = UIFactory.Label("Effect", transform, "", 12, TextAnchor.UpperLeft, UITheme.Parchment);
 
             foreach (Transform child in transform)
             {
@@ -176,22 +179,25 @@ namespace Indoctrination.Net
         {
             Card = card;
             SetAction(null, onClick);
-            SetReorder(null, null);
+            SetExtraContent(null);
             _tagText.text = tag ?? "";
             _tagText.gameObject.SetActive(!string.IsNullOrEmpty(tag));
+            _background.color = UITheme.SurfaceRaised;
+            _frame.effectColor = UITheme.Border;
+            _frame.effectDistance = new Vector2(1.15f, -1.15f);
 
             // The whole card takes the marker's colour, so a blocked or reserved
             // card is obvious from across the board rather than on inspection.
             if (!string.IsNullOrEmpty(tag))
             {
                 var marked = tag.StartsWith("BLOCKED")
-                    ? new Color(0.55f, 0.16f, 0.16f)
+                    ? UITheme.Blood
                     : tag.StartsWith("RESERVED")
-                        ? new Color(0.18f, 0.34f, 0.55f)
-                        : new Color(0.5f, 0.34f, 0.12f);
+                        ? new Color(0.18f, 0.24f, 0.43f)
+                        : new Color(0.39f, 0.24f, 0.10f);
 
                 _background.color = marked;
-                _tagText.color = Color.white;
+                _tagText.color = UITheme.Parchment;
             }
 
             try
@@ -210,13 +216,14 @@ namespace Indoctrination.Net
                 else
                 {
                     _headerText.text = definition.Title;
-                    _headerText.color = Color.white;
+                    _headerText.color = UITheme.Parchment;
+                    _frame.effectColor = Color.Lerp(UITheme.Border, BoardArt.ColorOf(definition.Color), 0.52f);
                     _titleText.text = $"{definition.Color}  -  {definition.Type}";
                     _titleText.color = ColorFor(definition.Color);
                     _costText.text = CostLine(card, definition);
                     _costText.color = card.isDiscounted
-                        ? new Color(0.55f, 0.95f, 0.6f)
-                        : new Color(0.85f, 0.85f, 0.6f);
+                        ? new Color(0.56f, 0.78f, 0.53f)
+                        : UITheme.RitualGold;
 
                     if (definition.Type == CardType.Unit && definition.ActivationNumbers.Count > 0)
                     {
@@ -250,22 +257,6 @@ namespace Indoctrination.Net
             _button.onClick.AddListener(() => CardPreview.Show(this));
         }
 
-        /// <summary>Moves this card earlier or later in its owner's compound, if it may be moved.</summary>
-        public Action MoveEarlier { get; private set; }
-
-        public Action MoveLater { get; private set; }
-
-        /// <summary>
-        /// Lets this card be re-ordered from its preview. Only the owner's own
-        /// compound offers this, since the order decides which of their units
-        /// activates first.
-        /// </summary>
-        public void SetReorder(Action earlier, Action later)
-        {
-            MoveEarlier = earlier;
-            MoveLater = later;
-        }
-
         /// <summary>
         /// Gives this card an action, shown as the primary button on its preview.
         /// </summary>
@@ -274,6 +265,16 @@ namespace Indoctrination.Net
             ActionLabel = label;
             Action = action;
         }
+
+        /// <summary>
+        /// A card whose ability is a small menu of its own - Suspicious Chef's
+        /// payment, Baal's die - builds it here rather than crowding a fixed
+        /// panel that shows for every card. Only offered while it is actually
+        /// this card's move to make.
+        /// </summary>
+        public Action<RectTransform> ExtraContentBuilder { get; private set; }
+
+        public void SetExtraContent(Action<RectTransform> builder) => ExtraContentBuilder = builder;
 
         /// <summary>
         /// The cost as it applies to whoever is holding it. A discounted card
@@ -303,11 +304,13 @@ namespace Indoctrination.Net
         public void SetAffordable(bool affordable)
         {
             _background.color = affordable
-                ? new Color(0.17f, 0.26f, 0.18f)
-                : new Color(0.15f, 0.15f, 0.17f);
+                ? Color.Lerp(UITheme.SurfaceRaised, UITheme.Moss, 0.48f)
+                : UITheme.SurfaceRaised;
 
             if (!affordable)
             {
+                _frame.effectColor = UITheme.Border;
+                _frame.effectDistance = new Vector2(1.15f, -1.15f);
                 return;
             }
 
@@ -323,7 +326,7 @@ namespace Indoctrination.Net
         /// </summary>
         public void SetDueToActivate(Color tint)
         {
-            _background.color = Color.Lerp(new Color(0.15f, 0.15f, 0.17f), tint, 0.28f);
+            _background.color = Color.Lerp(UITheme.SurfaceRaised, tint, 0.28f);
 
             var edge = gameObject.GetComponent<Outline>() ?? gameObject.AddComponent<Outline>();
             edge.effectColor = new Color(tint.r, tint.g, tint.b, 0.9f);
@@ -359,16 +362,6 @@ namespace Indoctrination.Net
             return card;
         }
 
-        private static Color ColorFor(ResourceColor color)
-        {
-            return color switch
-            {
-                ResourceColor.Red => new Color(0.88f, 0.35f, 0.35f),
-                ResourceColor.Green => new Color(0.31f, 0.69f, 0.35f),
-                ResourceColor.Blue => new Color(0.33f, 0.53f, 0.88f),
-                ResourceColor.Yellow => new Color(0.82f, 0.66f, 0.24f),
-                _ => Color.white
-            };
-        }
+        private static Color ColorFor(ResourceColor color) => BoardArt.ColorOf(color);
     }
 }

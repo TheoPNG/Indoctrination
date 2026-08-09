@@ -736,15 +736,15 @@ static class RulesCheck
         Check("nothing was left waiting on a choice", game.PendingChoice == null);
 
         // --- Re-ordering changes which unit fires first.
-        game.MoveInCompound(first, late.InstanceId, -1);
-        Check("moving a card earlier swaps it with the one in front",
+        game.ReorderUnit(first, late.InstanceId, 0);
+        Check("moving a unit to the front puts it ahead of the one that was there",
               game.Players[first].Compound.IndexOf(late) < game.Players[first].Compound.IndexOf(early));
 
-        Check("a card cannot be moved off the front of the compound",
-              DoesNotThrow(() => game.MoveInCompound(first, late.InstanceId, -1)));
+        Check("moving it to the front again is a no-op, not an error",
+              DoesNotThrow(() => game.ReorderUnit(first, late.InstanceId, 0)));
 
-        Check("and only your own cards can be moved",
-              Throws(() => game.MoveInCompound(1 - first, late.InstanceId, -1)));
+        Check("and only your own units can be moved",
+              Throws(() => game.ReorderUnit(1 - first, late.InstanceId, 0)));
     }
 
     static bool DoesNotThrow(Action action)

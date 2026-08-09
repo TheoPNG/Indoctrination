@@ -1462,6 +1462,12 @@ namespace Indoctrination.Core
         /// <summary>The card currently resolving, for the log and the UI.</summary>
         public string ResolvingDescription => _resolving?.Description;
 
+        /// <summary>
+        /// The id of the card currently resolving, so a popup asking its question
+        /// can show the card itself rather than only its description.
+        /// </summary>
+        public string ResolvingCardId => _resolving?.Source?.Definition.Id;
+
         public bool HasEffectsPending => _resolving != null || _effectQueue.Count > 0;
 
         /// <summary>
@@ -1782,28 +1788,37 @@ namespace Indoctrination.Core
         }
 
         /// <summary>
-        /// Moves one of a player's own cards earlier or later in their compound.
-        /// The compound's order is the order its units activate in, so this is
-        /// how a player decides what fires first.
+        /// Moves one of a player's own units to a new position among their other
+        /// units - the order units activate in. Blessings carry no die number, so
+        /// where they sit makes no difference to the game; this always leaves
+        /// them after every unit, in whatever order they were already in, so a
+        /// player reordering their units can never scatter their blessings.
         /// </summary>
-        public void MoveInCompound(int playerId, int cardInstanceId, int direction)
+        public void ReorderUnit(int playerId, int cardInstanceId, int newIndex)
         {
             var player = RequireAlive(playerId);
-            var index = player.Compound.FindIndex(card => card.InstanceId == cardInstanceId);
+            var card = player.Compound.FirstOrDefault(c => c.InstanceId == cardInstanceId);
 
-            if (index < 0)
+            if (card == null)
             {
                 throw new ArgumentException($"Card {cardInstanceId} is not in player {playerId}'s compound.");
             }
 
-            var target = index + Math.Sign(direction);
-            if (target < 0 || target >= player.Compound.Count)
+            if (card.Definition.Type != CardType.Unit)
             {
-                return;
+                throw new ArgumentException($"{card.Title} is not a unit - it has no activation order to change.");
             }
 
-            (player.Compound[index], player.Compound[target]) =
-                (player.Compound[target], player.Compound[index]);
+            var units = player.Compound.Where(c => c.Definition.Type == CardType.Unit).ToList();
+            var rest = player.Compound.Where(c => c.Definition.Type != CardType.Unit).ToList();
+
+            units.Remove(card);
+            newIndex = Math.Clamp(newIndex, 0, units.Count);
+            units.Insert(newIndex, card);
+
+            player.Compound.Clear();
+            player.Compound.AddRange(units);
+            player.Compound.AddRange(rest);
         }
 
         /// <summary>Human Zoo's die roll, and anything else that opens a turn.</summary>

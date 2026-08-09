@@ -6,6 +6,7 @@ using Indoctrination.Core.Effects;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace Indoctrination.Net
@@ -72,6 +73,12 @@ namespace Indoctrination.Net
         private const int BoardSafeInset = 10;
         private const int DraftZoneLeftInset = 12;
 
+        /// <summary>The permanent resource HUD's column width.</summary>
+        private const float ResourceHudWidth = 62f;
+
+        /// <summary>How tall the hand tray is while collapsed - just enough to say "there is a hand here".</summary>
+        private const float HandPeekHeight = 30f;
+
         // --------------------------------------------------------------- Panels
         private RectTransform _connectPanel;
         private RectTransform _lobbyPanel;
@@ -91,6 +98,17 @@ namespace Indoctrination.Net
 
         private RectTransform _topBar;
         private RectTransform _battlefield;
+        private RectTransform _battlefieldViewport;
+        private ResourceHud _resourceHud;
+
+        /// <summary>
+        /// The popup that stands in for the old side panel: a scrim over the
+        /// whole board and a centred box, shown only while something actually
+        /// needs an answer. Empty phases show nothing here at all - the
+        /// compounds are the only thing on screen.
+        /// </summary>
+        private RectTransform _popupScrim;
+        private RectTransform _popupPanel;
         private RectTransform _actionViewport;
         private RectTransform _actionPanel;
         private ScrollRect _actionScroll;
@@ -100,8 +118,8 @@ namespace Indoctrination.Net
         private RectTransform _handRow;
         private LayoutElement _handRowPin;
         private LayoutElement _dockPin;
-        private Button _handToggleButton;
-        private Text _handToggleLabel;
+        private Text _handCountLabel;
+        private RectTransform _dragLayer;
         private StatBar _viewerStatBar;
 
         // ---------------------------------------------------------------- State
@@ -222,7 +240,7 @@ namespace Indoctrination.Net
             camera.orthographic = true;
             camera.orthographicSize = 6f;
             camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = new Color(0.07f, 0.13f, 0.09f);
+            camera.backgroundColor = UITheme.RitualBlack;
         }
 
         private void Update()
@@ -367,19 +385,23 @@ namespace Indoctrination.Net
 
         private RectTransform BuildConnectPanel(Transform parent)
         {
-            var panel = UIFactory.Panel("Connect Panel", parent, new Color(0.08f, 0.1f, 0.09f, 0.95f));
+            var panel = UIFactory.Panel("Connect Panel", parent, new Color(
+                UITheme.RitualBlack.r, UITheme.RitualBlack.g, UITheme.RitualBlack.b, 0.72f));
             UIFactory.Stretch(panel);
 
-            var box = UIFactory.Group("Connect Box", panel);
+            var box = UIFactory.Panel("Connect Box", panel, UITheme.SurfaceRaised);
+            UITheme.Frame(box.GetComponent<Image>(), 1.25f);
             box.anchorMin = box.anchorMax = new Vector2(0.5f, 0.5f);
             UIFactory.SetSize(box, 420, 260);
             var layout = UIFactory.VerticalLayout(box, 12, new RectOffset(20, 20, 20, 20), controlHeight: true);
             layout.childAlignment = TextAnchor.UpperCenter;
 
-            AddFixedHeight(UIFactory.Label("Title", box, "INDOCTRINATION", 28, TextAnchor.MiddleCenter), 40);
+            AddFixedHeight(UIFactory.Label(
+                "Title", box, "I N D O C T R I N A T I O N", 26,
+                TextAnchor.MiddleCenter, UITheme.RitualGold), 40);
             AddFixedHeight(UIFactory.Label(
                 "Subtitle", box, "Host a game, or join one that is already running.", 14,
-                TextAnchor.MiddleCenter, new Color(0.8f, 0.8f, 0.8f)), 22);
+                TextAnchor.MiddleCenter, UITheme.ParchmentMuted), 22);
 
             var addressRow = UIFactory.Group("Address Row", box);
             AddFixedHeight(addressRow, 34);
@@ -434,16 +456,19 @@ namespace Indoctrination.Net
 
         private RectTransform BuildLobbyPanel(Transform parent)
         {
-            var panel = UIFactory.Panel("Lobby Panel", parent, new Color(0.08f, 0.1f, 0.09f, 0.95f));
+            var panel = UIFactory.Panel("Lobby Panel", parent, new Color(
+                UITheme.RitualBlack.r, UITheme.RitualBlack.g, UITheme.RitualBlack.b, 0.72f));
             UIFactory.Stretch(panel);
 
-            var box = UIFactory.Group("Lobby Box", panel);
+            var box = UIFactory.Panel("Lobby Box", panel, UITheme.SurfaceRaised);
+            UITheme.Frame(box.GetComponent<Image>(), 1.25f);
             box.anchorMin = box.anchorMax = new Vector2(0.5f, 0.5f);
             UIFactory.SetSize(box, 420, 320);
             var layout = UIFactory.VerticalLayout(box, 10, new RectOffset(20, 20, 20, 20), controlHeight: true);
             layout.childAlignment = TextAnchor.UpperCenter;
 
-            AddFixedHeight(UIFactory.Label("Title", box, "Waiting to start", 24, TextAnchor.MiddleCenter), 34);
+            AddFixedHeight(UIFactory.Label(
+                "Title", box, "THE GATHERING", 24, TextAnchor.MiddleCenter, UITheme.RitualGold), 34);
             // Your name, chosen here rather than being assigned. It travels with
             // the seat, so it is fixed once the game starts.
             var nameRow = UIFactory.Group("Name Row", box);
@@ -457,7 +482,7 @@ namespace Indoctrination.Net
             _nameField.onEndEdit.AddListener(SubmitName);
 
             UIFactory.ButtonWithLabel("Set Name", nameRow, "Set",
-                () => SubmitName(_nameField.text), new Color(0.25f, 0.3f, 0.38f), 60, 30);
+                () => SubmitName(_nameField.text), UITheme.ButtonQuiet, 60, 30);
 
             _lobbyPlayersText = UIFactory.Label("Players", box, "", 15, TextAnchor.UpperCenter);
             AddFixedHeight(_lobbyPlayersText.rectTransform, 120);
@@ -465,7 +490,7 @@ namespace Indoctrination.Net
             // The host's settings. Timers are off unless a table asks for them,
             // because a clock that takes your draft pick is worse than waiting.
             _timerToggle = UIFactory.ButtonWithLabel(
-                "Timers", box, "Timers: off", ToggleTimers, new Color(0.24f, 0.26f, 0.32f), 240, 32);
+                "Timers", box, "Timers: off", ToggleTimers, UITheme.ButtonQuiet, 240, 32);
 
             _startGameButton = UIFactory.ButtonWithLabel(
                 "Start Button", box, "Start Game",
@@ -474,7 +499,7 @@ namespace Indoctrination.Net
 
             var leaveButton = UIFactory.ButtonWithLabel(
                 "Leave Button", box, "Leave", () => NetworkManager.Singleton?.Shutdown(),
-                new Color(0.4f, 0.2f, 0.2f), 200, 32);
+                UITheme.Blood, 200, 32);
             leaveButton.gameObject.name = "Leave Button";
 
             return panel;
@@ -488,8 +513,8 @@ namespace Indoctrination.Net
                 : "Timers: off";
 
             _timerToggle.targetGraphic.color = _timersOn
-                ? new Color(0.3f, 0.36f, 0.28f)
-                : new Color(0.24f, 0.26f, 0.32f);
+                ? UITheme.Moss
+                : UITheme.ButtonQuiet;
 
             NetworkGameManager.Instance?.RequestSetTimersRpc(_timersOn);
         }
@@ -544,10 +569,10 @@ namespace Indoctrination.Net
             // turn, so they live small in the corner and expand only when asked.
             _statusToggle = UIFactory.ButtonWithLabel(
                 "Status Toggle", status, "i", ToggleStatusDetail,
-                new Color(0.2f, 0.2f, 0.26f), 24, 22);
+                UITheme.ButtonQuiet, 24, 22);
 
             _statusText = UIFactory.Label("Status", status, "", 12, TextAnchor.MiddleLeft,
-                new Color(0.72f, 0.72f, 0.78f));
+                UITheme.ParchmentMuted);
             AddFlexibleWidth(_statusText.rectTransform);
 
             // Conceding and offering a draw live behind the same chip as the
@@ -555,13 +580,13 @@ namespace Indoctrination.Net
             // belongs next to the controls you press every turn.
             _drawButton = UIFactory.ButtonWithLabel(
                 "Offer Draw", status, "Offer draw", ToggleDrawOffer,
-                new Color(0.24f, 0.26f, 0.32f), 110, StatusRowHeight);
+                UITheme.ButtonQuiet, 110, StatusRowHeight);
 
             _resignButton = UIFactory.ButtonWithLabel(
                 "Resign", status, "Resign", PressResign,
-                new Color(0.34f, 0.2f, 0.2f), 90, StatusRowHeight);
+                UITheme.Blood, 90, StatusRowHeight);
             _resignLabel = _resignButton.GetComponentInChildren<Text>();
-            _timerText = UIFactory.Label("Timer", status, "", 13, TextAnchor.MiddleRight, new Color(0.8f, 0.8f, 0.6f));
+            _timerText = UIFactory.Label("Timer", status, "", 13, TextAnchor.MiddleRight, UITheme.RitualGold);
             AddResponsiveWidth(_timerText.rectTransform, 150, 230, 0);
 
             // Opponents across the top of the board. This row scrolls rather than
@@ -571,9 +596,10 @@ namespace Indoctrination.Net
                 "Top Bar", root, StatBar.BarHeight + (UIFactory.ScrollContentPadding * 2f) + 4f);
             _topBar.GetComponent<HorizontalLayoutGroup>().childAlignment = TextAnchor.MiddleCenter;
 
-            // Battlefield + action panel share the flexible middle area. Both are
-            // force-expanded vertically: neither reports a preferred height of its
-            // own, so without this the layout would size them to nothing.
+            // The resource HUD and the battlefield share the flexible middle
+            // area. Both are force-expanded vertically: neither reports a
+            // preferred height of its own, so without this the layout would
+            // size them to nothing.
             var middle = UIFactory.Group("Middle Area", root);
             AddFlexibleHeight(middle);
             var middleLayout = UIFactory.HorizontalLayout(
@@ -581,13 +607,26 @@ namespace Indoctrination.Net
                 controlWidth: true, controlHeight: true);
             middleLayout.childForceExpandHeight = true;
 
+            // Your own resources, always in the same place on the left edge -
+            // never a panel you open, just a running count that lights up the
+            // moment there is something to take.
+            var hudColumn = UIFactory.Group("Resource HUD Column", middle);
+            var hudPin = hudColumn.gameObject.AddComponent<LayoutElement>();
+            hudPin.minWidth = hudPin.preferredWidth = ResourceHudWidth;
+            hudPin.flexibleWidth = 0;
+            _resourceHud = ResourceHud.Create(hudColumn);
+            UIFactory.Stretch((RectTransform)_resourceHud.transform);
+
             // Battlefield is a vertical stack of rows, not a horizontal strip, so
-            // it gets its own scroll rect rather than reusing the horizontal helper.
-            var battlefieldPanel = UIFactory.Panel("Battlefield Panel", middle, new Color(1, 1, 1, 0.04f));
-            AddResponsiveWidth(battlefieldPanel, 420, 1400, 6);
+            // it gets its own scroll rect rather than reusing the horizontal
+            // helper. The compounds are the main event, so it carries no
+            // background box or border of its own - it sits directly on the felt.
+            var battlefieldPanel = UIFactory.Group("Battlefield Panel", middle);
+            AddResponsiveWidth(battlefieldPanel, 360, 1600, 6);
             var battlefieldViewport = UIFactory.Panel("Battlefield Viewport", battlefieldPanel, Color.clear);
             battlefieldViewport.gameObject.AddComponent<RectMask2D>();
             UIFactory.Stretch(battlefieldViewport);
+            _battlefieldViewport = battlefieldViewport;
             // Deliberately not scrollable. Every row is sized to fit the space
             // available before anything is built, so a board you have to scroll
             // means the sizing was wrong - hiding that behind a scrollbar makes
@@ -611,18 +650,93 @@ namespace Indoctrination.Net
             battlefieldScroll.viewport = battlefieldViewport;
             battlefieldScroll.content = _battlefield;
 
-            // This behaves like a flexbox side column: it has a readable minimum
-            // width, receives a share of extra width, and independently scrolls
-            // vertically when the window is short. Phase controls can therefore
-            // never disappear underneath the hand dock.
-            var actionShell = UIFactory.Panel("Action Panel", middle, new Color(0.12f, 0.12f, 0.16f, 0.9f));
-            AddResponsiveWidth(actionShell, 230, 260, 0);
+            // Bottom dock: your own stat bar, then the collapsible hand. Its
+            // height is recomputed in RefreshHand every time the tray opens or
+            // closes - a size fixed once at build time would either waste space
+            // collapsed or clip the hand open.
+            var dock = UIFactory.Group("Bottom Dock", root);
+            UIFactory.VerticalLayout(dock, 4, new RectOffset(0, 0, 0, 0), controlHeight: true);
+            _dockPin = dock.gameObject.AddComponent<LayoutElement>();
 
-            _actionViewport = UIFactory.Panel("Action Viewport", actionShell, Color.clear);
+            var dockTop = UIFactory.Group("Dock Top", dock);
+            AddFixedHeight(dockTop, 44);
+            UIFactory.HorizontalLayout(dockTop, 10, new RectOffset(0, 0, 0, 0));
+            dockTop.GetComponent<HorizontalLayoutGroup>().childAlignment = TextAnchor.MiddleLeft;
+
+            _viewerStatBar = StatBar.Create(dockTop);
+
+            // Ready sits in the dock rather than in a popup - the one control
+            // that ends a phase should never be something you have to go looking
+            // for.
+            _readyButton = UIFactory.ButtonWithLabel(
+                "Ready", dockTop, "Ready", ToggleReady, UITheme.Moss, 130, 34);
+            _readyLabel = _readyButton.GetComponentInChildren<Text>();
+
+            _waitingLabel = UIFactory.Label("Waiting", dockTop, "", 12, TextAnchor.MiddleLeft,
+                UITheme.ParchmentMuted);
+            AddFlexibleWidth(_waitingLabel.rectTransform);
+
+            // The hand tray only peeks by default, so this is the one place its
+            // size is still visible without hovering over it.
+            _handCountLabel = UIFactory.Label("Hand Count", dockTop, "", 12, TextAnchor.MiddleRight,
+                UITheme.ParchmentMuted);
+            AddFixedWidth(_handCountLabel.rectTransform, 70);
+
+            // The discard is public information and Rituals fly into it, so it is
+            // a real place on the board rather than a number in the status line.
+            _discardButton = UIFactory.ButtonWithLabel(
+                "Discard", dockTop, "Discard", ShowDiscard, UITheme.ButtonQuiet, 100, 34);
+
+            // Pips and drag ghosts are drawn above everything, so one crossing
+            // the board is never hidden behind a panel it passes over.
+            var flightLayer = UIFactory.Group("Flight Layer", root.parent);
+            UIFactory.Stretch(flightLayer);
+            flightLayer.SetAsLastSibling();
+            BoardEffects.Instance.SetFlightLayer(flightLayer);
+            _dragLayer = flightLayer;
+
+            // The hand is always present, never hidden outright - it just peeks a
+            // sliver above the bottom edge until the pointer finds it, then
+            // expands to its full playable size. Hovering off it collapses it
+            // again, so the compounds get the screen back the moment you look away.
+            _handRow = UIFactory.Group("Hand Row", dock);
+            _handRowPin = _handRow.gameObject.AddComponent<LayoutElement>();
+            _handRowPin.flexibleWidth = 1;
+
+            var handHover = _handRow.gameObject.AddComponent<EventTrigger>();
+            var handEnter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
+            handEnter.callback.AddListener(_ => SetHandExpanded(true));
+            handHover.triggers.Add(handEnter);
+            var handExit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
+            handExit.callback.AddListener(_ => SetHandExpanded(false));
+            handHover.triggers.Add(handExit);
+
+            // The popup that stands in for the old always-on side panel: a scrim
+            // over the whole board and a centred box, built last among root's
+            // children so it draws above everything else in it, and ignored by
+            // root's own layout so it can freely stretch to cover the board
+            // rather than becoming another row. Empty until something actually
+            // needs an answer - most phases show nothing here at all.
+            _popupScrim = UIFactory.Panel("Popup Scrim", root, new Color(
+                UITheme.RitualBlack.r, UITheme.RitualBlack.g, UITheme.RitualBlack.b, 0.72f));
+            UIFactory.Stretch(_popupScrim);
+            _popupScrim.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
+            _popupScrim.gameObject.SetActive(false);
+
+            _popupPanel = UIFactory.Panel("Popup Panel", root, UITheme.SurfaceRaised);
+            UITheme.Frame(_popupPanel.GetComponent<Image>(), 1.25f);
+            _popupPanel.anchorMin = _popupPanel.anchorMax = new Vector2(0.5f, 0.5f);
+            UIFactory.SetSize(_popupPanel, 480, 460);
+            _popupPanel.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
+            _popupPanel.gameObject.SetActive(false);
+
+            _actionViewport = UIFactory.Panel("Action Viewport", _popupPanel, Color.clear);
             _actionViewport.gameObject.AddComponent<RectMask2D>();
             UIFactory.Stretch(_actionViewport);
+            _actionViewport.offsetMin = new Vector2(16, 16);
+            _actionViewport.offsetMax = new Vector2(-16, -16);
 
-            _actionScroll = actionShell.gameObject.AddComponent<ScrollRect>();
+            _actionScroll = _popupPanel.gameObject.AddComponent<ScrollRect>();
             _actionScroll.horizontal = false;
             _actionScroll.vertical = true;
             _actionScroll.scrollSensitivity = 34f;
@@ -634,8 +748,8 @@ namespace Indoctrination.Net
             _actionPanel.pivot = new Vector2(0.5f, 1);
             _actionPanel.sizeDelta = Vector2.zero;
             var actionLayout = UIFactory.VerticalLayout(
-                _actionPanel, 8, new RectOffset(12, 12, 12, 12), controlHeight: true);
-            actionLayout.childAlignment = TextAnchor.UpperLeft;
+                _actionPanel, 8, new RectOffset(4, 4, 4, 4), controlHeight: true);
+            actionLayout.childAlignment = TextAnchor.UpperCenter;
             UIFactory.FitToContent(
                 _actionPanel,
                 ContentSizeFitter.FitMode.Unconstrained,
@@ -643,62 +757,22 @@ namespace Indoctrination.Net
             _actionScroll.viewport = _actionViewport;
             _actionScroll.content = _actionPanel;
 
-            // Bottom dock: your own stat bar, then the collapsible hand. Its
-            // height is recomputed in RefreshHand every time the tray opens or
-            // closes - a size fixed once at build time would either waste space
-            // collapsed or clip the hand open.
-            var dock = UIFactory.Group("Bottom Dock", root);
-            UIFactory.VerticalLayout(dock, 4, new RectOffset(0, 0, 0, 0), controlHeight: true);
-            _dockPin = dock.gameObject.AddComponent<LayoutElement>();
-
-            var dockTop = UIFactory.Group("Dock Top", dock);
-            AddFixedHeight(dockTop, 82);
-            UIFactory.HorizontalLayout(dockTop, 10, new RectOffset(0, 0, 0, 0));
-            dockTop.GetComponent<HorizontalLayoutGroup>().childAlignment = TextAnchor.MiddleLeft;
-
-            _viewerStatBar = StatBar.Create(dockTop);
-
-            _handToggleButton = UIFactory.ButtonWithLabel(
-                "Hand Toggle", dockTop, "Hand", ToggleHand, new Color(0.2f, 0.2f, 0.26f), 190, 36);
-            _handToggleLabel = _handToggleButton.GetComponentInChildren<Text>();
-
-            // Ready sits in the dock rather than the action panel. The panel
-            // scrolls, so the one control that ends a phase could be pushed out of
-            // sight behind the hand tray exactly when it was needed.
-            _readyButton = UIFactory.ButtonWithLabel(
-                "Ready", dockTop, "Ready", ToggleReady, new Color(0.2f, 0.4f, 0.2f), 190, 36);
-            _readyLabel = _readyButton.GetComponentInChildren<Text>();
-
-            _waitingLabel = UIFactory.Label("Waiting", dockTop, "", 13, TextAnchor.MiddleLeft,
-                new Color(0.8f, 0.8f, 0.7f));
-            AddFlexibleWidth(_waitingLabel.rectTransform);
-
-            // The discard is public information and Rituals fly into it, so it is
-            // a real place on the board rather than a number in the status line.
-            _discardButton = UIFactory.ButtonWithLabel(
-                "Discard", dockTop, "Discard", ShowDiscard, new Color(0.24f, 0.2f, 0.26f), 130, 36);
-
-            // Pips in flight are drawn above everything, so one crossing the board
-            // is never hidden behind a panel it passes over.
-            var flightLayer = UIFactory.Group("Flight Layer", root.parent);
-            UIFactory.Stretch(flightLayer);
-            flightLayer.SetAsLastSibling();
-            BoardEffects.Instance.SetFlightLayer(flightLayer);
-
-            // The hand is part of the layout, not floating over it. Floating made
-            // it overlap the board and get clipped at the window edge; taking its
-            // own row means the battlefield is sized around whatever is left,
-            // and the two can never cover each other.
-            _handRow = UIFactory.Group("Hand Row", dock);
-            _handRowPin = _handRow.gameObject.AddComponent<LayoutElement>();
-            _handRowPin.flexibleWidth = 1;
-
             return root;
         }
 
-        private void ToggleHand()
+        /// <summary>
+        /// Expands or collapses the hand on hover. Only re-renders when the
+        /// state actually changes, so a pointer drifting across an already-open
+        /// hand does not restart every card's deal-in animation.
+        /// </summary>
+        private void SetHandExpanded(bool expanded)
         {
-            _handExpanded = !_handExpanded;
+            if (_handExpanded == expanded)
+            {
+                return;
+            }
+
+            _handExpanded = expanded;
 
             var manager = NetworkGameManager.Instance;
             if (manager?.View == null)
@@ -715,7 +789,9 @@ namespace Indoctrination.Net
 
         private void BuildErrorLabel(Transform parent)
         {
-            var panel = UIFactory.Panel("Error Banner", parent, new Color(0.5f, 0.1f, 0.1f, 0.9f));
+            var panel = UIFactory.Panel("Error Banner", parent, new Color(
+                UITheme.Blood.r, UITheme.Blood.g, UITheme.Blood.b, 0.94f));
+            UITheme.Frame(panel.GetComponent<Image>(), 1f, UITheme.RitualGoldSoft);
             panel.anchorMin = new Vector2(0.5f, 1f);
             panel.anchorMax = new Vector2(0.5f, 1f);
             panel.pivot = new Vector2(0.5f, 1f);
@@ -784,9 +860,10 @@ namespace Indoctrination.Net
 
             if (!string.Equals(_renderedPhase, view.phase, StringComparison.Ordinal))
             {
-                // Keep the battlefield and the phase action usable by default.
-                // The hand opens automatically only when it becomes actionable.
-                _handExpanded = view.phase == nameof(TurnPhase.Buy);
+                // A new phase collapses the hand back down. Otherwise a hand
+                // left open while reading a card would still be covering the
+                // board turns later, with nobody hovering it any more to close it.
+                _handExpanded = false;
                 _renderedPhase = view.phase;
             }
 
@@ -818,6 +895,7 @@ namespace Indoctrination.Net
             }
 
             RefreshTopBar(view);
+            RefreshResourceHud(manager, view);
             RefreshBattlefield(manager, view);
             RefreshActionPanel(manager, view);
             RefreshReadyControl(view);
@@ -852,12 +930,12 @@ namespace Indoctrination.Net
 
         private static Color PhaseTint(string phase) => phase switch
         {
-            nameof(TurnPhase.Draft) => new Color(0.7f, 0.85f, 1f),
-            nameof(TurnPhase.Rolling) => new Color(0.95f, 0.95f, 0.98f),
-            nameof(TurnPhase.Activation) => new Color(0.95f, 0.5f, 0.45f),
-            nameof(TurnPhase.Resource) => new Color(0.55f, 0.9f, 0.6f),
-            nameof(TurnPhase.Buy) => new Color(0.95f, 0.82f, 0.4f),
-            _ => Color.white
+            nameof(TurnPhase.Draft) => new Color(0.58f, 0.55f, 0.82f),
+            nameof(TurnPhase.Rolling) => UITheme.Parchment,
+            nameof(TurnPhase.Activation) => new Color(0.82f, 0.34f, 0.38f),
+            nameof(TurnPhase.Resource) => new Color(0.43f, 0.68f, 0.47f),
+            nameof(TurnPhase.Buy) => UITheme.RitualGold,
+            _ => UITheme.Parchment
         };
 
         /// <summary>
@@ -886,6 +964,39 @@ namespace Indoctrination.Net
             {
                 _statBars[player.playerId].Populate(player, isViewer: false);
             }
+        }
+
+        /// <summary>
+        /// Updates the permanent resource HUD: the running counts always show,
+        /// and the circles only answer clicks - and only light up - while there
+        /// are resources actually waiting to be taken this turn.
+        /// </summary>
+        private void RefreshResourceHud(NetworkGameManager manager, GameView view)
+        {
+            var you = view.Viewer;
+            var allowance = you?.resourceAllowance ?? GameSettings.ResourcesPerTurn;
+            var pickable = you is { isAlive: true }
+                           && !view.isGameOver
+                           && view.phase == nameof(TurnPhase.Resource)
+                           && !you.collectedResources;
+
+            if (!pickable)
+            {
+                _pendingResources.Clear();
+            }
+
+            _resourceHud.Populate(you, pickable, color =>
+            {
+                BoardEffects.Instance.Pop(_resourceHud.Pip(color));
+                _resourceHud.ShowResourceGain(color);
+                _pendingResources.Add(color);
+
+                if (_pendingResources.Count >= allowance)
+                {
+                    manager.RequestCollectResourcesRpc(_pendingResources.ConvertAll(c => (int)c).ToArray());
+                    _pendingResources.Clear();
+                }
+            });
         }
 
         /// <summary>
@@ -1030,7 +1141,8 @@ namespace Indoctrination.Net
                 rows.Add(new PlannedRow
                 {
                     Label = $"You ({you.compound.Length})",
-                    Cards = OrderedForBoard(you.compound)
+                    Cards = OrderedForBoard(you.compound),
+                    IsOwnCompound = true
                 });
             }
 
@@ -1047,7 +1159,7 @@ namespace Indoctrination.Net
 
             foreach (var row in rows)
             {
-                BuildCardRow(_battlefield, row, cardWidth, view);
+                BuildCardRow(_battlefield, row, cardWidth, view, manager);
             }
         }
 
@@ -1060,27 +1172,25 @@ namespace Indoctrination.Net
             public Action<CardView> OnClick;
             public Func<CardView, string> TagFor;
             public string ActionLabel;
+
+            /// <summary>
+            /// Whether this is the viewer's own compound - the only row where
+            /// units can be dragged to reorder them, and where a card's own
+            /// ability (Suspicious Chef's payment, Baal's die) offers itself.
+            /// </summary>
+            public bool IsOwnCompound;
         }
 
         /// <summary>
-        /// Units in the order the dice will wake them, so a glance down a
-        /// compound reads as "what happens on a 1, then a 2, then a 3". Blessings
-        /// have no number and sit at the end.
+        /// Units first, then blessings - a stable split rather than a resort, so
+        /// a glance down a compound separates what fires on the dice from what
+        /// simply sits there, without disturbing the order a player chose for
+        /// their own units by dragging them.
         /// </summary>
         private static CardView[] OrderedForBoard(CardView[] cards)
         {
             return cards
-                .OrderBy(card =>
-                {
-                    var definition = DefinitionOf(card);
-                    if (definition == null || definition.ActivationNumbers.Count == 0)
-                    {
-                        return int.MaxValue;
-                    }
-
-                    return definition.ActivationNumbers.Min();
-                })
-                .ThenBy(card => DefinitionOf(card)?.Title ?? card.definitionId)
+                .OrderBy(card => DefinitionOf(card)?.Type == CardType.Unit ? 0 : 1)
                 .ToArray();
         }
 
@@ -1095,7 +1205,7 @@ namespace Indoctrination.Net
         private float CardWidthForBoard(List<PlannedRow> rows)
         {
             var width = Mathf.Max(200f, _battlefield.rect.width - 12f);
-            var height = Mathf.Max(200f, _actionViewport.rect.height - 8f);
+            var height = Mathf.Max(200f, _battlefieldViewport.rect.height - 8f);
 
             for (var candidate = BoardCardView.Width; candidate >= MinCardWidth; candidate -= 4f)
             {
@@ -1124,7 +1234,8 @@ namespace Indoctrination.Net
         /// rather than a stack of differently-scaled shelves.
         /// </summary>
         private void BuildCardRow(
-            Transform parent, PlannedRow plan, float cardWidth, GameView view, float availableWidth = 0f)
+            Transform parent, PlannedRow plan, float cardWidth, GameView view,
+            NetworkGameManager manager = null, float availableWidth = 0f)
         {
             var row = UIFactory.Group(plan.Label, parent);
             var rowLayout = UIFactory.VerticalLayout(row, 2, new RectOffset(0, 0, 0, 0), controlHeight: true);
@@ -1158,6 +1269,34 @@ namespace Indoctrination.Net
 
             var dealt = 0;
 
+            // Every unit cell in this row, in display order - what a drag drop
+            // is measured against to decide where a re-ordered unit lands.
+            var unitCells = new List<RectTransform>();
+
+            int ResolveDropIndex(Vector2 screenPosition)
+            {
+                if (unitCells.Count == 0)
+                {
+                    return 0;
+                }
+
+                var best = 0;
+                var bestDistance = float.MaxValue;
+
+                for (var i = 0; i < unitCells.Count; i++)
+                {
+                    var cellScreenPos = RectTransformUtility.WorldToScreenPoint(null, unitCells[i].position);
+                    var distance = Vector2.Distance(cellScreenPos, screenPosition);
+                    if (distance < bestDistance)
+                    {
+                        bestDistance = distance;
+                        best = i;
+                    }
+                }
+
+                return best;
+            }
+
             foreach (var card in plan.Cards)
             {
                 var cell = UIFactory.Group("Cell", grid);
@@ -1167,7 +1306,8 @@ namespace Indoctrination.Net
                 cardRect.pivot = new Vector2(0.5f, 0.5f);
 
                 var clickable = plan.IsClickable != null && plan.IsClickable(card);
-                cardView.Populate(card, plan.TagFor?.Invoke(card), clickable ? () => plan.OnClick(card) : null);
+                var tag = plan.TagFor?.Invoke(card);
+                cardView.Populate(card, tag, clickable ? () => plan.OnClick(card) : null);
                 cardView.SetAction(clickable ? plan.ActionLabel : null,
                                    clickable ? () => plan.OnClick(card) : null);
                 cardView.ScaleTo(cardWidth);
@@ -1175,11 +1315,62 @@ namespace Indoctrination.Net
                 MarkIfDueToActivate(cardView, view);
                 RegisterForActivationPulse(cardView);
 
+                var isUnit = DefinitionOf(card)?.Type == CardType.Unit;
+
+                // Only the owner may pick their own units up, and only units have
+                // an activation order worth dragging into place - a Blessing just
+                // hangs out wherever it already is.
+                if (plan.IsOwnCompound && isUnit && manager != null)
+                {
+                    unitCells.Add(cell);
+
+                    var instanceId = card.instanceId;
+                    var ghostCard = card;
+                    var ghostTag = tag;
+                    var ghostWidth = cardWidth;
+
+                    var handle = cardView.gameObject.AddComponent<DragHandle>();
+                    handle.DragLayer = _dragLayer;
+                    handle.GhostFactory = () => DragHandle.CardGhost(ghostCard, ghostTag, ghostWidth);
+                    handle.OnDropped = eventData =>
+                        manager.RequestReorderUnitRpc(instanceId, ResolveDropIndex(eventData.position));
+                }
+
+                if (plan.IsOwnCompound && manager != null)
+                {
+                    WireCompoundCardExtras(cardView, card, manager, view);
+                }
+
                 // Dealt out rather than appearing all at once. Alpha only, so the
                 // card is where the layout put it from the first frame and nothing
                 // measuring the board catches it part-way through moving.
                 BoardEffects.Instance.FadeIn(cell.gameObject, delay: dealt * 0.025f);
                 dealt++;
+            }
+        }
+
+        /// <summary>
+        /// Gives a card in the viewer's own compound its own mini-menu, if its
+        /// ability is the kind that asks for one - Suspicious Chef's payment,
+        /// Baal's die, Try Again's reroll. Offered from the card itself rather
+        /// than a panel that shows for every card, so it only ever appears next
+        /// to the one card it actually belongs to.
+        /// </summary>
+        private void WireCompoundCardExtras(BoardCardView cardView, CardView card, NetworkGameManager manager, GameView view)
+        {
+            if (card.definitionId == CardIds.SuspiciousChef)
+            {
+                var instanceId = card.instanceId;
+                cardView.SetExtraContent(content => BuildSuspiciousChefExtra(content, manager, instanceId, cardView));
+            }
+            else if (card.definitionId == CardIds.BaalTheManipulator && view.phase == nameof(TurnPhase.Rolling))
+            {
+                cardView.SetExtraContent(content => BuildBaalExtra(content, manager, view, cardView));
+            }
+            else if (card.definitionId == CardIds.TryAgain
+                     && view.phase == nameof(TurnPhase.Rolling) && view.diceRolled)
+            {
+                cardView.SetExtraContent(content => BuildTryAgainExtra(content, manager));
             }
         }
 
@@ -1295,7 +1486,7 @@ namespace Indoctrination.Net
         {
             var you = view.Viewer;
             var count = you?.hand.Length ?? 0;
-            _handToggleLabel.text = $"Hand ({count})  {(_handExpanded ? "[hide]" : "[show]")}";
+            _handCountLabel.text = you == null ? "" : $"Hand: {count}";
 
             _viewerStatBar.gameObject.SetActive(you != null);
             if (you != null)
@@ -1304,14 +1495,22 @@ namespace Indoctrination.Net
             }
 
             UIFactory.DestroyChildren(_handRow);
-            var expanded = _handExpanded && you != null;
-            _handRow.gameObject.SetActive(expanded);
 
-            if (!expanded)
+            if (you == null || count == 0)
             {
                 _handRowPin.preferredHeight = 0f;
                 _handRowPin.minHeight = 0f;
                 _dockPin.preferredHeight = DockTopHeight;
+                return;
+            }
+
+            // Never hidden outright - it peeks until the pointer finds it, then
+            // opens to its full playable size. Only the expanded state offers
+            // buttons or dragging; a card peeking above the fold is there to be
+            // recognised, not acted on by accident.
+            if (!_handExpanded)
+            {
+                BuildHandPeek(you);
                 return;
             }
 
@@ -1411,27 +1610,70 @@ namespace Indoctrination.Net
                 handCard.Populate(card, null, null);
                 handCard.ScaleTo(handCardWidth);
 
-                // Only worth marking when playing is actually the move on offer.
-                if (canBuy)
-                {
-                    handCard.SetAffordable(card.canAfford);
-                }
+                var instanceId = card.instanceId;
 
-                // The same action as the button beneath it, so a card read in the
-                // preview can be played without closing it first.
-                var playing = card.instanceId;
-                handCard.SetAction("Play", () => NetworkGameManager.Instance?.RequestBuyRpc(playing));
+                // A card only lights up, and only picks up, once it is actually
+                // playable - dragging an unaffordable card onto the compounds
+                // would just be refused, so it never invites the attempt.
+                handCard.SetAffordable(card.canAfford);
+
+                if (card.canAfford)
+                {
+                    var ghostTag = (string)null;
+                    var ghostWidth = handCardWidth;
+                    var handle = handCard.gameObject.AddComponent<DragHandle>();
+                    handle.DragLayer = _dragLayer;
+                    handle.GhostFactory = () => DragHandle.CardGhost(card, ghostTag, ghostWidth);
+                    handle.OnDropped = eventData =>
+                    {
+                        if (RectTransformUtility.RectangleContainsScreenPoint(
+                                _battlefieldViewport, eventData.position, eventData.pressEventCamera))
+                        {
+                            NetworkGameManager.Instance?.RequestBuyRpc(instanceId);
+                        }
+                    };
+                }
 
                 var buttons = UIFactory.Group("Buttons", wrapper);
                 UIFactory.SetSize(buttons, handCardWidth, HandCardButtonHeight);
                 UIFactory.HorizontalLayout(buttons, 4, new RectOffset(0, 0, 0, 0));
-                var instanceId = card.instanceId;
-                UIFactory.ButtonWithLabel("Play", buttons, "Play",
-                    () => NetworkGameManager.Instance?.RequestBuyRpc(instanceId),
-                    new Color(0.2f, 0.4f, 0.2f), (handCardWidth / 2f) - 3f, HandCardButtonHeight);
                 UIFactory.ButtonWithLabel("Recycle", buttons, "Recycle",
                     () => NetworkGameManager.Instance?.RequestRecycleRpc(instanceId),
-                    new Color(0.4f, 0.35f, 0.15f), (handCardWidth / 2f) - 3f, HandCardButtonHeight);
+                    new Color(0.39f, 0.27f, 0.11f), handCardWidth, HandCardButtonHeight);
+            }
+        }
+
+        /// <summary>
+        /// The hand collapsed to a sliver above the bottom edge: small enough to
+        /// stay out of the way, present enough to say what is in your hand and
+        /// invite the hover that opens it.
+        /// </summary>
+        private void BuildHandPeek(PlayerView you)
+        {
+            var peekCardHeight = HandPeekHeight + 6f;
+            var peekCardWidth = peekCardHeight * (BoardCardView.Width / BoardCardView.Height);
+
+            _handRowPin.preferredHeight = HandPeekHeight;
+            _handRowPin.minHeight = HandPeekHeight;
+            _dockPin.preferredHeight = DockTopHeight + HandPeekHeight + 4f;
+
+            var content = UIFactory.HorizontalScroll("Hand Scroll", _handRow, HandPeekHeight);
+            UIFactory.Stretch(UIFactory.Child(_handRow, "Hand Scroll"));
+
+            foreach (var card in you.hand)
+            {
+                var slot = UIFactory.Group("Card Slot", content);
+                UIFactory.SetSize(slot, peekCardWidth, peekCardHeight);
+                var pin = slot.gameObject.AddComponent<LayoutElement>();
+                pin.minWidth = pin.preferredWidth = peekCardWidth;
+                pin.minHeight = pin.preferredHeight = peekCardHeight;
+
+                var peek = BoardCardView.Create(slot);
+                var rect = (RectTransform)peek.transform;
+                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+                rect.pivot = new Vector2(0.5f, 0.5f);
+                peek.Populate(card, null, null);
+                peek.ScaleTo(peekCardWidth);
             }
         }
 
@@ -1455,42 +1697,41 @@ namespace Indoctrination.Net
                 : $"{name} wins - last leader standing.";
         }
 
+        /// <summary>
+        /// The popup that stands in for the old always-on side panel. Most
+        /// phases show nothing at all here - the board, the hand, and a card's
+        /// own preview are where the game actually happens, and this only
+        /// interrupts them for something that genuinely needs an answer right
+        /// now: a pending choice, a die to roll, a high-roll bonus to take, or
+        /// the end of the game.
+        /// </summary>
         private void RefreshActionPanel(NetworkGameManager manager, GameView view)
         {
             UIFactory.DestroyChildren(_actionPanel);
 
+            var show = DecidePopup(manager, view);
+
+            _popupPanel.gameObject.SetActive(show);
+            _popupScrim.gameObject.SetActive(show);
+        }
+
+        private bool DecidePopup(NetworkGameManager manager, GameView view)
+        {
             if (view.isGameOver)
             {
                 RenderGameOver(manager, view);
-                return;
+                return true;
             }
 
-            if (view.hasPendingChoice)
+            if (view.hasPendingChoice
+                && view.pendingChoice.askedOfPlayerId == view.viewerPlayerId
+                && !ChoiceIsAnsweredOnTheBoard(view))
             {
                 RenderPendingChoice(manager, view);
-                return;
+                return true;
             }
 
-            switch (view.phase)
-            {
-                case nameof(TurnPhase.Draft):
-                    RenderDraftHint(view);
-                    break;
-                case nameof(TurnPhase.Rolling):
-                    RenderRolling(manager, view);
-                    break;
-                case nameof(TurnPhase.Activation):
-                    RenderActivation(view);
-                    break;
-                case nameof(TurnPhase.Resource):
-                    RenderResource(manager, view);
-                    break;
-                case nameof(TurnPhase.Buy):
-                    ActionLabel("Play or recycle from your hand.", 16);
-                    break;
-            }
-
-            RenderCardActions(manager, view);
+            return view.phase == nameof(TurnPhase.Rolling) && RenderRolling(manager, view);
         }
 
         /// <summary>
@@ -1513,15 +1754,15 @@ namespace Indoctrination.Net
             banner.alignment = TextAnchor.MiddleCenter;
             banner.fontStyle = FontStyle.Bold;
             banner.color = view.isDraw
-                ? new Color(0.8f, 0.8f, 0.85f)
+                ? UITheme.ParchmentMuted
                 : youWon
-                    ? new Color(0.45f, 0.85f, 0.45f)
-                    : new Color(0.9f, 0.4f, 0.4f);
+                    ? new Color(0.48f, 0.72f, 0.46f)
+                    : new Color(0.78f, 0.31f, 0.36f);
             SetRowHeight(banner.rectTransform, 48);
 
             var subtitle = ActionLabel(GameOverHeadline(view), 15);
             subtitle.alignment = TextAnchor.MiddleCenter;
-            subtitle.color = new Color(0.85f, 0.85f, 0.85f);
+            subtitle.color = UITheme.ParchmentMuted;
             SetRowHeight(subtitle.rectTransform, 40);
 
             foreach (var player in view.players
@@ -1536,7 +1777,7 @@ namespace Indoctrination.Net
             if (network != null && network.IsHost)
             {
                 UIFactory.ButtonWithLabel("Play Again", _actionPanel, "Play Again",
-                    () => manager.RequestPlayAgainRpc(), new Color(0.2f, 0.45f, 0.22f), ActionButtonWidth(), 44);
+                    () => manager.RequestPlayAgainRpc(), UITheme.Moss, ActionButtonWidth(), 44);
             }
             else
             {
@@ -1544,14 +1785,14 @@ namespace Indoctrination.Net
             }
 
             UIFactory.ButtonWithLabel("Leave", _actionPanel, "Leave",
-                () => NetworkManager.Singleton?.Shutdown(), new Color(0.4f, 0.2f, 0.2f), ActionButtonWidth(), 34);
+                () => NetworkManager.Singleton?.Shutdown(), UITheme.Blood, ActionButtonWidth(), 34);
         }
 
         /// <summary>One leader's final line: name, and their two tracks as bars.</summary>
         private void BuildFinalStanding(PlayerView player, bool won, bool isViewer)
         {
             var row = UIFactory.Panel($"Standing {player.playerId}", _actionPanel,
-                won ? new Color(0.18f, 0.28f, 0.18f, 0.9f) : new Color(1f, 1f, 1f, 0.05f));
+                won ? new Color(0.16f, 0.25f, 0.17f, 0.94f) : UITheme.SurfaceSoft);
             SetRowHeight(row, 62);
 
             var layout = UIFactory.VerticalLayout(row, 2, new RectOffset(8, 8, 5, 5), controlHeight: true);
@@ -1566,9 +1807,9 @@ namespace Indoctrination.Net
             SetRowHeight(name.rectTransform, 18);
 
             FinalBar(row, "Followers", player.followers, GameSettings.FollowersToWin,
-                     new Color(0.75f, 0.6f, 0.2f));
+                     UITheme.RitualGold);
             FinalBar(row, "Health", player.health, GameSettings.MaxHealth,
-                     new Color(0.8f, 0.25f, 0.25f));
+                     new Color(0.68f, 0.15f, 0.20f));
         }
 
         private void FinalBar(Transform parent, string label, int value, int max, Color color)
@@ -1605,174 +1846,130 @@ namespace Indoctrination.Net
             return Mathf.Clamp(available, 120f, 260f);
         }
 
-        private Text ActionLabel(string text, int fontSize = 15)
+        private Text ActionLabel(string text, int fontSize = 15, RectTransform parent = null)
         {
-            var label = UIFactory.Label("Info", _actionPanel, text, fontSize, TextAnchor.UpperLeft);
+            var label = UIFactory.Label("Info", (Transform)(parent != null ? parent : _actionPanel),
+                text, fontSize, TextAnchor.UpperLeft);
             label.horizontalOverflow = HorizontalWrapMode.Wrap;
             var element = label.gameObject.AddComponent<LayoutElement>();
             element.flexibleWidth = 1;
             return label;
         }
 
-        private void RenderDraftHint(GameView view)
-        {
-            ActionLabel(view.currentDrafterId == view.viewerPlayerId
-                ? "Your pick."
-                : $"{FindPlayer(view, view.currentDrafterId)?.name} is picking.", 17);
-        }
-
-        private void RenderRolling(NetworkGameManager manager, GameView view)
+        /// <summary>
+        /// The one thing Rolling ever needs a popup for: the die itself, then -
+        /// once it is down - the high-roll bonus if one is owed. Returns whether
+        /// there was anything to show; once both are settled the popup has
+        /// nothing left to say and disappears.
+        /// </summary>
+        private bool RenderRolling(NetworkGameManager manager, GameView view)
         {
             var you = view.Viewer;
             if (you is { isAlive: true, hasRolled: false })
             {
                 UIFactory.ButtonWithLabel(
                     "Roll", _actionPanel, "ROLL DIE", () => manager.RequestRollRpc(),
-                    new Color(0.22f, 0.5f, 0.24f), width: ActionButtonWidth(), height: 54);
+                    UITheme.Moss, width: ActionButtonWidth(), height: 54);
+                return true;
             }
 
-            // Who has rolled what is on the dice row above; who the table is
-            // waiting on is on the dock. Neither belongs here as well.
-            if (!view.diceRolled)
+            if (!view.diceRolled || view.highRollResourceClaimed)
             {
-                return;
-            }
-
-
-            if (you != null && you.compound.Any(c => c.definitionId == CardIds.TryAgain))
-            {
-                UIFactory.ButtonWithLabel("Reroll", _actionPanel, "Try Again",
-                    () => manager.RequestRerollRpc(), width: ActionButtonWidth());
-            }
-
-            if (view.highRollResourceClaimed)
-            {
-                return;
+                return false;
             }
 
             var highRoller = HighestUniqueRoller(view);
             if (highRoller < 0 || highRoller != view.viewerPlayerId)
             {
-                return;
+                return false;
             }
 
             ActionLabel("Highest roll - take one:", 16);
             RenderColorButtons(color => manager.RequestClaimHighRollResourceRpc((int)color));
+            return true;
         }
 
-        private void RenderActivation(GameView view)
+        /// <summary>Suspicious Chef's paid meal counter, offered from the card itself.</summary>
+        private void BuildSuspiciousChefExtra(
+            RectTransform content, NetworkGameManager manager, int cardInstanceId, BoardCardView cardView)
         {
-            var values = view.players.Where(p => p.isAlive && p.primaryDie > 0).Select(p => p.primaryDie).ToList();
-            ActionLabel($"Units on {string.Join(", ", values.Distinct().OrderBy(v => v))} are firing.", 16);
-        }
-
-        private void RenderResource(NetworkGameManager manager, GameView view)
-        {
-            if (view.Viewer is { collectedResources: true })
-            {
-                return;
-            }
-
-            // The last pick submits and finishes the phase, so there is no
-            // confirm step and nothing to undo - just take what you want.
-            // Resourceful raises this above the default, and using the default
-            // here meant its owner submitted two when the server wanted three and
-            // was refused every time.
-            var allowance = view.Viewer?.resourceAllowance ?? GameSettings.ResourcesPerTurn;
-            var left = allowance - _pendingResources.Count;
-            ActionLabel(left == 1 ? "Take 1 more" : $"Take {left}", 17);
+            ActionLabel(
+                $"Pay {GameSettings.MealCounterCost} of any colour: {string.Join(", ", _pendingMealPayment)}",
+                13, content);
 
             RenderColorButtons(color =>
             {
-                _pendingResources.Add(color);
-
-                if (_pendingResources.Count < allowance)
+                _pendingMealPayment.Add(color);
+                if (_pendingMealPayment.Count == GameSettings.MealCounterCost)
                 {
-                    RefreshActionPanel(manager, view);
-                    return;
+                    manager.RequestBuyMealCounterRpc(
+                        cardInstanceId, _pendingMealPayment.ConvertAll(c => (int)c).ToArray());
+                    _pendingMealPayment.Clear();
                 }
 
-                manager.RequestCollectResourcesRpc(_pendingResources.ConvertAll(c => (int)c).ToArray());
-                _pendingResources.Clear();
-            });
+                CardPreview.RefreshIfShowing(cardView);
+            }, parent: content);
+
+            if (_pendingMealPayment.Count > 0)
+            {
+                UIFactory.ButtonWithLabel("Clear Meal", content, "Clear", () =>
+                {
+                    _pendingMealPayment.Clear();
+                    CardPreview.RefreshIfShowing(cardView);
+                }, width: 100);
+            }
         }
 
-        /// <summary>Suspicious Chef's paid meal counter, and Baal's Scheme-counter reroll.</summary>
-        private void RenderCardActions(NetworkGameManager manager, GameView view)
+        /// <summary>
+        /// Baal's Scheme-counter reroll: pick a player, then a face, offered
+        /// from the card itself.
+        /// </summary>
+        private void BuildBaalExtra(RectTransform content, NetworkGameManager manager, GameView view, BoardCardView cardView)
         {
-            var you = view.Viewer;
-            if (you == null)
+            ActionLabel("Spend a Scheme counter to set a die:", 13, content);
+
+            var row = UIFactory.Group("Baal Targets", content);
+            AddFixedHeight(row, 32);
+            UIFactory.HorizontalLayout(row, 4, new RectOffset(0, 0, 0, 0));
+            foreach (var player in view.players.Where(p => p.isAlive))
+            {
+                var targetId = player.playerId;
+                UIFactory.ButtonWithLabel(player.name, row, player.name, () =>
+                {
+                    _baalTargetPlayerId = targetId;
+                    CardPreview.RefreshIfShowing(cardView);
+                }, width: 90, height: 28);
+            }
+
+            if (_baalTargetPlayerId < 0)
             {
                 return;
             }
 
-            foreach (var card in you.compound)
+            ActionLabel($"Set {FindPlayer(view, _baalTargetPlayerId)?.name}'s die to:", 13, content);
+            var faces = UIFactory.Group("Baal Faces", content);
+            AddFixedHeight(faces, 32);
+            UIFactory.HorizontalLayout(faces, 4, new RectOffset(0, 0, 0, 0));
+            for (var face = 1; face <= GameSettings.DieSides; face++)
             {
-                if (card.definitionId == CardIds.SuspiciousChef)
+                var chosenFace = face;
+                UIFactory.ButtonWithLabel($"Face {face}", faces, face.ToString(), () =>
                 {
-                    ActionLabel(
-                        $"Suspicious Chef - pay {GameSettings.MealCounterCost} of any colour: " +
-                        $"{string.Join(", ", _pendingMealPayment)}", 13);
-
-                    var instanceId = card.instanceId;
-                    RenderColorButtons(color =>
-                    {
-                        _pendingMealPayment.Add(color);
-                        if (_pendingMealPayment.Count == GameSettings.MealCounterCost)
-                        {
-                            manager.RequestBuyMealCounterRpc(
-                                instanceId, _pendingMealPayment.ConvertAll(c => (int)c).ToArray());
-                            _pendingMealPayment.Clear();
-                        }
-
-                        RefreshActionPanel(manager, view);
-                    });
-
-                    if (_pendingMealPayment.Count > 0)
-                    {
-                        UIFactory.ButtonWithLabel("Clear Meal", _actionPanel, "Clear", () =>
-                        {
-                            _pendingMealPayment.Clear();
-                            RefreshActionPanel(manager, view);
-                        }, width: 100);
-                    }
-                }
-
-                if (card.definitionId == CardIds.BaalTheManipulator && view.phase == nameof(TurnPhase.Rolling))
-                {
-                    ActionLabel("Baal - spend a Scheme counter to set a die:", 13);
-
-                    var row = UIFactory.Group("Baal Targets", _actionPanel);
-                    AddFixedHeight(row, 32);
-                    UIFactory.HorizontalLayout(row, 4, new RectOffset(0, 0, 0, 0));
-                    foreach (var player in view.players.Where(p => p.isAlive))
-                    {
-                        var targetId = player.playerId;
-                        UIFactory.ButtonWithLabel(player.name, row, player.name, () =>
-                        {
-                            _baalTargetPlayerId = targetId;
-                            RefreshActionPanel(manager, view);
-                        }, width: 100, height: 28);
-                    }
-
-                    if (_baalTargetPlayerId >= 0)
-                    {
-                        ActionLabel($"Set {FindPlayer(view, _baalTargetPlayerId)?.name}'s die to:", 13);
-                        var faces = UIFactory.Group("Baal Faces", _actionPanel);
-                        AddFixedHeight(faces, 32);
-                        UIFactory.HorizontalLayout(faces, 4, new RectOffset(0, 0, 0, 0));
-                        for (var face = 1; face <= GameSettings.DieSides; face++)
-                        {
-                            var chosenFace = face;
-                            UIFactory.ButtonWithLabel($"Face {face}", faces, face.ToString(), () =>
-                            {
-                                manager.RequestSpendSchemeCounterRpc(_baalTargetPlayerId, chosenFace);
-                                _baalTargetPlayerId = -1;
-                            }, width: 40, height: 28);
-                        }
-                    }
-                }
+                    manager.RequestSpendSchemeCounterRpc(_baalTargetPlayerId, chosenFace);
+                    _baalTargetPlayerId = -1;
+                    CardPreview.Hide();
+                }, width: 36, height: 28);
             }
+        }
+
+        /// <summary>Try Again's reroll, offered from the card itself.</summary>
+        private void BuildTryAgainExtra(RectTransform content, NetworkGameManager manager)
+        {
+            UIFactory.ButtonWithLabel("Reroll", content, "Try Again", () =>
+            {
+                CardPreview.Hide();
+                manager.RequestRerollRpc();
+            }, width: 160, height: 36);
         }
 
         /// <summary>
@@ -1823,7 +2020,7 @@ namespace Indoctrination.Net
             {
                 _resignArmed = true;
                 _resignLabel.text = "Sure?";
-                _resignButton.targetGraphic.color = new Color(0.6f, 0.2f, 0.2f);
+                _resignButton.targetGraphic.color = new Color(0.62f, 0.10f, 0.15f);
                 return;
             }
 
@@ -1865,8 +2062,8 @@ namespace Indoctrination.Net
                 : "Offer draw";
 
             _drawButton.targetGraphic.color = you.offeringDraw
-                ? new Color(0.3f, 0.42f, 0.3f)
-                : new Color(0.24f, 0.26f, 0.32f);
+                ? UITheme.Moss
+                : UITheme.ButtonQuiet;
 
             // A confirmation left armed from an earlier turn is stale, and would
             // let a single press end the game much later.
@@ -1879,8 +2076,8 @@ namespace Indoctrination.Net
 
             _resignLabel.text = _resignArmed ? "Sure?" : "Resign";
             _resignButton.targetGraphic.color = _resignArmed
-                ? new Color(0.6f, 0.2f, 0.2f)
-                : new Color(0.34f, 0.2f, 0.2f);
+                ? new Color(0.62f, 0.10f, 0.15f)
+                : UITheme.Blood;
         }
 
         private GameView _armedForView;
@@ -1910,10 +2107,26 @@ namespace Indoctrination.Net
                 return GameOverHeadline(view);
             }
 
-            return _statusExpanded
+            var line = _statusExpanded
                 ? $"{view.phase}   draft {view.draftNumber}, turn {view.turnInRound}/{GameSettings.TurnsPerRound}   "
                   + $"deck {view.deckCount}, discard {view.discardCount}"
                 : $"{view.phase}   T{view.turnInRound}";
+
+            // A popup only ever interrupts the player it is actually asking, so
+            // this is the only trace anyone else sees of a question being open.
+            if (view.hasPendingChoice && view.pendingChoice.askedOfPlayerId != view.viewerPlayerId)
+            {
+                return line + $"   waiting on {FindPlayer(view, view.pendingChoice.askedOfPlayerId)?.name} to decide";
+            }
+
+            if (view.phase == nameof(TurnPhase.Draft))
+            {
+                return line + (view.currentDrafterId == view.viewerPlayerId
+                    ? "   your pick"
+                    : $"   {FindPlayer(view, view.currentDrafterId)?.name} is picking");
+            }
+
+            return line;
         }
 
         private void ToggleReady()
@@ -1958,13 +2171,14 @@ namespace Indoctrination.Net
 
             _readyButton.interactable = owes == null;
             _readyLabel.text = you.isReady ? "Not Ready" : "Ready";
-            _readyLabel.color = owes == null ? Color.white : new Color(1f, 1f, 1f, 0.45f);
+            _readyLabel.color = owes == null ? UITheme.Parchment : new Color(
+                UITheme.Parchment.r, UITheme.Parchment.g, UITheme.Parchment.b, 0.45f);
 
             _readyButton.targetGraphic.color = owes != null
-                ? new Color(0.22f, 0.22f, 0.24f)
+                ? UITheme.ButtonQuiet
                 : you.isReady
-                    ? new Color(0.4f, 0.3f, 0.15f)
-                    : new Color(0.2f, 0.4f, 0.2f);
+                    ? new Color(0.39f, 0.27f, 0.11f)
+                    : UITheme.Moss;
 
             BoardEffects.Instance.SetPulsing(_readyButton.targetGraphic, actionable);
 
@@ -1980,15 +2194,29 @@ namespace Indoctrination.Net
         {
             var choice = view.pendingChoice;
 
+            // The card behind the question, shown at full size rather than only
+            // described - a popup asking what to do about a card should let you
+            // look at it.
+            if (!string.IsNullOrEmpty(view.resolvingCardId)
+                && CardDatabase.Instance.TryGet(view.resolvingCardId, out _))
+            {
+                var sourceCell = UIFactory.Group("Source Card", _actionPanel);
+                UIFactory.SetSize(sourceCell, 130, 181);
+                var sourcePin = sourceCell.gameObject.AddComponent<LayoutElement>();
+                sourcePin.preferredWidth = sourcePin.minWidth = 130;
+                sourcePin.preferredHeight = sourcePin.minHeight = 181;
+
+                var sourceCard = BoardCardView.Create(sourceCell);
+                var sourceRect = (RectTransform)sourceCard.transform;
+                sourceRect.anchorMin = sourceRect.anchorMax = new Vector2(0.5f, 0.5f);
+                sourceRect.pivot = new Vector2(0.5f, 0.5f);
+                sourceCard.Populate(new CardView { definitionId = view.resolvingCardId, instanceId = -1 }, null, null);
+                sourceCard.ScaleTo(130);
+            }
+
             if (!string.IsNullOrEmpty(view.resolvingDescription))
             {
                 ActionLabel(view.resolvingDescription, 13);
-            }
-
-            if (choice.askedOfPlayerId != view.viewerPlayerId)
-            {
-                ActionLabel($"Waiting on {FindPlayer(view, choice.askedOfPlayerId)?.name} to decide: {choice.prompt}");
-                return;
             }
 
             ActionLabel(choice.prompt);
@@ -2053,9 +2281,9 @@ namespace Indoctrination.Net
                     AddFixedHeight(yesNoRow, 36);
                     UIFactory.HorizontalLayout(yesNoRow, 8, new RectOffset(0, 0, 0, 0));
                     UIFactory.ButtonWithLabel("Yes", yesNoRow, "Yes", () => manager.RequestAnswerYesNoRpc(true),
-                        new Color(0.2f, 0.4f, 0.2f), 90, 32);
+                        UITheme.Moss, 90, 32);
                     UIFactory.ButtonWithLabel("No", yesNoRow, "No", () => manager.RequestAnswerYesNoRpc(false),
-                        new Color(0.4f, 0.2f, 0.2f), 90, 32);
+                        UITheme.Blood, 90, 32);
                     break;
 
                 case nameof(ChoiceKind.Amount):
@@ -2080,30 +2308,26 @@ namespace Indoctrination.Net
 
         /// <summary>
         /// Throws a resource across the board from the button that granted it to
-        /// the pip that now counts it, so a collected resource is something you
-        /// watch arrive rather than a number that changed while you looked away.
+        /// the HUD circle that now counts it, so a collected resource is
+        /// something you watch arrive rather than a number that changed while
+        /// you looked away.
         /// </summary>
-        private void FlyResourceToStatBar(ResourceColor color, Component from)
+        private void FlyResourceToHud(ResourceColor color, Component from)
         {
-            if (from == null || _viewerStatBar == null)
+            if (from == null || _resourceHud == null)
             {
                 return;
             }
 
             BoardEffects.Instance.FlyResource(
-                from.transform.position, _viewerStatBar.PipPosition(color), color,
-                landsIn: _viewerStatBar.Pip(color));
+                from.transform.position, _resourceHud.PipPosition(color), color,
+                landsIn: _resourceHud.Pip(color));
 
             // The count goes up now rather than when the server replies, so the
             // pick feels immediate. The next view corrects it regardless.
-            _viewerStatBar.ShowResourceGain(color);
+            _resourceHud.ShowResourceGain(color);
         }
 
-        /// <summary>
-        /// The resource picker: one disc per colour, in the colour it grants. The
-        /// pip that flies out of a pressed disc is the same shape as the pip it
-        /// lands in, so where a resource went is never in doubt.
-        /// </summary>
         /// <summary>Whether the open card question is being answered on the board itself.</summary>
         private static bool ChoiceIsAnsweredOnTheBoard(GameView view) =>
             view.hasPendingChoice
@@ -2112,9 +2336,15 @@ namespace Indoctrination.Net
             && view.pendingChoice.cardOptions.All(
                 id => view.draftZone.Any(c => c.instanceId == id));
 
-        private void RenderColorButtons(Action<ResourceColor> onPicked, IEnumerable<ResourceColor> colors = null)
+        /// <summary>
+        /// A row of colour discs, one per resource, wherever a card's question
+        /// wants one - inside the popup by default, or inside a card's own
+        /// preview when the question is that card's own ability.
+        /// </summary>
+        private void RenderColorButtons(
+            Action<ResourceColor> onPicked, IEnumerable<ResourceColor> colors = null, RectTransform parent = null)
         {
-            var row = UIFactory.Group("Colors", _actionPanel);
+            var row = UIFactory.Group("Colors", parent != null ? parent : _actionPanel);
             AddFixedHeight(row, ResourceButtonSize + 6f);
             var layout = UIFactory.HorizontalLayout(row, 10, new RectOffset(0, 0, 0, 0));
             layout.childAlignment = TextAnchor.MiddleCenter;
@@ -2137,7 +2367,7 @@ namespace Indoctrination.Net
                 press.targetGraphic = disc;
                 press.onClick.AddListener(() =>
                 {
-                    FlyResourceToStatBar(chosen, button);
+                    FlyResourceToHud(chosen, button);
                     onPicked(chosen);
                 });
 

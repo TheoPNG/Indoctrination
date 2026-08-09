@@ -44,7 +44,9 @@ namespace Indoctrination.Net
             _group.blocksRaycasts = false;
             _group.interactable = false;
 
-            _panel = UIFactory.Panel("Banner", root, new Color(0f, 0f, 0f, 0.55f));
+            _panel = UIFactory.Panel("Banner", root, new Color(
+                UITheme.RitualBlack.r, UITheme.RitualBlack.g, UITheme.RitualBlack.b, 0.82f));
+            UITheme.Frame(_panel.GetComponent<Image>(), 0.8f, UITheme.RitualGoldSoft);
             _panel.anchorMin = new Vector2(0f, 0.5f);
             _panel.anchorMax = new Vector2(1f, 0.5f);
             _panel.pivot = new Vector2(0.5f, 0.5f);
@@ -59,7 +61,7 @@ namespace Indoctrination.Net
             FixedRow(_label.rectTransform, 52);
 
             _subtitle = UIFactory.Label("Detail", _panel, "", 16, TextAnchor.MiddleCenter,
-                new Color(0.8f, 0.8f, 0.85f));
+                UITheme.ParchmentMuted);
             FixedRow(_subtitle.rectTransform, 22);
 
             gameObject.SetActive(false);

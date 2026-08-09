@@ -132,6 +132,12 @@ namespace Indoctrination.Net
         /// <summary>What is being described while pendingChoice is resolving, for the whole table to see.</summary>
         public string resolvingDescription;
 
+        /// <summary>
+        /// The card behind whatever is resolving, so a popup asking its question
+        /// can show the card itself. Empty when nothing is resolving.
+        /// </summary>
+        public string resolvingCardId;
+
         public PlayerView Viewer
         {
             get

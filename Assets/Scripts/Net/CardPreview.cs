@@ -22,6 +22,7 @@ namespace Indoctrination.Net
         private Text _metaText;
         private Text _effectText;
         private RectTransform _actionRow;
+        private RectTransform _extraContent;
         private Image _accent;
 
         /// <summary>
@@ -145,14 +146,16 @@ namespace Indoctrination.Net
             // A dimmed backdrop that also swallows clicks, so anywhere outside the
             // card closes the preview rather than acting on the board underneath.
             var backdrop = gameObject.AddComponent<Image>();
-            backdrop.color = new Color(0f, 0f, 0f, 0.72f);
+            backdrop.color = new Color(
+                UITheme.RitualBlack.r, UITheme.RitualBlack.g, UITheme.RitualBlack.b, 0.84f);
 
             var dismiss = gameObject.AddComponent<Button>();
             dismiss.targetGraphic = backdrop;
             dismiss.transition = Selectable.Transition.None;
             dismiss.onClick.AddListener(Hide);
 
-            _panel = UIFactory.Panel("Preview Card", root, new Color(0.13f, 0.13f, 0.16f, 0.99f));
+            _panel = UIFactory.Panel("Preview Card", root, UITheme.SurfaceRaised);
+            UITheme.Frame(_panel.GetComponent<Image>(), 1.5f);
             _panel.anchorMin = _panel.anchorMax = new Vector2(0.5f, 0.5f);
             UIFactory.SetSize(_panel, 460, 420);
 
@@ -166,17 +169,24 @@ namespace Indoctrination.Net
             _accent = UIFactory.Panel("Accent", _panel, Color.white).GetComponent<Image>();
             FixedRow(_accent.rectTransform, 5);
 
-            _titleText = UIFactory.Label("Title", _panel, "", 30, TextAnchor.UpperLeft);
+            _titleText = UIFactory.Label("Title", _panel, "", 30, TextAnchor.UpperLeft, UITheme.Parchment);
             _titleText.fontStyle = FontStyle.Bold;
             FixedRow(_titleText.rectTransform, 40);
 
-            _metaText = UIFactory.Label("Meta", _panel, "", 16, TextAnchor.UpperLeft, new Color(0.8f, 0.85f, 0.95f));
+            _metaText = UIFactory.Label("Meta", _panel, "", 16, TextAnchor.UpperLeft, UITheme.ParchmentMuted);
             FixedRow(_metaText.rectTransform, 46);
 
-            _effectText = UIFactory.Label("Effect", _panel, "", 18, TextAnchor.UpperLeft, new Color(0.93f, 0.93f, 0.93f));
+            _effectText = UIFactory.Label("Effect", _panel, "", 18, TextAnchor.UpperLeft, UITheme.Parchment);
             var effectRow = _effectText.gameObject.AddComponent<LayoutElement>();
             effectRow.flexibleHeight = 1;
             effectRow.flexibleWidth = 1;
+
+            // A card whose ability is a small menu of its own builds it here,
+            // between what the card says and the buttons that close the preview.
+            _extraContent = UIFactory.Group("Extra", _panel);
+            UIFactory.VerticalLayout(_extraContent, 6, new RectOffset(0, 0, 0, 0), controlHeight: true);
+            UIFactory.FitToContent(
+                _extraContent, ContentSizeFitter.FitMode.Unconstrained, ContentSizeFitter.FitMode.PreferredSize);
 
             _actionRow = UIFactory.Group("Actions", _panel);
             FixedRow(_actionRow, 44);
@@ -230,6 +240,9 @@ namespace Indoctrination.Net
                 ShowDefinition(card.Definition, null);
             }
 
+            UIFactory.DestroyChildren(_extraContent);
+            card.ExtraContentBuilder?.Invoke(_extraContent);
+
             _actionRow.gameObject.SetActive(true);
             UIFactory.DestroyChildren(_actionRow);
 
@@ -242,25 +255,24 @@ namespace Indoctrination.Net
                 {
                     Hide();
                     action();
-                }, new Color(0.22f, 0.5f, 0.24f), 200, 40);
-            }
-
-            // Re-ordering is offered here rather than on the board, so a card can
-            // be read and repositioned in the same place.
-            if (card.MoveEarlier != null)
-            {
-                var earlier = card.MoveEarlier;
-                var later = card.MoveLater;
-
-                UIFactory.ButtonWithLabel("Earlier", _actionRow, "< Earlier",
-                    () => { Hide(); earlier(); }, new Color(0.28f, 0.32f, 0.42f), 100, 40);
-
-                UIFactory.ButtonWithLabel("Later", _actionRow, "Later >",
-                    () => { Hide(); later(); }, new Color(0.28f, 0.32f, 0.42f), 100, 40);
+                }, UITheme.Moss, 200, 40);
             }
 
             UIFactory.ButtonWithLabel("Close", _actionRow, "Close", Hide,
-                new Color(0.3f, 0.3f, 0.34f), 120, 40);
+                UITheme.ButtonQuiet, 120, 40);
+        }
+
+        /// <summary>
+        /// Refreshes the preview in place for the card already showing - used
+        /// after a click inside its own extra content (a colour picked, a target
+        /// chosen) changes what that content should say next.
+        /// </summary>
+        public static void RefreshIfShowing(BoardCardView card)
+        {
+            if (_instance != null && card != null && IsOpen)
+            {
+                _instance.Display(card);
+            }
         }
     }
 }

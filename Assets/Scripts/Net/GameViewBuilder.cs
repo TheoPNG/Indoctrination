@@ -57,6 +57,7 @@ namespace Indoctrination.Net
                 hasPendingChoice = game.PendingChoice != null,
                 pendingChoice = ToChoiceView(game.PendingChoice),
                 resolvingDescription = game.ResolvingDescription,
+                resolvingCardId = game.ResolvingCardId,
                 players = game.Players.Select(player => new PlayerView
                 {
                     playerId = player.PlayerId,

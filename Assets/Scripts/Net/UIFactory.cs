@@ -10,17 +10,15 @@ namespace Indoctrination.Net
     /// is built this way rather than from prefabs, so the layout lives in source
     /// control as readable C# instead of scene/prefab YAML nobody can diff.
     ///
-    /// Widgets use plain solid-colour Images and Unity's built-in legacy font,
-    /// so none of this depends on an asset import step that has to happen inside
-    /// the Editor before Play mode works. Sprites that are genuinely needed -
+    /// Widgets use a shared, asset-free ritual theme and resolve an installed
+    /// serif face with a built-in fallback, so none of this depends on an asset
+    /// import step inside the Editor. Sprites that are genuinely needed -
     /// discs, the glow, the solid rect a fill bar requires - are generated at
     /// runtime by BoardArt.
     /// </summary>
     public static class UIFactory
     {
-        private static Font _font;
-
-        public static Font DefaultFont => _font ??= Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        public static Font DefaultFont => UITheme.BodyFont;
 
         /// <summary>The Canvas plus the EventSystem it needs to receive clicks under the new Input System.</summary>
         public static Canvas CreateCanvas(string name)
@@ -77,11 +75,12 @@ namespace Indoctrination.Net
             go.GetComponent<RectTransform>().SetParent(parent, false);
 
             var label = go.GetComponent<Text>();
-            label.font = DefaultFont;
+            label.font = fontSize >= 20 ? UITheme.TitleFont : DefaultFont;
             label.fontSize = fontSize;
             label.alignment = anchor;
-            label.color = color ?? Color.white;
+            label.color = color ?? UITheme.Parchment;
             label.text = text;
+            label.lineSpacing = 1.05f;
             label.horizontalOverflow = wrap ? HorizontalWrapMode.Wrap : HorizontalWrapMode.Overflow;
             label.verticalOverflow = VerticalWrapMode.Overflow;
             return label;
@@ -91,7 +90,7 @@ namespace Indoctrination.Net
             string name, Transform parent, string text, Action onClick,
             Color? background = null, float width = 160, float height = 32)
         {
-            var rect = Panel(name, parent, background ?? new Color(0.25f, 0.25f, 0.3f));
+            var rect = Panel(name, parent, background ?? UITheme.Button);
             SetSize(rect, width, height);
 
             var pin = rect.gameObject.AddComponent<LayoutElement>();
@@ -102,12 +101,15 @@ namespace Indoctrination.Net
 
             var button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = rect.GetComponent<Image>();
+            UITheme.StyleButton(button);
+            UITheme.Frame(rect.GetComponent<Image>(), 0.75f, UITheme.RitualGoldSoft);
             if (onClick != null)
             {
                 button.onClick.AddListener(() => onClick());
             }
 
-            Label($"{name} Text", rect, text, 15, TextAnchor.MiddleCenter);
+            var label = Label($"{name} Text", rect, text, 15, TextAnchor.MiddleCenter, UITheme.Parchment);
+            label.fontStyle = FontStyle.Bold;
             Stretch(Child(rect, $"{name} Text"));
             return button;
         }
@@ -115,7 +117,8 @@ namespace Indoctrination.Net
         /// <summary>A single-line text field, e.g. for the host address or an amount.</summary>
         public static InputField TextInput(string name, Transform parent, string startingValue)
         {
-            var rect = Panel(name, parent, new Color(1, 1, 1, 0.12f));
+            var rect = Panel(name, parent, UITheme.SurfaceSoft);
+            UITheme.Frame(rect.GetComponent<Image>(), 0.75f, UITheme.RitualGoldSoft);
             var field = rect.gameObject.AddComponent<InputField>();
 
             var text = Label($"{name} Text", rect, startingValue, 15, TextAnchor.MiddleLeft);
@@ -126,6 +129,8 @@ namespace Indoctrination.Net
 
             field.textComponent = text;
             field.text = startingValue;
+            field.selectionColor = new Color(
+                UITheme.RitualGold.r, UITheme.RitualGold.g, UITheme.RitualGold.b, 0.42f);
             return field;
         }
 

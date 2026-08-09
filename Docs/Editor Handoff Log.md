@@ -2,6 +2,145 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
+## 2026-08-09 — Claude (the compounds take the screen: HUD, popup, and drag)
+
+A stale Unity Licensing Client left over from a previous session was blocking
+the Editor from opening at all (`ResponseCode: 505, Unsupported protocol
+version`). Killed it and let Hub respawn a fresh one - unrelated to any code,
+worth noting only because it looked like a code problem at first.
+
+The rest of this session was a layout overhaul. The board's shape changed:
+
+### Stat bars
+
+`StatBar` is one horizontal line now (`BarHeight` 112 -> 34): name, die, a
+health bar (red) with Block appended directly to its right end **to the same
+per-point scale** rather than a separate boxed counter, and a followers bar
+(now blue, was gold). Resource pips are gone from the stat bar entirely - see
+the HUD below. Opponents' resource counts are consequently no longer visible
+anywhere; only your own show, on the HUD. Worth a second look if that turns
+out to matter for reading the table.
+
+### Resource HUD (`ResourceHud.cs`, new)
+
+Four circles fixed on the left edge of the screen, always showing the
+viewer's own counts. During the Resource phase, before you've collected, they
+pulse and become clickable - clicking one picks it, same accumulate-then-submit
+behavior the old side panel had. This replaces the color-button picker that
+used to live in the action panel.
+
+### The blue side panel is gone
+
+`_actionPanel`/`_actionViewport`/`_actionScroll` still exist, but they are no
+longer a permanent column next to the battlefield - they are the content
+inside a new floating `Popup Panel` (scrim + centered box, built as the last
+children of `Game Root` so they draw above everything, `ignoreLayout` so
+root's own VerticalLayoutGroup leaves them alone). It only shows when there is
+something that actually needs an answer: a pending choice, the roll button,
+the high-roll bonus, or the game-over screen. Draft/Activation/Buy show
+nothing here at all now - the board, the hand, and a card's own preview are
+where those phases happen. `RenderDraftHint`/`RenderActivation`/
+`RenderResource`/`RenderCardActions` are gone; `RefreshActionPanel` now calls
+`DecidePopup`, which returns whether there was anything to show.
+
+A pending choice's popup now shows the card behind the question when one is
+known (`GameState.ResolvingCardId` -> `GameView.resolvingCardId`, threaded
+through `GameViewBuilder`), not just its description text.
+
+Suspicious Chef's meal payment, Baal's Scheme-counter reroll, and Try Again's
+reroll moved out of the side panel and onto their own cards: click the card,
+its preview grows a small menu beneath the effect text
+(`BoardCardView.SetExtraContent` / `CardPreview`'s new `_extraContent` region,
+wired per-card in `BoardUI.WireCompoundCardExtras`). `CardPreview.RefreshIfShowing`
+re-renders the open preview in place after a pick, the same way the old panel
+re-rendered itself.
+
+Battlefield lost its background panel and border - just the felt underneath
+now. It takes the whole middle row except a slim, fixed-width resource HUD
+column on the left.
+
+### Compounds: units before blessings, drag to reorder
+
+`OrderedForBoard` no longer sorts by activation number (that regressed back
+in at some point after the 08-08 entry below - Codex, most likely, in the
+course of other work; the UI wiring for player-ordered activation had been
+dropped even though `GameState`'s backing logic was untouched). It now does a
+*stable* partition: units first, then everything else, each group keeping
+whatever relative order it already had. This is deliberately independent of
+whatever the true stored order is - see next.
+
+`GameState.MoveInCompound` (adjacent-swap) is gone, replaced by
+`GameState.ReorderUnit(playerId, cardInstanceId, newIndex)`, which removes the
+unit from the compound's unit-subsequence, reinserts it at `newIndex`, then
+rebuilds the compound as `[units..., everything else...]` - so the compound
+is now *structurally* units-first after any reorder, not just displayed that
+way. Blessings never need to move for this to work; their relative order
+among themselves is preserved untouched.
+
+Reordering is real click-and-drag now, not Earlier/Later buttons (removed
+from `BoardCardView`/`CardPreview` along with `MoveInCompound`'s RPC). New
+`DragHandle.cs`: a light ghost card follows the pointer on a top-level "drag
+layer" (the same layer pips fly across) while the real card stays put and
+dims; on drop, the row's `BuildCardRow` computes the nearest unit cell by
+screen distance and fires `RequestReorderUnitRpc`. Only wired for the
+viewer's own row (`PlannedRow.IsOwnCompound`) and only for Unit-type cards.
+
+**Watch for this one**: `DragHandle` originally did
+`GetComponent<CanvasGroup>() ?? AddComponent<CanvasGroup>()` - the exact
+`?? AddComponent` bug this file already warns about, since Unity's fake-null
+defeats `??`. Caught by `DraggingAHandCardOntoTheBoardBuysIt` throwing
+`MissingComponentException`. Fixed with an explicit `== null` check. Flagged
+(via spawn_task, not fixed) two pre-existing occurrences of the same pattern
+in `BoardCardView.SetAffordable`/`SetDueToActivate` and
+`BoardUI.AddFixedWidthHeight`/`AddResponsiveWidth` - they happen to work today
+because something upstream already added the component first, but they are
+the same landmine waiting for a call order that doesn't hold.
+
+### Hand: hover, not a toggle button
+
+The "Hand (N) [show/hide]" button is gone. The hand row is always active now;
+it peeks a small sliver (`HandPeekHeight` = 30, cards rendered small rather
+than clipped) and expands to full size on `PointerEnter`, collapses on
+`PointerExit` (`EventTrigger` on `_handRow` -> `BoardUI.SetHandExpanded`). It
+also collapses on every phase change, so a hand left open while reading a
+card doesn't sit over the board for turns afterward with nobody hovering it.
+
+Playing a card from hand is drag-onto-the-battlefield now, not a Play button -
+only affordable cards get a `DragHandle` (that's the "illuminated" a player
+should look for; `SetAffordable` still does the visual tint). Drop is
+accepted if the pointer lands inside the battlefield viewport
+(`RectTransformUtility.RectangleContainsScreenPoint`). Recycle is still a
+button under the card - dragging only replaces Play.
+
+### Verification
+
+CompileCheck clean. RulesCheck: `CheckActivationOrder` rewritten for
+`ReorderUnit` instead of `MoveInCompound`, all checks pass. RulesCheck
+`--fuzz 1500`: 1500/1500 clean. PlayModeTests: 31 pass, including two new
+ones - `DraggingAHandCardOntoTheBoardBuysIt` and
+`DraggingAUnitInYourCompoundReordersIt` - that simulate real drags via
+`DragHandle.OnBeginDrag/OnDrag/OnEndDrag` with a constructed
+`PointerEventData`, and rewrote the ones that depended on the old panel
+(`FindVisibleResourceRow`/`FindVisibleDieFace` now read the HUD and the
+flattened stat-bar hierarchy; the resource-picking tests find the HUD circle
+by GameObject name, `"Red Slot"`, since it's labeled with a running count now
+instead of a letter; `ExpandHand` calls `SetHandExpanded` via reflection
+instead of clicking a button that no longer exists). SmokeTest:
+`AlphaSmokeTest.cs` updated for the new paths (`Popup Panel/Action Viewport`
+instead of `Middle Area/Action Panel/Action Viewport`; the hand-collapsed
+check now reads `_handExpanded` via reflection since the row is never
+inactive any more; `CheckBoardLayout` now measures the resource HUD column
+against the battlefield instead of the old side panel) - passes.
+
+### Left for the styling pass
+
+Explicitly out of scope this round per direction: colors, spacing, and polish
+throughout. The popup's size is a fixed 480x460 regardless of content - fine
+for a YesNo prompt, probably too big; fine for the card-choice/standings
+lists, sometimes tight enough to need its scrollbar. The hand's collapsed
+peek is a small uniform scale-down rather than a true clipped "just the tops
+poke out" effect.
+
 ## 2026-08-08 — Claude (timers off by default, and player-ordered activation)
 
 ### Timers

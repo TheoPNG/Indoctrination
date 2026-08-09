@@ -368,13 +368,13 @@ namespace Indoctrination.Net
         }
 
         /// <summary>
-        /// Moves one of your own cards earlier or later in your compound, which
-        /// is the order its units activate in.
+        /// Moves one of your own units to a new position among your other units,
+        /// which is the order they activate in.
         /// </summary>
         [Rpc(SendTo.Server)]
-        public void RequestMoveInCompoundRpc(int cardInstanceId, int direction, RpcParams rpcParams = default)
+        public void RequestReorderUnitRpc(int cardInstanceId, int newIndex, RpcParams rpcParams = default)
         {
-            Apply(rpcParams, playerId => _game.MoveInCompound(playerId, cardInstanceId, direction));
+            Apply(rpcParams, playerId => _game.ReorderUnit(playerId, cardInstanceId, newIndex));
         }
 
         [Rpc(SendTo.Server)]

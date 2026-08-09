@@ -8,6 +8,7 @@ using NUnit.Framework;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
 
@@ -267,8 +268,8 @@ namespace Indoctrination.Tests
 
             for (var i = 0; i < GameSettings.ResourcesPerTurn; i++)
             {
-                var button = FindButtonLabelled("R");
-                Assert.IsNotNull(button, $"pick {i + 1}: {WhyUnusable("R")}");
+                var button = FindButtonNamed("Red Slot");
+                Assert.IsNotNull(button, $"pick {i + 1}: {WhyButtonNamedUnusable("Red Slot")}");
                 Assert.IsTrue(button.interactable, "and it has to be clickable");
 
                 button.onClick.Invoke();
@@ -307,9 +308,9 @@ namespace Indoctrination.Tests
                             "and pay a resource for it");
         }
 
-        /// <summary>Buying a card from hand, by pressing the button on it.</summary>
+        /// <summary>Buying a card from hand, by dragging it onto the battlefield.</summary>
         [UnityTest]
-        public IEnumerator PressingPlayBuysACardIntoTheCompound()
+        public IEnumerator DraggingAHandCardOntoTheBoardBuysIt()
         {
             yield return StartGame();
             yield return AdvanceTo(TurnPhase.Buy);
@@ -329,14 +330,30 @@ namespace Indoctrination.Tests
             var compoundBefore = _manager.View.Viewer.compound.Length;
             var handBefore = _manager.View.Viewer.hand.Length;
 
-            var play = FindButtonLabelled("Play");
-            Assert.IsNotNull(play, WhyUnusable("Play"));
+            // Only an affordable card is draggable at all - that is the "lit up"
+            // a player is told to look for.
+            var handle = Object.FindObjectsByType<DragHandle>(FindObjectsSortMode.None)
+                .FirstOrDefault(h => h.GetComponent<BoardCardView>() != null
+                                     && h.GetComponentInParent<ScrollRect>()?.gameObject.name == "Hand Scroll");
+            Assert.IsNotNull(handle, "an affordable hand card should be draggable during Buy");
 
-            play.onClick.Invoke();
+            var battlefieldViewport = (RectTransform)typeof(BoardUI)
+                .GetField("_battlefieldViewport", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(_board);
+            Assert.IsNotNull(battlefieldViewport, "the board should track its own battlefield viewport");
+
+            var drop = new PointerEventData(EventSystem.current)
+            {
+                position = RectTransformUtility.WorldToScreenPoint(null, battlefieldViewport.position)
+            };
+
+            handle.OnBeginDrag(drop);
+            handle.OnDrag(drop);
+            handle.OnEndDrag(drop);
             yield return WaitForFrames(4);
 
             Assert.AreEqual(handBefore - 1, _manager.View.Viewer.hand.Length,
-                            "playing a card has to take it out of hand");
+                            "dragging a card onto the board has to take it out of hand");
             Assert.IsNull(_manager.LastError, $"and not be refused: {_manager.LastError}");
 
             // Rituals resolve and go to the discard; everything else stays in play.
@@ -422,35 +439,28 @@ namespace Indoctrination.Tests
             System.Text.RegularExpressions.Regex.Replace(text, "<.*?>", "");
 
         /// <summary>
-        /// The viewer's own resource pips, as a player would read them: the
-        /// colour's initial from its disc, then the count inside it.
+        /// The viewer's own resources, as a player would read them off the
+        /// permanent left-side HUD: the colour's initial from its slot, then
+        /// the count inside it.
         /// </summary>
         private string FindVisibleResourceRow()
         {
-            var bar = Object.FindObjectsByType<StatBar>(FindObjectsSortMode.None)
-                .FirstOrDefault(b => (b.GetComponentInChildren<Text>()?.text ?? "").Contains("(you)"));
-
-            if (bar == null)
-            {
-                return null;
-            }
-
-            var row = bar.transform.Find("Resources");
-            if (row == null)
+            var hud = Object.FindAnyObjectByType<ResourceHud>();
+            if (hud == null)
             {
                 return null;
             }
 
             var parts = new System.Collections.Generic.List<string>();
-            foreach (Transform pip in row)
+            foreach (Transform slot in hud.transform)
             {
-                var count = pip.GetComponentInChildren<Text>();
+                var count = slot.GetComponentInChildren<Text>();
                 if (count == null || !IsFullyVisibleThroughEveryMask(count))
                 {
                     return null;
                 }
 
-                parts.Add($"{pip.name[..1]} {count.text}");
+                parts.Add($"{slot.name[..1]} {count.text}");
             }
 
             return parts.Count == 0 ? null : string.Join("  ", parts);
@@ -548,8 +558,8 @@ namespace Indoctrination.Tests
 
             for (var i = 0; i < GameSettings.ResourcesPerTurn; i++)
             {
-                var disc = FindButtonLabelled("R");
-                Assert.IsNotNull(disc, $"pick {i + 1}: {WhyUnusable("R")}");
+                var disc = FindButtonNamed("Red Slot");
+                Assert.IsNotNull(disc, $"pick {i + 1}: {WhyButtonNamedUnusable("Red Slot")}");
                 disc.onClick.Invoke();
                 yield return WaitForFrames(3);
             }
@@ -595,6 +605,59 @@ namespace Indoctrination.Tests
 
             Assert.GreaterOrEqual(onScreen, expected,
                 $"only {onScreen} of {expected} compound cards are fully on screen");
+        }
+
+        /// <summary>
+        /// Dragging a unit in your own compound decides which of your units
+        /// fires first - the whole point of letting a player reorder them.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator DraggingAUnitInYourCompoundReordersIt()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Buy);
+
+            var units = CardDatabase.Instance.All.Where(c => c.Type == CardType.Unit).Take(2).ToList();
+            Assert.AreEqual(2, units.Count, "need at least two unit cards in the database to test reordering");
+
+            var game = ServerGame();
+            var first = new CardInstance(-9001, units[0]);
+            var second = new CardInstance(-9002, units[1]);
+            ApplyAsHost(_ =>
+            {
+                game.Players[0].Compound.Add(first);
+                game.Players[0].Compound.Add(second);
+            });
+            yield return WaitForFrames(3);
+            Canvas.ForceUpdateCanvases();
+
+            Assert.AreEqual(0,
+                _manager.View.Viewer.compound.ToList().FindIndex(c => c.instanceId == first.InstanceId),
+                "the first unit should start at the front");
+
+            // Drag the second unit onto the first one's cell to move it ahead.
+            var secondHandle = Object.FindObjectsByType<DragHandle>(FindObjectsSortMode.None)
+                .FirstOrDefault(h => h.GetComponent<BoardCardView>()?.Card?.instanceId == second.InstanceId);
+            Assert.IsNotNull(secondHandle, "the second unit in your own compound should be draggable");
+
+            var firstCardView = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None)
+                .First(c => c.Card?.instanceId == first.InstanceId);
+
+            var drop = new PointerEventData(EventSystem.current)
+            {
+                position = RectTransformUtility.WorldToScreenPoint(null, firstCardView.transform.position)
+            };
+
+            secondHandle.OnBeginDrag(drop);
+            secondHandle.OnDrag(drop);
+            secondHandle.OnEndDrag(drop);
+            yield return WaitForFrames(4);
+
+            var order = _manager.View.Viewer.compound.ToList();
+            Assert.Less(
+                order.FindIndex(c => c.instanceId == second.InstanceId),
+                order.FindIndex(c => c.instanceId == first.InstanceId),
+                "dragging the second unit onto the first should move it ahead in activation order");
         }
 
         /// <summary>
@@ -754,7 +817,7 @@ namespace Indoctrination.Tests
             var bar = Object.FindObjectsByType<StatBar>(FindObjectsSortMode.None)
                 .FirstOrDefault(b => (b.GetComponentInChildren<Text>()?.text ?? "").Contains("(you)"));
 
-            var box = bar == null ? null : bar.transform.Find("Name Row/Die");
+            var box = bar == null ? null : bar.transform.Find("Die");
             if (box == null || !box.gameObject.activeInHierarchy)
             {
                 return null;
@@ -917,15 +980,15 @@ namespace Indoctrination.Tests
             player.red + player.green + player.blue + player.yellow;
 
         /// <summary>Opens the hand tray if it is collapsed, the way its button does.</summary>
+        /// <summary>
+        /// The hand is hover-based now rather than a button, so a test expands
+        /// it the same way BoardUI's own hover handler does - by flipping the
+        /// state it drives from, not by simulating a pointer crossing the strip.
+        /// </summary>
         private IEnumerator ExpandHand()
         {
-            var toggle = Object.FindObjectsByType<Button>(FindObjectsSortMode.None)
-                .FirstOrDefault(b => (b.GetComponentInChildren<Text>()?.text ?? "").StartsWith("Hand ("));
-
-            if (toggle != null && (toggle.GetComponentInChildren<Text>()?.text ?? "").Contains("[show]"))
-            {
-                toggle.onClick.Invoke();
-            }
+            var method = typeof(BoardUI).GetMethod("SetHandExpanded", BindingFlags.NonPublic | BindingFlags.Instance);
+            method.Invoke(_board, new object[] { true });
 
             yield return WaitForFrames(3);
             Canvas.ForceUpdateCanvases();
@@ -1049,6 +1112,43 @@ namespace Indoctrination.Tests
 
         private static string LabelOf(Button button) =>
             button.GetComponentInChildren<Text>(includeInactive: true)?.text ?? "";
+
+        /// <summary>
+        /// The same lookup as <see cref="FindButtonLabelled"/>, but by the
+        /// GameObject's own name rather than its visible text - for a button
+        /// like a resource HUD circle, whose label is a running count rather
+        /// than a fixed word.
+        /// </summary>
+        private static Button FindButtonNamed(string gameObjectName)
+        {
+            return Object.FindObjectsByType<Button>(FindObjectsSortMode.None)
+                .FirstOrDefault(button => button.gameObject.name == gameObjectName
+                                          && button.interactable
+                                          && button.targetGraphic is Graphic graphic
+                                          && IsFullyVisibleThroughEveryMask(graphic));
+        }
+
+        private static string WhyButtonNamedUnusable(string gameObjectName)
+        {
+            var anywhere = Object.FindObjectsByType<Button>(FindObjectsSortMode.None)
+                .FirstOrDefault(button => button.gameObject.name == gameObjectName);
+
+            if (anywhere == null)
+            {
+                return $"no '{gameObjectName}' button was built at all";
+            }
+
+            if (!anywhere.interactable)
+            {
+                return $"'{gameObjectName}' exists but is not interactable";
+            }
+
+            var rect = WorldRect((RectTransform)anywhere.transform);
+            var masks = string.Join(" ", anywhere.GetComponentsInParent<RectMask2D>()
+                .Select(m => $"{m.name}{WorldRect(m.rectTransform)}"));
+
+            return $"'{gameObjectName}' exists at {rect} but is clipped away by a scroll viewport. Masks: {masks}";
+        }
 
         /// <summary>Explains why a control the test needed was not usable.</summary>
         private static string WhyUnusable(string label)

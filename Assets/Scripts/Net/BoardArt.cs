@@ -22,10 +22,10 @@ namespace Indoctrination.Net
 
         public static Color ColorOf(ResourceColor color) => color switch
         {
-            ResourceColor.Red => new Color(0.88f, 0.35f, 0.35f),
-            ResourceColor.Green => new Color(0.31f, 0.69f, 0.35f),
-            ResourceColor.Blue => new Color(0.33f, 0.53f, 0.88f),
-            ResourceColor.Yellow => new Color(0.90f, 0.74f, 0.28f),
+            ResourceColor.Red => new Color(0.72f, 0.20f, 0.25f),
+            ResourceColor.Green => new Color(0.29f, 0.57f, 0.34f),
+            ResourceColor.Blue => new Color(0.34f, 0.43f, 0.74f),
+            ResourceColor.Yellow => new Color(0.79f, 0.59f, 0.20f),
             _ => Color.white
         };
 
@@ -53,11 +53,10 @@ namespace Indoctrination.Net
         private static Sprite _backdrop;
 
         /// <summary>
-        /// A soft vertical gradient, laid behind the whole board. Flat colour
-        /// makes every panel read as a separate box; a gradient gives them all
-        /// one surface to sit on.
+        /// A dark ritual-cloth field with a vignette and faint geometric seal.
+        /// It gives the board one mystical surface without requiring imported art.
         /// </summary>
-        public static Sprite Backdrop => _backdrop ??= BuildGradientSprite(4, 128);
+        public static Sprite Backdrop => _backdrop ??= BuildGradientSprite(512, 256);
 
         private static Sprite BuildGradientSprite(int width, int height)
         {
@@ -71,14 +70,37 @@ namespace Indoctrination.Net
 
             for (var y = 0; y < height; y++)
             {
-                // Darker at the edges than the middle, which draws the eye to the
-                // table rather than to the corners of the window.
-                var distance = Mathf.Abs((y / (float)(height - 1)) - 0.5f) * 2f;
-                var shade = Mathf.Lerp(1f, 0.55f, distance * distance);
-                var colour = new Color(0.09f * shade, 0.15f * shade, 0.11f * shade, 1f);
-
                 for (var x = 0; x < width; x++)
                 {
+                    var uv = new Vector2(x / (float)(width - 1), y / (float)(height - 1));
+                    var centred = (uv - new Vector2(0.5f, 0.5f)) * 2f;
+                    centred.x *= width / (float)height;
+
+                    var distance = Mathf.Clamp01(centred.magnitude / 1.75f);
+                    var halo = Mathf.Pow(1f - distance, 1.8f);
+                    var grain = (Mathf.PerlinNoise(x * 0.045f, y * 0.045f) - 0.5f) * 0.035f;
+                    var colour = Color.Lerp(UITheme.RitualBlack, UITheme.DeepPlum, 0.32f + (halo * 0.42f) + grain);
+
+                    // A seal hidden in the cloth: two rings, an inverted triangle,
+                    // and a central axis. Close enough to feel engraved, quiet
+                    // enough that cards and controls remain the focal point.
+                    var radius = centred.magnitude;
+                    var rings = Mathf.Max(
+                        ThinLine(Mathf.Abs(radius - 0.44f), 0.009f),
+                        ThinLine(Mathf.Abs(radius - 0.31f), 0.006f));
+
+                    var top = new Vector2(0f, 0.32f);
+                    var left = new Vector2(-0.28f, -0.20f);
+                    var right = new Vector2(0.28f, -0.20f);
+                    var triangle = Mathf.Max(
+                        ThinLine(DistanceToSegment(centred, top, left), 0.006f),
+                        Mathf.Max(
+                            ThinLine(DistanceToSegment(centred, left, right), 0.006f),
+                            ThinLine(DistanceToSegment(centred, right, top), 0.006f)));
+                    var axis = Mathf.Abs(centred.x) < 0.0045f && Mathf.Abs(centred.y) < 0.43f ? 1f : 0f;
+                    var seal = Mathf.Max(rings, Mathf.Max(triangle, axis)) * (1f - (distance * 0.35f));
+                    colour = Color.Lerp(colour, UITheme.RitualGold, seal * 0.085f);
+
                     pixels[(y * width) + x] = colour;
                 }
             }
@@ -87,6 +109,22 @@ namespace Indoctrination.Net
             texture.Apply();
 
             return Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f));
+        }
+
+        private static float ThinLine(float distance, float width) =>
+            1f - Mathf.SmoothStep(width * 0.35f, width, distance);
+
+        private static float DistanceToSegment(Vector2 point, Vector2 start, Vector2 end)
+        {
+            var segment = end - start;
+            var lengthSquared = segment.sqrMagnitude;
+            if (lengthSquared <= Mathf.Epsilon)
+            {
+                return Vector2.Distance(point, start);
+            }
+
+            var t = Mathf.Clamp01(Vector2.Dot(point - start, segment) / lengthSquared);
+            return Vector2.Distance(point, start + (segment * t));
         }
 
         private static Sprite _solid;
