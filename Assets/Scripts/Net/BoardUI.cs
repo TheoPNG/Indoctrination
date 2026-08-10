@@ -32,9 +32,6 @@ namespace Indoctrination.Net
 
         private const float DockTopHeight = StatBar.BarHeight + 4f;
 
-        /// <summary>Height of the Recycle row under a card in hand.</summary>
-        private const float HandCardButtonHeight = 28f;
-
         /// <summary>Smallest a card may shrink to and still be recognisable.</summary>
         private const float MinCardWidth = 72f;
 
@@ -66,10 +63,25 @@ namespace Indoctrination.Net
         /// reaches the popup floating above it, and so it can never swallow the
         /// whole board on a short window.
         /// </summary>
-        private const float MaxHandHeight = 260f;
+        private const float MaxHandHeight = 318f;
 
         private const float PopupWidth = 460f;
         private const float PopupHeight = 400f;
+
+        // Rolling only needs one button. Its frame fits that control instead of
+        // borrowing the full question window used by card choices.
+        private const float RollingPopupWidth = 300f;
+        private const float RollingPopupHeight = 94f;
+        private const float RollButtonWidth = 260f;
+        private const float RollButtonHeight = 54f;
+        private const float RecycleBinWidth = 78f;
+        private const float RecycleBinHeight = 96f;
+        private const float HandFanOverlap = 0.72f;
+        private const float HandFanMaxAngle = 9f;
+        private const float HandFanCenterLift = 18f;
+        private const float HandFanPadding = 12f;
+        private const float DraftDropZoneHeight = 112f;
+        private const float DraftDropZoneMaxWidth = 620f;
 
         /// <summary>
         /// How far above centre the popup sits. It clears the hand at full
@@ -98,6 +110,7 @@ namespace Indoctrination.Net
         private RectTransform _topBar;
         private RectTransform _battlefield;
         private RectTransform _battlefieldViewport;
+        private string _battlefieldSignature;
         private ResourceHud _resourceHud;
 
         /// <summary>
@@ -120,10 +133,15 @@ namespace Indoctrination.Net
         /// in the layout, so hovering it open never moves the board.
         /// </summary>
         private RectTransform _handRow;
+        private RectTransform _handDropZone;
+        private Image _handDropArc;
+        private Text _handDropLabel;
+        private RectTransform _recycleBin;
         private LayoutElement _dockPin;
         private Text _handCountLabel;
         private RectTransform _dragLayer;
         private StatBar _viewerStatBar;
+        private ActivationStage _activationStage;
 
         // ---------------------------------------------------------------- State
         private NetworkGameManager _subscribedManager;
@@ -132,12 +150,6 @@ namespace Indoctrination.Net
         private float _choiceSecondsLeft;
         private bool _handExpanded;
         private string _renderedPhase;
-
-        /// <summary>Die faces showing this turn, for lighting up the units they wake.</summary>
-        private readonly HashSet<int> _rolledThisTurn = new();
-
-        /// <summary>Set for the one refresh that enters the Activation phase.</summary>
-        private bool _pulseActivationsThisRefresh;
 
         /// <summary>Set when a card that deals damage fired, which is what earns a shake.</summary>
         private bool _somethingHitThisRefresh;
@@ -219,6 +231,7 @@ namespace Indoctrination.Net
             // Built last so they sit above the board they cover.
             _phaseBanner = PhaseBanner.CreateOn(canvas.transform);
             CardPreview.CreateOn(canvas.transform);
+            _activationStage = ActivationStage.CreateOn(canvas.transform);
 
             ShowOnly(_connectPanel);
         }
@@ -766,15 +779,79 @@ namespace Indoctrination.Net
             // which rebuilt every card on it - so opening your hand made the
             // whole screen jump. Anchored to the bottom, expanding changes
             // nothing but the hand itself.
-            _handRow = UIFactory.Panel("Hand Row", root, new Color(
-                UITheme.Void.r, UITheme.Void.g, UITheme.Void.b, 0.90f));
-            UITheme.Frame(_handRow.GetComponent<Image>(), 1f, UITheme.Border);
+            // A clipped ellipse behind it supplies the one visible affordance:
+            // the upper semicircle that catches a drafted card. The actual hand
+            // remains the larger transparent hit surface in front of it.
+            _handDropZone = UIFactory.Panel("Hand Drop Zone", root, Color.clear);
+            _handDropZone.anchorMin = _handDropZone.anchorMax = new Vector2(0.5f, 0f);
+            _handDropZone.pivot = new Vector2(0.5f, 0f);
+            _handDropZone.anchoredPosition = new Vector2(0f, DockTopHeight + BoardSafeInset);
+            UIFactory.SetSize(_handDropZone, DraftDropZoneMaxWidth, DraftDropZoneHeight);
+            _handDropZone.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
+            _handDropZone.gameObject.AddComponent<RectMask2D>();
+            _handDropZone.GetComponent<Image>().raycastTarget = false;
+
+            var dropArc = UIFactory.Panel(
+                "Drop Arc", _handDropZone,
+                new Color(UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.20f));
+            dropArc.anchorMin = dropArc.anchorMax = new Vector2(0.5f, 0f);
+            dropArc.pivot = new Vector2(0.5f, 0.5f);
+            dropArc.anchoredPosition = Vector2.zero;
+            UIFactory.SetSize(dropArc, DraftDropZoneMaxWidth - 8f, DraftDropZoneHeight * 2f);
+            _handDropArc = dropArc.GetComponent<Image>();
+            _handDropArc.sprite = BoardArt.Disc;
+            _handDropArc.raycastTarget = false;
+            UITheme.Frame(_handDropArc, 2f, UITheme.SignalSoft);
+
+            _handDropLabel = UIFactory.Label(
+                "Drop Label", _handDropZone, "DROP TO DRAFT", 13,
+                TextAnchor.MiddleCenter, UITheme.BoneDim);
+            _handDropLabel.fontStyle = FontStyle.Bold;
+            _handDropLabel.raycastTarget = false;
+            _handDropLabel.rectTransform.anchorMin = new Vector2(0f, 0.10f);
+            _handDropLabel.rectTransform.anchorMax = new Vector2(1f, 0.52f);
+            _handDropLabel.rectTransform.offsetMin = new Vector2(14f, 0f);
+            _handDropLabel.rectTransform.offsetMax = new Vector2(-14f, 0f);
+            _handDropZone.gameObject.SetActive(false);
+
+            _handRow = UIFactory.Panel("Hand Row", root, Color.clear);
             _handRow.anchorMin = new Vector2(0f, 0f);
             _handRow.anchorMax = new Vector2(1f, 0f);
             _handRow.pivot = new Vector2(0.5f, 0f);
             _handRow.anchoredPosition = new Vector2(0f, DockTopHeight + BoardSafeInset);
             _handRow.sizeDelta = new Vector2(-(BoardSafeInset * 2f), HandPeekHeight);
             _handRow.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
+
+            // Recycling is a place, not a button repeated under every card. It
+            // sits above the right edge of the open hand during Buy and receives
+            // the same drag ghost used to play a card onto the battlefield.
+            _recycleBin = UIFactory.Panel(
+                "Recycle Bin", root, new Color(0.145f, 0.118f, 0.094f, 0.97f));
+            UITheme.Frame(_recycleBin.GetComponent<Image>(), 1.5f, UITheme.SignalSoft);
+            _recycleBin.anchorMin = _recycleBin.anchorMax = new Vector2(1f, 0f);
+            _recycleBin.pivot = new Vector2(1f, 0.5f);
+            _recycleBin.anchoredPosition = new Vector2(
+                -BoardSafeInset, DockTopHeight + BoardSafeInset + (MaxHandHeight / 2f));
+            UIFactory.SetSize(_recycleBin, RecycleBinWidth, RecycleBinHeight);
+            _recycleBin.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
+
+            var recycleIcon = UIFactory.Label(
+                "Recycle Icon", _recycleBin, "↻", 34, TextAnchor.MiddleCenter, UITheme.Signal);
+            recycleIcon.fontStyle = FontStyle.Bold;
+            recycleIcon.rectTransform.anchorMin = new Vector2(0f, 0.42f);
+            recycleIcon.rectTransform.anchorMax = Vector2.one;
+            recycleIcon.rectTransform.offsetMin = Vector2.zero;
+            recycleIcon.rectTransform.offsetMax = Vector2.zero;
+
+            var recycleLabel = UIFactory.Label(
+                "Recycle Label", _recycleBin, "RECYCLE\nDROP CARD", 10,
+                TextAnchor.MiddleCenter, UITheme.BoneDim);
+            recycleLabel.fontStyle = FontStyle.Bold;
+            recycleLabel.rectTransform.anchorMin = Vector2.zero;
+            recycleLabel.rectTransform.anchorMax = new Vector2(1f, 0.46f);
+            recycleLabel.rectTransform.offsetMin = new Vector2(4f, 4f);
+            recycleLabel.rectTransform.offsetMax = new Vector2(-4f, 0f);
+            _recycleBin.gameObject.SetActive(false);
 
             return root;
         }
@@ -936,23 +1013,7 @@ namespace Indoctrination.Net
 
             _statusText.text = StatusLine(view);
 
-            // Entering Activation is the moment the board should react: the dice
-            // are settled and the units they woke are about to resolve.
-            var enteringActivation = view.phase == nameof(TurnPhase.Activation)
-                                     && previousPhase != nameof(TurnPhase.Activation);
-
-            _pulseActivationsThisRefresh = enteringActivation;
             _somethingHitThisRefresh = false;
-
-            if (enteringActivation)
-            {
-                _rolledThisTurn.Clear();
-                foreach (var player in view.players.Where(p => p.isAlive && p.primaryDie > 0))
-                {
-                    _rolledThisTurn.Add(player.primaryDie);
-                }
-
-            }
 
             RefreshTopBar(view);
             RefreshResourceHud(manager, view);
@@ -974,6 +1035,7 @@ namespace Indoctrination.Net
             _actionPanel.anchoredPosition = new Vector2(_actionPanel.anchoredPosition.x, 0f);
             _actionScroll.verticalNormalizedPosition = 1f;
             RefreshHand(view);
+            _activationStage.Present(view, parent => BuildActivationChoice(parent, manager, view));
         }
 
         /// <summary>One line saying what this phase wants, for the banner.</summary>
@@ -1143,6 +1205,14 @@ namespace Indoctrination.Net
         /// </summary>
         private void RefreshBattlefield(NetworkGameManager manager, GameView view)
         {
+            var signature = BattlefieldSignature(view);
+            if (signature == _battlefieldSignature)
+            {
+                RefreshBattlefieldCardState(manager, view);
+                return;
+            }
+
+            _battlefieldSignature = signature;
             UIFactory.DestroyChildren(_battlefield);
 
             var rows = new List<PlannedRow>();
@@ -1179,10 +1249,20 @@ namespace Indoctrination.Net
                     {
                         Label = $"Draft Zone ({view.draftZone.Length})",
                         Cards = view.draftZone,
-                        IsClickable = card => isMyPick && IsDraftable(view, card),
-                        OnClick = card => manager.RequestDraftRpc(card.instanceId),
+                        IsDraggable = card => isMyPick && IsDraftable(view, card),
+                        OnDragMoved = eventData => SetHandDropZoneHot(
+                            RectTransformUtility.RectangleContainsScreenPoint(
+                                _handRow, eventData.position, eventData.pressEventCamera)),
+                        OnDragFinished = () => SetHandDropZoneHot(false),
+                        OnDropped = (card, eventData) =>
+                        {
+                            if (RectTransformUtility.RectangleContainsScreenPoint(
+                                    _handRow, eventData.position, eventData.pressEventCamera))
+                            {
+                                manager.RequestDraftRpc(card.instanceId);
+                            }
+                        },
                         TagFor = card => DraftMarkTag(view, card),
-                        ActionLabel = "Draft this card"
                     });
             }
 
@@ -1223,6 +1303,61 @@ namespace Indoctrination.Net
             }
         }
 
+        /// <summary>
+        /// Everything that changes the table's card hierarchy. Dice and ready
+        /// flags are deliberately absent: they decorate the existing table and
+        /// must not destroy and deal every card again when a player rolls.
+        /// </summary>
+        private string BattlefieldSignature(GameView view)
+        {
+            static string Cards(IEnumerable<CardView> cards) => string.Join(",",
+                cards.Select(card => $"{card.instanceId}:{card.definitionId}"));
+
+            var players = string.Join("|", view.players.Select(player =>
+                $"{player.playerId}:{player.name}:{player.isAlive}:{Cards(player.compound)}"));
+            var marks = string.Join(",", view.draftMarks.Select(mark =>
+                $"{mark.marker}:{mark.cardInstanceId}:{mark.playerId}"));
+            var choice = view.hasPendingChoice
+                ? $"{view.pendingChoice.kind}:{view.pendingChoice.prompt}:"
+                  + $"{view.pendingChoice.askedOfPlayerId}:"
+                  + string.Join(",", view.pendingChoice.cardOptions)
+                : "none";
+
+            return $"{view.phase}|{view.viewerPlayerId}|{view.currentDrafterId}|"
+                   + $"{_discardOpen}|{players}|{Cards(view.draftZone)}|"
+                   + $"{Cards(view.discardPile)}|{marks}|{choice}";
+        }
+
+        /// <summary>
+        /// Updates roll-dependent outlines and card mini-menus in place. The
+        /// hierarchy stays alive, so its entrance fades do not restart.
+        /// </summary>
+        private void RefreshBattlefieldCardState(NetworkGameManager manager, GameView view)
+        {
+            var ownCards = view.Viewer?.compound.ToDictionary(card => card.instanceId)
+                           ?? new Dictionary<int, CardView>();
+            var allCards = view.players.SelectMany(player => player.compound)
+                .ToDictionary(card => card.instanceId);
+
+            foreach (var cardView in _battlefield.GetComponentsInChildren<BoardCardView>())
+            {
+                MarkIfDueToActivate(cardView, view);
+                if (cardView.Card != null
+                    && allCards.TryGetValue(cardView.Card.instanceId, out var currentCard))
+                {
+                    cardView.UpdateCounters(currentCard);
+                }
+
+                if (manager != null
+                    && cardView.Card != null
+                    && ownCards.TryGetValue(cardView.Card.instanceId, out var ownCard))
+                {
+                    cardView.SetExtraContent(null);
+                    WireCompoundCardExtras(cardView, ownCard, manager, view);
+                }
+            }
+        }
+
         /// <summary>One row of the board, planned before anything is built.</summary>
         private class PlannedRow
         {
@@ -1230,6 +1365,10 @@ namespace Indoctrination.Net
             public CardView[] Cards;
             public Func<CardView, bool> IsClickable;
             public Action<CardView> OnClick;
+            public Func<CardView, bool> IsDraggable;
+            public Action<PointerEventData> OnDragMoved;
+            public Action OnDragFinished;
+            public Action<CardView, PointerEventData> OnDropped;
             public Func<CardView, string> TagFor;
             public string ActionLabel;
 
@@ -1379,7 +1518,21 @@ namespace Indoctrination.Net
                 cardView.ScaleTo(cardWidth);
 
                 MarkIfDueToActivate(cardView, view);
-                RegisterForActivationPulse(cardView);
+
+                var draggable = plan.IsDraggable != null && plan.IsDraggable(card);
+                if (draggable && plan.OnDropped != null)
+                {
+                    var ghostCard = card;
+                    var ghostTag = tag;
+                    var ghostWidth = cardWidth;
+                    var handle = cardView.gameObject.AddComponent<DragHandle>();
+                    handle.DragLayer = _dragLayer;
+                    handle.GhostFactory = () => DragHandle.CardGhost(
+                        ghostCard, ghostTag, ghostWidth);
+                    handle.OnDragMoved = plan.OnDragMoved;
+                    handle.OnDragFinished = plan.OnDragFinished;
+                    handle.OnDropped = eventData => plan.OnDropped(ghostCard, eventData);
+                }
 
                 var isUnit = DefinitionOf(card)?.Type == CardType.Unit;
 
@@ -1449,49 +1602,39 @@ namespace Indoctrination.Net
         /// </summary>
         private void MarkIfDueToActivate(BoardCardView card, GameView view)
         {
+            if (view.phase == nameof(TurnPhase.Activation))
+            {
+                var stillQueued = card.Card != null && view.activations
+                    .Skip(Mathf.Clamp(view.activationCompletedCount, 0, view.activations.Length))
+                    .Any(activation => activation.cardInstanceId == card.Card.instanceId
+                                       && !activation.skipped);
+                card.SetActivationState(presenting: true, queued: stillQueued);
+                return;
+            }
+
+            card.ClearDueToActivate();
+
+            // Before the dice land there is nothing to promise, so every card
+            // sits at rest.
             if (view.phase != nameof(TurnPhase.Rolling) || !view.diceRolled || card.Definition == null)
             {
+                card.SetActivationState(presenting: false, queued: false);
                 return;
             }
 
-            var faces = view.players.Where(p => p.isAlive && p.primaryDie > 0).Select(p => p.primaryDie).ToHashSet();
+            // The moment the dice are down, the board sorts itself into what is
+            // about to fire and what is not: the woken units light white, and
+            // everything else falls away. Deliberately the same treatment the
+            // Activation phase then uses, so the roll and the sequence that
+            // follows it read as one continuous statement rather than two
+            // different highlights meaning the same thing.
+            var faces = view.players.Where(p => p.isAlive && p.primaryDie > 0)
+                .Select(p => p.primaryDie).ToHashSet();
 
-            if (card.Definition.Type == CardType.Unit && card.Definition.ActivationNumbers.Any(faces.Contains))
-            {
-                card.SetDueToActivate(BoardArt.ColorOfCategory(
-                    CardEffects.CategoryFor(card.Definition.Id, card.Definition.ActivationNumbers.First(faces.Contains))));
-            }
-        }
+            var willActivate = card.Definition.Type == CardType.Unit
+                               && card.Definition.ActivationNumbers.Any(faces.Contains);
 
-        /// <summary>
-        /// Lights up a card if the dice just woke it. Only during Activation, and
-        /// only once per entry into that phase, so the board reacts to the roll
-        /// rather than flashing on every incidental refresh.
-        /// </summary>
-        private void RegisterForActivationPulse(BoardCardView card)
-        {
-            if (!_pulseActivationsThisRefresh || card.Definition == null)
-            {
-                return;
-            }
-
-            if (card.Definition.Type != CardType.Unit
-                || !card.Definition.ActivationNumbers.Any(_rolledThisTurn.Contains))
-            {
-                return;
-            }
-
-            var face = card.Definition.ActivationNumbers.First(_rolledThisTurn.Contains);
-            var category = CardEffects.CategoryFor(card.Definition.Id, face);
-
-            BoardEffects.Instance.PulseCard(
-                (RectTransform)card.transform, BoardArt.ColorOfCategory(category));
-
-            // Only a blow actually landing is worth shaking the board for.
-            if (category == ActivationCategory.Damage)
-            {
-                _somethingHitThisRefresh = true;
-            }
+            card.SetActivationState(presenting: true, queued: willActivate);
         }
 
         private static bool IsDraftable(GameView view, CardView card)
@@ -1552,7 +1695,17 @@ namespace Indoctrination.Net
         {
             var you = view.Viewer;
             var count = you?.hand.Length ?? 0;
+            var canDraftToHand = you is { isAlive: true }
+                                 && view.phase == nameof(TurnPhase.Draft)
+                                 && view.currentDrafterId == view.viewerPlayerId
+                                 && !view.hasPendingChoice;
+            RefreshHandDropZone(canDraftToHand);
             _handCountLabel.text = you == null ? "" : $"Hand: {count}";
+            var canHandleCards = you is { isAlive: true }
+                                 && _handExpanded
+                                 && view.phase == nameof(TurnPhase.Buy)
+                                 && !view.hasPendingChoice;
+            _recycleBin.gameObject.SetActive(canHandleCards && count > 0);
 
             _viewerStatBar.gameObject.SetActive(you != null);
             if (you != null)
@@ -1575,10 +1728,26 @@ namespace Indoctrination.Net
 
             UIFactory.DestroyChildren(_handRow);
 
-            if (you == null || count == 0)
+            if (you == null)
             {
                 SetHandHeight(0f);
                 _handRow.gameObject.SetActive(false);
+                return;
+            }
+
+            if (count == 0)
+            {
+                if (view.phase == nameof(TurnPhase.Draft) && !view.isGameOver)
+                {
+                    SetHandHeight(canDraftToHand ? DraftDropZoneHeight : HandPeekHeight);
+                    _handRow.gameObject.SetActive(true);
+                }
+                else
+                {
+                    SetHandHeight(0f);
+                    _handRow.gameObject.SetActive(false);
+                }
+
                 return;
             }
 
@@ -1586,89 +1755,61 @@ namespace Indoctrination.Net
 
             // Never hidden outright - it peeks until the pointer finds it, then
             // opens to its full playable size. Only the expanded state offers
-            // buttons or dragging; a card peeking above the fold is there to be
+            // dragging; a card peeking above the fold is there to be
             // recognised, not acted on by accident.
             if (!_handExpanded)
             {
-                BuildHandPeek(you);
+                BuildHandPeek(you, canDraftToHand);
                 return;
             }
 
-            var canBuy = view.phase == nameof(TurnPhase.Buy) && !view.hasPendingChoice;
+            var canBuy = canHandleCards;
 
-            // Sized so a full hand fits across without scrolling. The hand limit
-            // is what makes that possible: seven is the widest it can ever be.
-            var across = Mathf.Max(240f, _gameRoot.rect.width - 40f);
-            var widthAllows = (across - ((GameSettings.HandLimit - 1) * CardGap) - 24f)
-                              / GameSettings.HandLimit;
-
-            var chrome = (UIFactory.ScrollContentPadding * 2f) + 6f
-                         + (canBuy ? HandCardButtonHeight + 4f : 0f);
-
-            // The tray floats over the board now, so its height is capped
-            // outright rather than negotiated against the layout - it takes what
-            // it needs and no more, and the board underneath never moves.
-            var heightAllows = (MaxHandHeight - chrome)
-                               * (BoardCardView.Width / BoardCardView.Height);
+            // Overlap makes room for a larger, held-card silhouette. The span is
+            // measured from the actual hand count rather than the maximum seven,
+            // so a small hand does not shrink merely because it could grow later.
+            var available = Mathf.Max(
+                240f, _gameRoot.rect.width - (canBuy ? RecycleBinWidth + 64f : 40f));
+            var angle = HandFanMaxAngle * Mathf.Deg2Rad;
+            var aspect = BoardCardView.Height / BoardCardView.Width;
+            var rotatedWidthUnits = Mathf.Cos(angle) + (aspect * Mathf.Sin(angle));
+            var rotatedHeightUnits = (aspect * Mathf.Cos(angle)) + Mathf.Sin(angle);
+            var spanUnits = rotatedWidthUnits + (HandFanOverlap * Mathf.Max(0, count - 1));
+            var widthAllows = available / spanUnits;
+            var heightAllows = (MaxHandHeight - HandFanCenterLift - (HandFanPadding * 2f))
+                               / rotatedHeightUnits;
 
             var handCardWidth = Mathf.Clamp(
                 Mathf.Min(widthAllows, heightAllows), MinCardWidth, BoardCardView.Width);
 
             var handCardHeight = handCardWidth * (BoardCardView.Height / BoardCardView.Width);
-            var handStripHeight = handCardHeight + chrome;
+            var rotatedHeight = handCardWidth * rotatedHeightUnits;
+            var handStripHeight = Mathf.Min(
+                MaxHandHeight, rotatedHeight + HandFanCenterLift + (HandFanPadding * 2f));
+            var fanCenterX = canBuy ? -((RecycleBinWidth + 24f) / 2f) : 0f;
 
             SetHandHeight(handStripHeight);
-
-            var content = UIFactory.HorizontalScroll("Hand Scroll", _handRow, handStripHeight);
-            UIFactory.Stretch(UIFactory.Child(_handRow, "Hand Scroll"));
 
             // A card preview or a Ritual covers the whole board, so it reclaims
             // the top after anything else has been added to the canvas.
             CardPreview.BringToFront();
 
-            foreach (var card in you.hand)
+            var fanSlots = new List<(RectTransform Slot, float DistanceFromCenter)>();
+            for (var index = 0; index < count; index++)
             {
-                if (!canBuy)
-                {
-                    var idleSlot = UIFactory.Group("Card Slot", content);
-                    UIFactory.SetSize(idleSlot, handCardWidth, handCardHeight);
-                    var idlePin = idleSlot.gameObject.AddComponent<LayoutElement>();
-                    idlePin.minWidth = idlePin.preferredWidth = handCardWidth;
-                    idlePin.minHeight = idlePin.preferredHeight = handCardHeight;
-
-                    var idle = BoardCardView.Create(idleSlot);
-                    var idleRect = (RectTransform)idle.transform;
-                    idleRect.anchorMin = idleRect.anchorMax = new Vector2(0.5f, 0.5f);
-                    idleRect.pivot = new Vector2(0.5f, 0.5f);
-
-                    idle.Populate(card, null, null);
-                    idle.ScaleTo(handCardWidth);
-                    continue;
-                }
-
-                var wrapper = UIFactory.Group("Hand Card", content);
-                var wrapperLayout = UIFactory.VerticalLayout(wrapper, 4, new RectOffset(0, 0, 0, 0), controlHeight: true);
-                wrapperLayout.childAlignment = TextAnchor.UpperLeft;
-
-                // The strip positions its children without resizing them, so the
-                // wrapper's own rect has to be the right size up front - exactly
-                // as BoardCardView sizes itself. A LayoutElement alone is ignored
-                // here, which left the buttons laid out below the strip that
-                // clips them: present, but permanently out of the player's reach.
-                UIFactory.SetSize(wrapper, handCardWidth, handCardHeight + 4f + HandCardButtonHeight);
-                wrapperLayout.childControlHeight = false;
-
-                var wrapperPin = wrapper.gameObject.AddComponent<LayoutElement>();
-                wrapperPin.preferredWidth = handCardWidth;
-                wrapperPin.minWidth = handCardWidth;
-                wrapperPin.preferredHeight = handCardHeight + 4f + HandCardButtonHeight;
-                wrapperPin.minHeight = handCardHeight + 4f + HandCardButtonHeight;
-
-                // ScaleTo shrinks the card visually, but its LayoutElement still
-                // reports the full 250 to any layout that asks. The card therefore
-                // gets a slot the size it will actually occupy, and sits inside it.
-                var slot = UIFactory.Group("Card Slot", wrapper);
+                var card = you.hand[index];
+                var normalized = count == 1 ? 0f : ((index / (count - 1f)) * 2f) - 1f;
+                var slot = UIFactory.Group("Card Slot", _handRow);
                 UIFactory.SetSize(slot, handCardWidth, handCardHeight);
+                slot.anchorMin = slot.anchorMax = new Vector2(0.5f, 0f);
+                slot.pivot = new Vector2(0.5f, 0.5f);
+                slot.anchoredPosition = new Vector2(
+                    fanCenterX
+                    + ((index - ((count - 1f) / 2f)) * handCardWidth * HandFanOverlap),
+                    HandFanPadding + (rotatedHeight / 2f)
+                    + ((1f - Mathf.Abs(normalized)) * HandFanCenterLift));
+                slot.localEulerAngles = new Vector3(0f, 0f, -normalized * HandFanMaxAngle);
+                fanSlots.Add((slot, Mathf.Abs(normalized)));
 
                 var handCard = BoardCardView.Create(slot);
                 var handCardRect = (RectTransform)handCard.transform;
@@ -1678,46 +1819,73 @@ namespace Indoctrination.Net
                 handCard.Populate(card, null, null);
                 handCard.ScaleTo(handCardWidth);
 
-                var instanceId = card.instanceId;
-
-                // A card only lights up, and only picks up, once it is actually
-                // playable - dragging an unaffordable card onto the compounds
-                // would just be refused, so it never invites the attempt.
-                handCard.SetAffordable(card.canAfford);
-
-                if (card.canAfford)
+                if (!canBuy)
                 {
-                    var ghostTag = (string)null;
-                    var ghostWidth = handCardWidth;
-                    var handle = handCard.gameObject.AddComponent<DragHandle>();
-                    handle.DragLayer = _dragLayer;
-                    handle.GhostFactory = () =>
-                    {
-                        // Playing a card means dragging it out of the tray and
-                        // onto the board, so the tray has to stay open for the
-                        // whole gesture even though the pointer leaves it.
-                        _draggingFromHand = true;
-                        return DragHandle.CardGhost(card, ghostTag, ghostWidth);
-                    };
-                    handle.OnDropped = eventData =>
-                    {
-                        _draggingFromHand = false;
-
-                        if (RectTransformUtility.RectangleContainsScreenPoint(
-                                _battlefieldViewport, eventData.position, eventData.pressEventCamera))
-                        {
-                            NetworkGameManager.Instance?.RequestBuyRpc(instanceId);
-                        }
-                    };
+                    continue;
                 }
 
-                var buttons = UIFactory.Group("Buttons", wrapper);
-                UIFactory.SetSize(buttons, handCardWidth, HandCardButtonHeight);
-                UIFactory.HorizontalLayout(buttons, 4, new RectOffset(0, 0, 0, 0));
-                UIFactory.ButtonWithLabel("Recycle", buttons, "Recycle",
-                    () => NetworkGameManager.Instance?.RequestRecycleRpc(instanceId),
-                    new Color(0.278f, 0.208f, 0.129f), handCardWidth, HandCardButtonHeight);
+                var instanceId = card.instanceId;
+
+                // Affordability still says whether the battlefield will accept
+                // the card. Recycling accepts every card, so they all drag.
+                handCard.SetAffordable(card.canAfford);
+
+                var ghostWidth = handCardWidth;
+                var handle = handCard.gameObject.AddComponent<DragHandle>();
+                handle.DragLayer = _dragLayer;
+                handle.GhostFactory = () =>
+                {
+                    _draggingFromHand = true;
+                    return DragHandle.CardGhost(card, null, ghostWidth);
+                };
+                handle.OnDragFinished = () => _draggingFromHand = false;
+                handle.OnDropped = eventData =>
+                {
+                    if (_recycleBin.gameObject.activeInHierarchy
+                        && RectTransformUtility.RectangleContainsScreenPoint(
+                            _recycleBin, eventData.position, eventData.pressEventCamera))
+                    {
+                        ShowRecycledResource(card);
+                        NetworkGameManager.Instance?.RequestRecycleRpc(instanceId);
+                        return;
+                    }
+
+                    if (card.canAfford
+                        && RectTransformUtility.RectangleContainsScreenPoint(
+                            _battlefieldViewport, eventData.position, eventData.pressEventCamera))
+                    {
+                        NetworkGameManager.Instance?.RequestBuyRpc(instanceId);
+                    }
+                };
             }
+
+            // Paint from the outside inward. The raised centre cards therefore
+            // overlap only the bottoms of their neighbours instead of a later
+            // right-hand card slicing across everybody else's upper corner.
+            foreach (var fanSlot in fanSlots.OrderByDescending(item => item.DistanceFromCenter))
+            {
+                fanSlot.Slot.SetAsLastSibling();
+            }
+        }
+
+        /// <summary>
+        /// Shows the payment leaving the bin for the permanent resource HUD.
+        /// The server remains authoritative; the count is only predicted so the
+        /// drop answers immediately, and the next view overwrites it.
+        /// </summary>
+        private void ShowRecycledResource(CardView card)
+        {
+            var definition = DefinitionOf(card);
+            if (definition == null)
+            {
+                return;
+            }
+
+            var color = definition.Color;
+            _resourceHud.ShowResourceGain(color);
+            BoardEffects.Instance.FlyResource(
+                _recycleBin.position, _resourceHud.PipPosition(color), color,
+                landsIn: _resourceHud.Pip(color));
         }
 
         /// <summary>
@@ -1725,23 +1893,27 @@ namespace Indoctrination.Net
         /// stay out of the way, present enough to say what is in your hand and
         /// invite the hover that opens it.
         /// </summary>
-        private void BuildHandPeek(PlayerView you)
+        private void BuildHandPeek(PlayerView you, bool canDraftToHand)
         {
             var peekCardHeight = HandPeekHeight + 6f;
             var peekCardWidth = peekCardHeight * (BoardCardView.Width / BoardCardView.Height);
 
-            SetHandHeight(HandPeekHeight);
+            SetHandHeight(canDraftToHand ? DraftDropZoneHeight : HandPeekHeight);
 
-            var content = UIFactory.HorizontalScroll("Hand Scroll", _handRow, HandPeekHeight);
-            UIFactory.Stretch(UIFactory.Child(_handRow, "Hand Scroll"));
-
-            foreach (var card in you.hand)
+            for (var index = 0; index < you.hand.Length; index++)
             {
-                var slot = UIFactory.Group("Card Slot", content);
+                var card = you.hand[index];
+                var normalized = you.hand.Length == 1
+                    ? 0f
+                    : ((index / (you.hand.Length - 1f)) * 2f) - 1f;
+                var slot = UIFactory.Group("Card Slot", _handRow);
                 UIFactory.SetSize(slot, peekCardWidth, peekCardHeight);
-                var pin = slot.gameObject.AddComponent<LayoutElement>();
-                pin.minWidth = pin.preferredWidth = peekCardWidth;
-                pin.minHeight = pin.preferredHeight = peekCardHeight;
+                slot.anchorMin = slot.anchorMax = new Vector2(0.5f, 0f);
+                slot.pivot = new Vector2(0.5f, 0f);
+                slot.anchoredPosition = new Vector2(
+                    (index - ((you.hand.Length - 1f) / 2f)) * peekCardWidth * 0.58f,
+                    -5f + (Mathf.Abs(normalized) * 3f));
+                slot.localEulerAngles = new Vector3(0f, 0f, -normalized * 6f);
 
                 var peek = BoardCardView.Create(slot);
                 var rect = (RectTransform)peek.transform;
@@ -1750,6 +1922,36 @@ namespace Indoctrination.Net
                 peek.Populate(card, null, null);
                 peek.ScaleTo(peekCardWidth);
             }
+        }
+
+        private void RefreshHandDropZone(bool active)
+        {
+            _handDropZone.gameObject.SetActive(active);
+            if (!active)
+            {
+                SetHandDropZoneHot(false);
+                return;
+            }
+
+            var width = Mathf.Min(DraftDropZoneMaxWidth, Mathf.Max(300f, _gameRoot.rect.width - 80f));
+            _handDropZone.sizeDelta = new Vector2(width, DraftDropZoneHeight);
+            _handDropArc.rectTransform.sizeDelta = new Vector2(width - 8f, DraftDropZoneHeight * 2f);
+            SetHandDropZoneHot(false);
+        }
+
+        /// <summary>Brightens the semicircle while the carried draft card is inside it.</summary>
+        private void SetHandDropZoneHot(bool hot)
+        {
+            if (_handDropArc == null)
+            {
+                return;
+            }
+
+            _handDropArc.color = hot
+                ? new Color(UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.50f)
+                : new Color(UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.20f);
+            _handDropLabel.color = hot ? UITheme.Bone : UITheme.BoneDim;
+            _handDropZone.localScale = hot ? Vector3.one * 1.035f : Vector3.one;
         }
 
         /// <summary>
@@ -1771,15 +1973,19 @@ namespace Indoctrination.Net
         {
             if (you == null || you.hand.Length == 0)
             {
-                return "empty";
+                return $"empty|{view.phase}|{view.currentDrafterId}|{view.viewerPlayerId}";
             }
 
             var canBuy = view.phase == nameof(TurnPhase.Buy) && !view.hasPendingChoice;
+            var canDraft = view.phase == nameof(TurnPhase.Draft)
+                           && view.currentDrafterId == view.viewerPlayerId
+                           && !view.hasPendingChoice;
             var cards = string.Join(",", you.hand.Select(card => $"{card.instanceId}:{card.canAfford}"));
 
             // The width matters because the cards are sized from it, so a
             // resized window still rebuilds.
-            return $"{_handExpanded}|{canBuy}|{Mathf.RoundToInt(_gameRoot.rect.width)}|{cards}";
+            return $"{_handExpanded}|{canBuy}|{canDraft}|"
+                   + $"{Mathf.RoundToInt(_gameRoot.rect.width)}|{cards}";
         }
 
         private string _handSignature;
@@ -1815,6 +2021,7 @@ namespace Indoctrination.Net
         private void RefreshActionPanel(NetworkGameManager manager, GameView view)
         {
             UIFactory.DestroyChildren(_actionPanel);
+            UIFactory.SetSize(_popupPanel, PopupWidth, PopupHeight);
 
             var show = DecidePopup(manager, view);
 
@@ -1827,6 +2034,15 @@ namespace Indoctrination.Net
             {
                 RenderGameOver(manager, view);
                 return true;
+            }
+
+            // During activation the question belongs to the stage, put under the
+            // card that is asking it. Answering it here as well would offer the
+            // same decision twice, in two places, with the card only visible in
+            // one of them.
+            if (view.phase == nameof(TurnPhase.Activation))
+            {
+                return false;
             }
 
             if (view.hasPendingChoice
@@ -1973,9 +2189,10 @@ namespace Indoctrination.Net
             var you = view.Viewer;
             if (you is { isAlive: true, hasRolled: false })
             {
+                UIFactory.SetSize(_popupPanel, RollingPopupWidth, RollingPopupHeight);
                 UIFactory.ButtonWithLabel(
                     "Roll", _actionPanel, "ROLL DIE", () => manager.RequestRollRpc(),
-                    UITheme.Affirm, width: ActionButtonWidth(), height: 54);
+                    UITheme.Affirm, width: RollButtonWidth, height: RollButtonHeight);
                 return true;
             }
 
@@ -2296,14 +2513,113 @@ namespace Indoctrination.Net
 
         // -------------------------------------------------------- Pending choice
 
+        /// <summary>
+        /// A card's question as it appears on the activation stage: the options
+        /// and nothing else.
+        ///
+        /// No prompt, because the card asking is on screen at full size directly
+        /// above these buttons and its own text says what it does. The only
+        /// exception is an amount, where the legal range is not visible anywhere
+        /// else and the field is meaningless without it.
+        /// </summary>
+        private void BuildActivationChoice(RectTransform parent, NetworkGameManager manager, GameView view)
+        {
+            if (!view.hasPendingChoice)
+            {
+                return;
+            }
+
+            var choice = view.pendingChoice;
+
+            if (choice.askedOfPlayerId != view.viewerPlayerId)
+            {
+                var waiting = UIFactory.Label("Waiting", parent,
+                    $"Waiting on {FindPlayer(view, choice.askedOfPlayerId)?.name}", 17,
+                    TextAnchor.MiddleCenter, UITheme.BoneDim);
+                AddFlexibleWidth(waiting.rectTransform);
+                return;
+            }
+
+            switch (choice.kind)
+            {
+                case nameof(ChoiceKind.Player):
+                    foreach (var optionId in choice.playerOptions)
+                    {
+                        var id = optionId;
+                        UIFactory.ButtonWithLabel($"Player {id}", parent,
+                            FindPlayer(view, id)?.name ?? id.ToString(),
+                            () => manager.RequestAnswerPlayerRpc(id), UITheme.Button, 150, 44);
+                    }
+
+                    break;
+
+                case nameof(ChoiceKind.Card):
+                    foreach (var cardId in choice.cardOptions)
+                    {
+                        var id = cardId;
+                        var option = FindCard(view, id);
+                        var title = option != null && CardDatabase.Instance.TryGet(option.definitionId, out var found)
+                            ? found.Title
+                            : $"Card {id}";
+
+                        UIFactory.ButtonWithLabel($"Card {id}", parent, title,
+                            () => manager.RequestAnswerCardRpc(id), UITheme.Button, 170, 44);
+                    }
+
+                    break;
+
+                case nameof(ChoiceKind.Color):
+                    var offered = choice.colorOptions.Length > 0
+                        ? choice.colorOptions.Select(c => (ResourceColor)c)
+                        : Enum.GetValues(typeof(ResourceColor)).Cast<ResourceColor>();
+                    RenderColorButtons(color => manager.RequestAnswerColorRpc((int)color), offered, parent);
+                    break;
+
+                case nameof(ChoiceKind.Option):
+                    foreach (var option in choice.options)
+                    {
+                        var chosen = option;
+                        UIFactory.ButtonWithLabel(chosen, parent, chosen,
+                            () => manager.RequestAnswerOptionRpc(chosen), UITheme.Button, 170, 44);
+                    }
+
+                    break;
+
+                case nameof(ChoiceKind.YesNo):
+                    UIFactory.ButtonWithLabel("Yes", parent, "Yes",
+                        () => manager.RequestAnswerYesNoRpc(true), UITheme.Affirm, 130, 44);
+                    UIFactory.ButtonWithLabel("No", parent, "No",
+                        () => manager.RequestAnswerYesNoRpc(false), UITheme.Blood, 130, 44);
+                    break;
+
+                case nameof(ChoiceKind.Amount):
+                    var field = UIFactory.TextInput("Amount Field", parent, _amountInput);
+                    AddFixedWidthHeight(field.GetComponent<RectTransform>(), 90, 44);
+                    field.onValueChanged.AddListener(value => _amountInput = value);
+
+                    UIFactory.ButtonWithLabel("Confirm", parent,
+                        $"{choice.minAmount}-{choice.maxAmount}", () =>
+                        {
+                            if (int.TryParse(_amountInput, out var amount)
+                                && amount >= choice.minAmount && amount <= choice.maxAmount)
+                            {
+                                manager.RequestAnswerAmountRpc(amount);
+                            }
+                        }, UITheme.Affirm, 130, 44);
+                    break;
+            }
+        }
+
         private void RenderPendingChoice(NetworkGameManager manager, GameView view)
         {
             var choice = view.pendingChoice;
+            var activationChoice = view.phase == nameof(TurnPhase.Activation);
 
             // The card behind the question, shown at full size rather than only
             // described - a popup asking what to do about a card should let you
             // look at it.
-            if (!string.IsNullOrEmpty(view.resolvingCardId)
+            if (!activationChoice
+                && !string.IsNullOrEmpty(view.resolvingCardId)
                 && CardDatabase.Instance.TryGet(view.resolvingCardId, out _))
             {
                 var sourceCell = UIFactory.Group("Source Card", _actionPanel);
@@ -2320,12 +2636,20 @@ namespace Indoctrination.Net
                 sourceCard.ScaleTo(130);
             }
 
-            if (!string.IsNullOrEmpty(view.resolvingDescription))
+            if (!activationChoice && !string.IsNullOrEmpty(view.resolvingDescription))
             {
                 ActionLabel(view.resolvingDescription, 13);
             }
 
-            ActionLabel(choice.prompt);
+            // During the automatic sequence, the options themselves are the UI.
+            // Keep wording only where bare values would genuinely be ambiguous.
+            if (!activationChoice
+                || choice.kind == nameof(ChoiceKind.Amount)
+                || choice.kind == nameof(ChoiceKind.YesNo)
+                || (choice.kind == nameof(ChoiceKind.Option) && choice.options.Length < 2))
+            {
+                ActionLabel(choice.prompt);
+            }
 
             switch (choice.kind)
             {
@@ -2349,6 +2673,22 @@ namespace Indoctrination.Net
                         .Select(id => FindCard(view, id))
                         .Where(card => card != null)
                         .ToArray();
+
+                    if (activationChoice)
+                    {
+                        foreach (var option in options)
+                        {
+                            var chosen = option;
+                            var definition = DefinitionOf(option);
+                            UIFactory.ButtonWithLabel(
+                                $"Card {option.instanceId}", _actionPanel,
+                                definition?.Title ?? option.definitionId,
+                                () => manager.RequestAnswerCardRpc(chosen.instanceId),
+                                width: ActionButtonWidth(), height: 36);
+                        }
+
+                        break;
+                    }
 
                     // The side panel is narrow, so these are laid out at whatever
                     // width fits rather than at the board's shared card size.

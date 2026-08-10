@@ -99,9 +99,10 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
-        /// Every card on the board must show its title as something a player can
-        /// actually read: non-empty text, laid out with real height, and inside
-        /// the card that clips it.
+        /// Every card on the board must show either its printed face or a title a
+        /// player can actually read. The fallback still needs non-empty text laid
+        /// out inside the card that clips it; imported art has to survive the same
+        /// masks without being stretched or switched off.
         /// </summary>
         [UnityTest]
         public IEnumerator DraftCardsShowTheirTitlesOnScreen()
@@ -120,6 +121,22 @@ namespace Indoctrination.Tests
 
             foreach (var card in cards)
             {
+                var printedFace = card.transform.Find("Printed Face")?.GetComponent<Image>();
+                if (printedFace != null && printedFace.gameObject.activeInHierarchy)
+                {
+                    Assert.IsNotNull(printedFace.sprite, "an active printed face needs a texture");
+                    Assert.IsTrue(printedFace.preserveAspect, "printed card art must not be stretched");
+
+                    if (IsHorizontallyWithinStrip(card))
+                    {
+                        visibleCards++;
+                        Assert.IsTrue(IsFullyVisibleThroughEveryMask(printedFace),
+                                      $"'{card.Definition?.Title}' is on screen but its printed face is clipped away");
+                    }
+
+                    continue;
+                }
+
                 var title = FindTitle(card);
                 Assert.IsNotNull(title, "every card needs a title row");
                 Assert.IsNotEmpty(title.text, $"card {card.name} rendered an empty title");
@@ -147,6 +164,64 @@ namespace Indoctrination.Tests
                 }
             }
             Assert.Greater(visibleCards, 0, "at least one draft card has to be on screen to pick from");
+        }
+
+        /// <summary>
+        /// Drafting is a table gesture: pick the card up and put it in your hand.
+        /// Clicking remains available for reading, but the preview offers no
+        /// second confirmation button.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator DraggingADraftCardToTheHandDraftsIt()
+        {
+            yield return StartGame();
+            yield return WaitForFrames(3);
+
+            var game = ServerGame();
+            while (_manager.View.currentDrafterId != _manager.View.viewerPlayerId)
+            {
+                var drafter = game.CurrentDrafterId.Value;
+                ApplyAsHost(_ => game.DraftCard(drafter, game.DraftZone[0].InstanceId));
+                yield return WaitForFrames(3);
+            }
+
+            var handBefore = _manager.View.Viewer.hand.Length;
+            var zoneBefore = _manager.View.draftZone.Length;
+            var handle = Object.FindObjectsByType<DragHandle>(FindObjectsSortMode.None)
+                .FirstOrDefault(candidate => candidate.GetComponent<BoardCardView>()?.Card != null);
+            Assert.IsNotNull(handle, "a legal draft card should be draggable");
+
+            var handRow = GameObject.Find("Hand Row")?.GetComponent<RectTransform>();
+            Assert.IsNotNull(handRow, "even an empty hand needs a first-pick drop target");
+            Assert.IsTrue(handRow.gameObject.activeInHierarchy, "the hand drop target should be active");
+
+            var dropZone = GameObject.Find("Hand Drop Zone")?.GetComponent<RectTransform>();
+            Assert.IsNotNull(dropZone, "a legal pick should expose the semicircular draft target");
+            Assert.Greater(dropZone.rect.width, 400f, "the draft target should be substantially wider than one card");
+            Assert.GreaterOrEqual(handRow.rect.height, dropZone.rect.height,
+                "the transparent hit surface must cover the whole visible semicircle");
+            Assert.IsNotNull(dropZone.GetComponent<RectMask2D>(),
+                "the full ellipse should be clipped into a clean upper semicircle");
+            var dropArc = dropZone.Find("Drop Arc").GetComponent<Image>();
+            Assert.GreaterOrEqual(dropArc.rectTransform.rect.height, dropZone.rect.height * 1.9f);
+            var restingGlow = dropArc.color.a;
+
+            var drop = new PointerEventData(EventSystem.current)
+            {
+                position = RectTransformUtility.WorldToScreenPoint(
+                    null, dropZone.TransformPoint(new Vector3(0f, dropZone.rect.height * 0.5f, 0f)))
+            };
+            handle.OnBeginDrag(drop);
+            handle.OnDrag(drop);
+            Assert.Greater(dropArc.color.a, restingGlow + 0.15f,
+                "carrying a draft card over the semicircle should make it light up clearly");
+            handle.OnEndDrag(drop);
+            yield return WaitForFrames(4);
+
+            Assert.AreEqual(handBefore + 1, _manager.View.Viewer.hand.Length,
+                            "dropping the card into the hand should draft it");
+            Assert.AreEqual(zoneBefore - 1, _manager.View.draftZone.Length,
+                            "and remove it from the draft zone");
         }
 
         /// <summary>
@@ -196,8 +271,16 @@ namespace Indoctrination.Tests
             Assert.IsTrue(roll.interactable, "and it has to be clickable");
 
             var rect = ((RectTransform)roll.transform).rect;
-            Assert.Greater(rect.width, 100f, $"the roll button was laid out {rect.width} wide");
-            Assert.Greater(rect.height, 20f, $"the roll button was laid out {rect.height} tall");
+            Assert.That(rect.width, Is.InRange(240f, 280f),
+                        $"the roll button was laid out {rect.width} wide");
+            Assert.That(rect.height, Is.InRange(48f, 58f),
+                        $"the roll button was laid out {rect.height} tall");
+
+            var popup = (RectTransform)roll.GetComponentInParent<ScrollRect>().transform;
+            Assert.LessOrEqual(popup.rect.width, 310f,
+                               $"the rolling window should hug its button, but was {popup.rect.width} wide");
+            Assert.LessOrEqual(popup.rect.height, 100f,
+                               $"the rolling window should hug its button, but was {popup.rect.height} tall");
 
             // Press it exactly as a player would.
             roll.onClick.Invoke();
@@ -282,9 +365,9 @@ namespace Indoctrination.Tests
                             "and the resources have to actually arrive");
         }
 
-        /// <summary>Recycling a card from hand, by pressing the button on it.</summary>
+        /// <summary>Recycling a card by dragging it into the shared bin.</summary>
         [UnityTest]
-        public IEnumerator PressingRecycleTradesACardForAResource()
+        public IEnumerator DraggingToRecycleTradesACardForAResource()
         {
             yield return StartGame();
             yield return AdvanceTo(TurnPhase.Buy);
@@ -296,10 +379,29 @@ namespace Indoctrination.Tests
             var handBefore = you.hand.Length;
             var resourcesBefore = TotalResources(you);
 
-            var recycle = FindButtonLabelled("Recycle");
-            Assert.IsNotNull(recycle, WhyUnusable("Recycle"));
+            Assert.IsNull(FindButtonLabelled("Recycle"),
+                          "recycling should not repeat a button under every card");
 
-            recycle.onClick.Invoke();
+            var bin = GameObject.Find("Recycle Bin")?.GetComponent<RectTransform>();
+            Assert.IsNotNull(bin, "the Buy hand should expose one recycle bin");
+            Assert.IsTrue(bin.gameObject.activeInHierarchy, "the recycle bin should be visible");
+
+            var handle = Object.FindObjectsByType<DragHandle>(FindObjectsSortMode.None)
+                .FirstOrDefault(h => h.GetComponent<BoardCardView>() != null
+                                     && IsInHand(h));
+            Assert.IsNotNull(handle, "every hand card should be draggable to the recycle bin");
+
+            var drop = new PointerEventData(EventSystem.current)
+            {
+                position = RectTransformUtility.WorldToScreenPoint(null, bin.position)
+            };
+
+            handle.OnBeginDrag(drop);
+            handle.OnDrag(drop);
+            handle.OnEndDrag(drop);
+
+            Assert.IsNotNull(GameObject.Find("Pip In Flight"),
+                             "recycling should send the card's resource from the bin to the HUD");
             yield return WaitForFrames(4);
 
             Assert.AreEqual(handBefore - 1, _manager.View.Viewer.hand.Length,
@@ -334,7 +436,8 @@ namespace Indoctrination.Tests
             // a player is told to look for.
             var handle = Object.FindObjectsByType<DragHandle>(FindObjectsSortMode.None)
                 .FirstOrDefault(h => h.GetComponent<BoardCardView>() != null
-                                     && h.GetComponentInParent<ScrollRect>()?.gameObject.name == "Hand Scroll");
+                                     && h.GetComponent<BoardCardView>().Card.canAfford
+                                     && IsInHand(h));
             Assert.IsNotNull(handle, "an affordable hand card should be draggable during Buy");
 
             var battlefieldViewport = (RectTransform)typeof(BoardUI)
@@ -380,9 +483,10 @@ namespace Indoctrination.Tests
 
             foreach (var card in cards)
             {
+                var cardRect = (RectTransform)card.transform;
                 var rows = card.GetComponentsInChildren<Text>()
                     .Where(t => t.gameObject.activeInHierarchy && !string.IsNullOrEmpty(t.text))
-                    .OrderByDescending(t => WorldRect(t.rectTransform).yMax)
+                    .OrderByDescending(t => RectRelativeTo(t.rectTransform, cardRect).yMax)
                     .ToList();
 
                 foreach (var row in rows)
@@ -396,8 +500,8 @@ namespace Indoctrination.Tests
 
                 for (var i = 0; i + 1 < rows.Count; i++)
                 {
-                    var above = WorldRect(rows[i].rectTransform);
-                    var below = WorldRect(rows[i + 1].rectTransform);
+                    var above = RectRelativeTo(rows[i].rectTransform, cardRect);
+                    var below = RectRelativeTo(rows[i + 1].rectTransform, cardRect);
 
                     Assert.LessOrEqual(below.yMax, above.yMin + 0.5f,
                         $"'{rows[i + 1].text}' overlaps '{rows[i].text}' on card " +
@@ -501,21 +605,37 @@ namespace Indoctrination.Tests
             Assert.IsFalse(CardPreview.IsOpen, "nothing should be previewed to begin with");
 
             var card = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None)
-                .FirstOrDefault(c => c.Definition != null);
-            Assert.IsNotNull(card, "there should be a recognisable card on the board");
+                .FirstOrDefault(c => c.Definition != null && CardArt.FaceFor(c.Definition.Id) != null);
+            Assert.IsNotNull(card, "there should be a card with imported art on the board");
 
             card.GetComponent<Button>().onClick.Invoke();
             yield return WaitForFrames(2);
 
             Assert.IsTrue(CardPreview.IsOpen, "clicking a card has to open its preview");
 
-            var shown = Object.FindObjectsByType<Text>(FindObjectsSortMode.None)
-                .Any(t => t.text == card.Definition.Title && t.fontSize >= 24);
-            Assert.IsTrue(shown, $"the preview should show '{card.Definition.Title}' at a readable size");
+            var printed = Object.FindObjectsByType<Image>(FindObjectsSortMode.None)
+                .FirstOrDefault(image => image.gameObject.name == "Printed Card"
+                                         && image.gameObject.activeInHierarchy);
+            Assert.IsNotNull(printed, $"the preview should show the printed '{card.Definition.Title}' card");
+            Assert.AreSame(CardArt.FaceFor(card.Definition.Id), printed.sprite,
+                           "the popup has to use the same printed face as the card");
+            Assert.IsTrue(printed.preserveAspect, "the popup must preserve the PDF aspect ratio");
+            Assert.That(printed.rectTransform.rect.width / printed.rectTransform.rect.height,
+                        Is.EqualTo(5f / 7f).Within(0.001f),
+                        "the popup itself should remain 5:7");
 
-            CardPreview.Hide();
+            var preview = GameObject.Find("Card Preview");
+            Assert.IsNotNull(preview, "the open preview should have a click-away backdrop");
+            Assert.IsFalse(preview.GetComponentsInChildren<Text>()
+                                   .Any(text => text.text == "Close"),
+                           "card previews should not spend space on a Close button");
+            Assert.IsFalse(preview.GetComponentsInChildren<Text>()
+                                   .Any(text => text.text == "Draft this card"),
+                           "reading a draft card should not add a second confirmation button");
+
+            preview.GetComponent<Button>().onClick.Invoke();
             yield return WaitForFrames(2);
-            Assert.IsFalse(CardPreview.IsOpen, "and close again");
+            Assert.IsFalse(CardPreview.IsOpen, "clicking outside the card should close it");
         }
 
         /// <summary>
@@ -756,6 +876,35 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// A die result decorates cards already on the table. It must not destroy
+        /// and deal them all again before their activation animation runs.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RollingADieDoesNotReloadCardsOnTheTable()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Rolling);
+
+            const int instanceId = -8080;
+            var definition = CardDatabase.Instance.All.First(card => card.Type == CardType.Unit);
+            var game = ServerGame();
+            ApplyAsHost(_ => game.Players[0].Compound.Add(new CardInstance(instanceId, definition)));
+            yield return WaitForFrames(3);
+
+            var before = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None)
+                .FirstOrDefault(card => card.Card?.instanceId == instanceId);
+            Assert.IsNotNull(before, "the test unit should be visible before rolling");
+
+            FindButtonLabelled("ROLL DIE").onClick.Invoke();
+            yield return WaitForFrames(4);
+
+            var after = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None)
+                .FirstOrDefault(card => card.Card?.instanceId == instanceId);
+            Assert.AreSame(before, after,
+                           "rolling should update the existing card instead of rebuilding it");
+        }
+
+        /// <summary>
         /// A discounted card shows what it really costs, and a card you can
         /// afford is marked, so a hand can be read without pricing each card.
         /// </summary>
@@ -766,11 +915,19 @@ namespace Indoctrination.Tests
             yield return AdvanceTo(TurnPhase.Buy);
 
             var game = ServerGame();
+            const int discountedInstanceId = -71;
+            var printedDefinition = CardDatabase.Instance.All.First(card =>
+                card.Color == ResourceColor.Blue
+                && CardArt.FaceFor(card.Id) != null
+                && card.Cost.Amounts.TryGetValue(ResourceColor.Yellow, out var yellow)
+                && yellow > 0);
             ApplyAsHost(_ =>
             {
                 // A stone in play discounts everything in hand.
                 game.Players[0].Compound.Add(new CardInstance(
                     -70, CardDatabase.Instance.Get(CardIds.Wealthstone)));
+                game.Players[0].Hand.Add(new CardInstance(
+                    discountedInstanceId, printedDefinition));
 
                 foreach (var color in EffectContext.AllColors)
                 {
@@ -785,11 +942,32 @@ namespace Indoctrination.Tests
             Assert.IsTrue(hand.Any(c => c.canAfford), "with eight of everything, something is affordable");
 
             var discounted = hand.FirstOrDefault(c => c.isDiscounted);
-            if (discounted != null)
-            {
-                Assert.IsNotEmpty(discounted.costForYou,
-                                  "a discounted card has to say what it now costs");
-            }
+            Assert.IsNotNull(discounted, "the Wealthstone should discount a card in hand");
+            Assert.IsNotEmpty(discounted.costForYou,
+                              "a discounted card has to carry its actual cost");
+
+            yield return ExpandHand();
+            var printedCard = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None)
+                .FirstOrDefault(card => card.Card?.instanceId == discountedInstanceId && IsInHand(card));
+            Assert.IsNotNull(printedCard, "the deterministic discounted PDF card should be in the hand");
+
+            var stamps = printedCard.transform.Find("Discount Stamps");
+            Assert.IsNotNull(stamps, "printed cards need a discount-stamp layer");
+            Assert.IsTrue(stamps.gameObject.activeInHierarchy, "a discounted PDF needs a visible stamp");
+            var yellowStamp = stamps.Find("Discount Yellow")?.GetComponent<Image>();
+            Assert.IsNotNull(yellowStamp, "a Yellow reduction needs a Yellow circled stamp");
+            Assert.AreSame(BoardArt.Disc, yellowStamp.sprite, "the -1 stamp should be circular");
+            Assert.AreEqual("−1", yellowStamp.GetComponentInChildren<Text>().text);
+            Assert.That(yellowStamp.color, Is.EqualTo(BoardArt.ColorOf(ResourceColor.Yellow)));
+
+            printedCard.GetComponent<Button>().onClick.Invoke();
+            yield return WaitForFrames(2);
+            var enlargedStamp = GameObject.Find("Card Preview")?.transform
+                .Find("Printed Card/Discount Stamps/Discount Yellow")
+                ?.GetComponent<Image>();
+            Assert.IsNotNull(enlargedStamp,
+                             "the enlarged PDF should carry the same centered Yellow -1 stamp");
+            GameObject.Find("Card Preview").GetComponent<Button>().onClick.Invoke();
         }
 
         /// <summary>The Activation phase has no player input, so it closes itself.</summary>
@@ -809,6 +987,79 @@ namespace Indoctrination.Tests
 
             Assert.AreNotEqual(nameof(TurnPhase.Activation), _manager.View.phase,
                                "activation resolves itself and should not wait to be confirmed");
+        }
+
+        /// <summary>
+        /// The live server reveals the exact round-robin queue one completion at
+        /// a time, while the board locks attention on that card and keeps every
+        /// leader's two win/loss tracks visible.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator UnitActivationsArePacedLockedAndRepeatInTableOrder()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Rolling);
+
+            var game = ServerGame();
+            game.FirstDrafterIndex = 1;
+            var p1Unit = new CardInstance(-501, CardDatabase.Instance.Get(CardIds.SolarPanels));
+            var p2Unit = new CardInstance(-502, CardDatabase.Instance.Get(CardIds.MoneyTree));
+            var dullBlessing = new CardInstance(-503, CardDatabase.Instance.Get(CardIds.WondrousBlood));
+            game.Players[1].Compound.Add(p1Unit);
+            game.Players[0].Compound.Add(p2Unit);
+            game.Players[0].Compound.Add(dullBlessing);
+
+            ApplyAsHost(_ => game.RollPrimaryDice());
+            ApplyAsHost(_ =>
+            {
+                game.SetPrimaryDie(game.Players[0], 6);
+                game.SetPrimaryDie(game.Players[1], 6);
+                game.AdvancePhase();
+            });
+            DelayNextActivation();
+            yield return WaitForFrames(2);
+
+            Assert.AreEqual(nameof(TurnPhase.Activation), _manager.View.phase);
+            Assert.AreEqual(0, _manager.View.activationCompletedCount,
+                "entering Activation must show the queue before resolving its first Unit");
+            CollectionAssert.AreEqual(
+                new[] { p1Unit.InstanceId, p2Unit.InstanceId, p1Unit.InstanceId, p2Unit.InstanceId },
+                _manager.View.activations.Select(entry => entry.cardInstanceId).ToArray(),
+                "matching dice should repeat each Unit without disturbing round-robin order");
+
+            var boardCards = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None)
+                .Where(card => card.Card != null).ToArray();
+            var bright = boardCards.Single(card => card.Card.instanceId == p1Unit.InstanceId);
+            var dull = boardCards.Single(card => card.Card.instanceId == dullBlessing.InstanceId);
+            Assert.Greater(bright.GetComponent<CanvasGroup>().alpha, 0.95f,
+                "a Unit still waiting to activate should glow at full strength");
+            Assert.Less(dull.GetComponent<CanvasGroup>().alpha, 0.4f,
+                "cards outside the activation queue should become dull");
+
+            ExpireNextActivation();
+            yield return WaitForFrames(2);
+
+            Assert.AreEqual(1, _manager.View.activationCompletedCount,
+                "one server beat must complete one Unit, not drain the queue");
+            var stage = GameObject.Find("Activation Stage");
+            Assert.IsNotNull(stage, "a completed Unit should open the locked full-screen stage");
+            Assert.IsNull(stage.GetComponent<Button>(), "the stage itself must not be dismissible");
+            Assert.AreEqual(2, stage.transform.Find("All Player Tracks").childCount,
+                "every player's large tracks must remain visible during the animation");
+            var stagedCard = stage.transform.Find("Locked Card").GetComponentInChildren<BoardCardView>();
+            Assert.IsFalse(stagedCard.GetComponent<Button>().interactable,
+                "the full-screen activation card must not open a collapsible preview");
+
+            // The first Unit appears twice. It stays bright after its first turn,
+            // then dims only after the third entry spends its duplicate activation.
+            Assert.Greater(bright.GetComponent<CanvasGroup>().alpha, 0.95f);
+            ExpireNextActivation();
+            yield return WaitForFrames(2);
+            ExpireNextActivation();
+            yield return WaitForFrames(2);
+            Assert.AreEqual(3, _manager.View.activationCompletedCount);
+            Assert.Less(bright.GetComponent<CanvasGroup>().alpha, 0.4f,
+                "a Unit should dim once no repeated activation remains for it");
         }
 
         /// <summary>The face on the viewer's own die box, if a player could see it.</summary>
@@ -1057,6 +1308,54 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// The hand should read as cards held in a fan: no visible tray, larger
+        /// overlapping cards, and opposite angles on its two outside edges.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheExpandedHandIsAVisibleCardFanWithoutABox()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Buy);
+            yield return ExpandHand();
+
+            var handRow = (RectTransform)typeof(BoardUI)
+                .GetField("_handRow", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(_board);
+            Assert.That(handRow.GetComponent<Image>().color.a, Is.EqualTo(0f).Within(0.001f),
+                        "the hand's hover surface must not draw a surrounding box");
+
+            var slots = handRow.Cast<Transform>()
+                .Where(child => child.name == "Card Slot")
+                .Cast<RectTransform>()
+                .OrderBy(slot => slot.anchoredPosition.x)
+                .ToArray();
+            Assert.GreaterOrEqual(slots.Length, 2, "a drafted hand should contain a fan of cards");
+
+            var displayedWidth = BoardCardView.Width
+                                 * slots[0].GetComponentInChildren<BoardCardView>().transform.localScale.x;
+            Assert.Greater(displayedWidth, 160f,
+                           $"the overlapping hand should let cards stay large, but they were {displayedWidth}");
+            Assert.Less(slots[1].anchoredPosition.x - slots[0].anchoredPosition.x, displayedWidth,
+                        "adjacent hand cards should overlap");
+            Assert.Greater(slots.First().localEulerAngles.z, 0f, "the left card should fan outward");
+            Assert.Greater(slots.Last().localEulerAngles.z, 180f,
+                           "the right card should fan in the opposite direction");
+
+            foreach (var slot in slots)
+            {
+                var bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(handRow, slot);
+                Assert.GreaterOrEqual(bounds.min.x, handRow.rect.xMin - 0.5f,
+                    $"{slot.name}'s rotated left corner leaves the hand surface");
+                Assert.LessOrEqual(bounds.max.x, handRow.rect.xMax + 0.5f,
+                    $"{slot.name}'s rotated right corner leaves the hand surface");
+                Assert.GreaterOrEqual(bounds.min.y, handRow.rect.yMin - 0.5f,
+                    $"{slot.name}'s rotated bottom corner leaves the hand surface");
+                Assert.LessOrEqual(bounds.max.y, handRow.rect.yMax + 0.5f,
+                    $"{slot.name}'s rotated top corner would be clipped");
+            }
+        }
+
+        /// <summary>
         /// Feeds the board a pointer position, the same way its own Update does
         /// from the real mouse.
         ///
@@ -1077,6 +1376,14 @@ namespace Indoctrination.Tests
             (bool)typeof(BoardUI)
                 .GetField("_handExpanded", BindingFlags.NonPublic | BindingFlags.Instance)
                 .GetValue(_board);
+
+        private bool IsInHand(Component component)
+        {
+            var handRow = (RectTransform)typeof(BoardUI)
+                .GetField("_handRow", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(_board);
+            return component != null && component.transform.IsChildOf(handRow);
+        }
 
         private static int TotalResources(PlayerView player) =>
             player.red + player.green + player.blue + player.yellow;
@@ -1107,7 +1414,11 @@ namespace Indoctrination.Tests
 
             while (game.Phase != target && guard++ < 60)
             {
-                if (game.Phase == TurnPhase.Draft)
+                if (game.PendingChoice != null)
+                {
+                    ApplyAsHost(_ => game.AnswerPendingChoiceWithDefault());
+                }
+                else if (game.Phase == TurnPhase.Draft)
                 {
                     var drafter = game.CurrentDrafterId.Value;
                     var card = game.DraftZone[0].InstanceId;
@@ -1116,6 +1427,10 @@ namespace Indoctrination.Tests
                 else if (game.Phase == TurnPhase.Rolling && !game.DiceRolled)
                 {
                     ApplyAsHost(_ => game.RollPrimaryDice());
+                }
+                else if (game.Phase == TurnPhase.Activation && game.HasEffectsPending)
+                {
+                    ApplyAsHost(_ => game.ResolveNextActivation());
                 }
                 else
                 {
@@ -1182,6 +1497,19 @@ namespace Indoctrination.Tests
             var corners = new Vector3[4];
             rect.GetWorldCorners(corners);
             return Rect.MinMaxRect(corners[0].x, corners[0].y, corners[2].x, corners[2].y);
+        }
+
+        private static Rect RectRelativeTo(RectTransform rect, RectTransform ancestor)
+        {
+            var corners = new Vector3[4];
+            rect.GetWorldCorners(corners);
+            for (var i = 0; i < corners.Length; i++)
+            {
+                corners[i] = ancestor.InverseTransformPoint(corners[i]);
+            }
+
+            return Rect.MinMaxRect(corners.Min(point => point.x), corners.Min(point => point.y),
+                                   corners.Max(point => point.x), corners.Max(point => point.y));
         }
 
         private static Text FindTitle(BoardCardView card)
@@ -1274,12 +1602,88 @@ namespace Indoctrination.Tests
             return $"'{label}' exists at {rect} but is clipped away by a scroll viewport. Masks: {masks}";
         }
 
-        private IEnumerator StartGame()
+        private IEnumerator StartGame(int opponents = 1)
         {
-            _manager.AddTestSeat("Test Opponent");
+            for (var i = 0; i < opponents; i++)
+            {
+                _manager.AddTestSeat($"Test Opponent {i + 1}");
+            }
+
             _manager.RequestStartGameRpc();
             yield return WaitForFrames(6);
             Assert.IsNotNull(_manager.View, "a game view should have arrived");
+        }
+
+        /// <summary>
+        /// A card that stops to ask something mid-activation puts its question on
+        /// the stage, under the card that is asking, and puts it there *before*
+        /// that card's animation rather than during it.
+        ///
+        /// The board's own popup must stay out of it. Offering the same decision
+        /// in two places is bad enough; offering it in the one place where the
+        /// card asking is not visible defeats the point of staging it at all.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AQuestionMidActivationIsAskedOnTheStage()
+        {
+            // Two opponents, so an unaimed damage effect has a genuine choice to
+            // put rather than answering itself against the only candidate.
+            yield return StartGame(opponents: 2);
+            yield return AdvanceTo(TurnPhase.Rolling);
+
+            var game = ServerGame();
+            var asker = new CardInstance(-601, CardDatabase.Instance.Get(CardIds.ResearcherOfTheOldWays));
+            game.Players[0].Compound.Add(asker);
+
+            var face = asker.Definition.ActivationNumbers.First();
+            ApplyAsHost(_ => game.RollPrimaryDice());
+            ApplyAsHost(_ =>
+            {
+                foreach (var player in game.Players)
+                {
+                    game.SetPrimaryDie(player, face);
+                }
+
+                game.AdvancePhase();
+            });
+
+            // Let the stage work through anything queued ahead of the question.
+            var guard = 0;
+            while (!_manager.View.hasPendingChoice && guard++ < 240)
+            {
+                yield return null;
+            }
+
+            Assert.IsTrue(_manager.View.hasPendingChoice,
+                          "an unaimed damage Unit should stop to ask who it hits");
+            Assert.AreEqual(nameof(TurnPhase.Activation), _manager.View.phase);
+
+            yield return WaitForFrames(4);
+            Canvas.ForceUpdateCanvases();
+
+            var stage = Object.FindAnyObjectByType<ActivationStage>();
+            Assert.IsNotNull(stage, "the activation stage should exist");
+
+            var choiceRow = stage.transform.Find("Choice");
+            Assert.IsNotNull(choiceRow, "the stage should own a row for the question");
+            Assert.IsTrue(choiceRow.gameObject.activeInHierarchy,
+                          "the question has to be on the stage while it is pending");
+
+            var options = choiceRow.GetComponentsInChildren<Button>();
+            Assert.GreaterOrEqual(options.Length, 2,
+                                  "both opponents should be offered as targets");
+
+            // No prompt text of its own - the card is on screen saying what it does.
+            var popup = GameObject.Find("Popup Panel");
+            Assert.IsTrue(popup == null || !popup.activeInHierarchy,
+                          "the board popup must not offer the same decision as the stage");
+
+            // Answering it lets the sequence carry on.
+            options[0].onClick.Invoke();
+            yield return WaitForFrames(6);
+
+            Assert.IsFalse(_manager.View.hasPendingChoice,
+                           "answering on the stage has to actually answer the card");
         }
 
         private GameState ServerGame()
@@ -1299,6 +1703,20 @@ namespace Indoctrination.Tests
             var field = typeof(NetworkGameManager).GetField(
                 "_activationEnteredAt", BindingFlags.Instance | BindingFlags.NonPublic);
             field.SetValue(_manager, Time.time - GameSettings.ActivationDwellSeconds - 1f);
+        }
+
+        private void DelayNextActivation()
+        {
+            var field = typeof(NetworkGameManager).GetField(
+                "_nextActivationAt", BindingFlags.Instance | BindingFlags.NonPublic);
+            field.SetValue(_manager, Time.time + 100f);
+        }
+
+        private void ExpireNextActivation()
+        {
+            var field = typeof(NetworkGameManager).GetField(
+                "_nextActivationAt", BindingFlags.Instance | BindingFlags.NonPublic);
+            field.SetValue(_manager, Time.time - 1f);
         }
 
         private void ExpirePhaseClock()

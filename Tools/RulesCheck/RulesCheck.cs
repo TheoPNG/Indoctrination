@@ -82,6 +82,8 @@ static class RulesCheck
         Check("'*' cost is special", consume.Cost.IsSpecial);
         var doctor = cards.First(c => c.title == "Questionable Doctor");
         Check("Questionable Doctor activates on 3,4", doctor.ActivationNumbers.SequenceEqual(new[] { 3, 4 }));
+        var brainWasher = cards.First(c => c.id == CardIds.HydroPlant);
+        Check("Hydro Plant is printed as Brain Washer", brainWasher.Title == "Brain Washer");
         var yyrg = CardCost.Parse("YYRG");
         Check("YYRG = 2Y 1R 1G", yyrg.Amounts[ResourceColor.Yellow] == 2 && yyrg.Amounts[ResourceColor.Red] == 1
                                  && yyrg.Amounts[ResourceColor.Green] == 1 && yyrg.Total == 4);
@@ -734,6 +736,42 @@ static class RulesCheck
               $"{order.Count} activations, {order.Count(e => e.Player == first)} from the first player");
 
         Check("nothing was left waiting on a choice", game.PendingChoice == null);
+
+        // A live table opts into paced delivery. The plan must still be complete
+        // and public immediately, but no Unit may resolve before its own beat.
+        var paced = new GameState(new[] { "A", "B" }, cards, randomSeed: 41)
+        {
+            FirstDrafterIndex = 1,
+            PaceActivations = true
+        };
+        FinishDraft(paced);
+        paced.Players[1].Compound.Add(new CardInstance(-40, ActivatingOn(CardIds.SolarPanels, 3)));
+        paced.Players[0].Compound.Add(new CardInstance(-41, ActivatingOn(CardIds.MoneyTree, 3)));
+        foreach (var player in paced.LivingPlayers.ToList()) paced.RollPrimaryDie(player.PlayerId);
+        paced.SetPrimaryDie(paced.Players[0], 3);
+        paced.SetPrimaryDie(paced.Players[1], 3);
+        paced.AdvancePhase();
+
+        Check("paced play exposes duplicate dice as repeated Unit entries",
+              paced.ActivationSequence.Count == 4
+              && paced.ActivationSequence.Select(entry => entry.Controller.PlayerId)
+                  .SequenceEqual(new[] { 1, 0, 1, 0 }),
+              string.Join(",", paced.ActivationSequence.Select(entry => entry.Controller.PlayerId)));
+        Check("paced play resolves nothing before its presentation beat",
+              paced.ActivationCompletedCount == 0 && paced.HasEffectsPending);
+
+        paced.ResolveNextActivation();
+        Check("one presentation beat resolves exactly one Unit",
+              paced.ActivationCompletedCount == 1 && paced.HasEffectsPending);
+        Check("paced Activation cannot be skipped while Units remain",
+              Throws(() => paced.AdvancePhase()));
+
+        var pacedView = GameViewBuilder.Build(paced, viewerPlayerId: 0);
+        Check("every client receives the authoritative activation cursor",
+              pacedView.activations.Length == 4
+              && pacedView.activationCompletedCount == 1
+              && pacedView.activations[0].completed
+              && !pacedView.activations[1].completed);
 
         // --- Re-ordering changes which unit fires first.
         game.ReorderUnit(first, late.InstanceId, 0);

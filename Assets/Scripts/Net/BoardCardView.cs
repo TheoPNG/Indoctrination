@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Indoctrination.Core;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -16,9 +17,10 @@ namespace Indoctrination.Net
     public class BoardCardView : MonoBehaviour
     {
         public const float Width = 180f;
-        public const float Height = 250f;
+        public const float Height = 252f;
 
         private Image _background;
+        private Image _printedFace;
         private Outline _frame;
         private Text _tagText;
         private Text _headerText;
@@ -26,7 +28,11 @@ namespace Indoctrination.Net
         private Text _costText;
         private Text _activatesText;
         private Text _effectText;
+        private RectTransform _discountStamps;
+        private RectTransform _counterStack;
         private Button _button;
+        private EventTrigger _hover;
+        private string _counterSignature = "";
 
         public CardView Card { get; private set; }
 
@@ -84,15 +90,15 @@ namespace Indoctrination.Net
             // The board answers the pointer, not only the click. Handled through
             // EventTrigger rather than the Button's own transition, because the
             // lift is a transform change and Button only tints its graphic.
-            var hover = gameObject.AddComponent<EventTrigger>();
+            _hover = gameObject.AddComponent<EventTrigger>();
 
             var enter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
             enter.callback.AddListener(_ => BoardEffects.Instance.Hover(rect, hovering: true));
-            hover.triggers.Add(enter);
+            _hover.triggers.Add(enter);
 
             var exit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
             exit.callback.AddListener(_ => BoardEffects.Instance.Hover(rect, hovering: false));
-            hover.triggers.Add(exit);
+            _hover.triggers.Add(exit);
 
             // controlHeight lets each label report its own wrapped-text height
             // (Text is a native ILayoutElement), so rows stack snugly instead of
@@ -169,6 +175,47 @@ namespace Indoctrination.Net
                     element.minHeight = 0;
                 }
             }
+
+            // Printed faces sit behind the tag and the code-built fallback. They
+            // ignore the text layout because the PDF page already is the whole
+            // card, and preserving its 5:7 aspect keeps the border from stretching.
+            var printedFace = UIFactory.Panel("Printed Face", transform, Color.white);
+            printedFace.SetSiblingIndex(0);
+            UIFactory.Stretch(printedFace);
+            var printedFaceLayout = printedFace.gameObject.AddComponent<LayoutElement>();
+            printedFaceLayout.ignoreLayout = true;
+
+            _printedFace = printedFace.GetComponent<Image>();
+            _printedFace.preserveAspect = true;
+            _printedFace.raycastTarget = false;
+            _printedFace.gameObject.SetActive(false);
+
+            // Printed art already contains its cost. A live discount therefore
+            // belongs over the print as a small tabletop stamp, not as a second
+            // rewritten cost line competing with the PDF.
+            _discountStamps = UIFactory.Group("Discount Stamps", transform);
+            _discountStamps.anchorMin = _discountStamps.anchorMax = new Vector2(0.5f, 0.5f);
+            _discountStamps.pivot = new Vector2(0.5f, 0.5f);
+            UIFactory.SetSize(_discountStamps, 160f, 34f);
+            var stampLayout = UIFactory.HorizontalLayout(
+                _discountStamps, 5, new RectOffset(0, 0, 0, 0),
+                controlWidth: false, controlHeight: false);
+            stampLayout.childAlignment = TextAnchor.MiddleCenter;
+            var stampLayoutElement = _discountStamps.gameObject.AddComponent<LayoutElement>();
+            stampLayoutElement.ignoreLayout = true;
+            _discountStamps.gameObject.SetActive(false);
+
+            // Counters are physical pieces on top of a card, not another line of
+            // rules text. The stack ignores the card layout and sits over its
+            // upper-right corner like chips placed on a tabletop card.
+            _counterStack = UIFactory.Group("Counter Stack", transform);
+            _counterStack.anchorMin = _counterStack.anchorMax = new Vector2(1f, 1f);
+            _counterStack.pivot = new Vector2(1f, 1f);
+            _counterStack.anchoredPosition = new Vector2(-5f, -5f);
+            UIFactory.SetSize(_counterStack, 58f, 90f);
+            var counterPin = _counterStack.gameObject.AddComponent<LayoutElement>();
+            counterPin.ignoreLayout = true;
+            _counterStack.gameObject.SetActive(false);
         }
 
         /// <summary>
@@ -183,6 +230,11 @@ namespace Indoctrination.Net
             SetExtraContent(null);
             _tagText.text = tag ?? "";
             _tagText.gameObject.SetActive(!string.IsNullOrEmpty(tag));
+            SetCodeBuiltFaceVisible(true);
+            _printedFace.sprite = null;
+            _printedFace.gameObject.SetActive(false);
+            UIFactory.DestroyChildren(_discountStamps);
+            _discountStamps.gameObject.SetActive(false);
             _background.color = UITheme.SurfaceRaised;
             _frame.effectColor = UITheme.Border;
             _frame.effectDistance = new Vector2(1f, -1f);
@@ -239,6 +291,18 @@ namespace Indoctrination.Net
                     }
 
                     _effectText.text = definition.Effect;
+
+                    var printedFace = CardArt.FaceFor(definition.Id);
+                    if (printedFace != null)
+                    {
+                        _printedFace.sprite = printedFace;
+                        _printedFace.gameObject.SetActive(true);
+                        SetCodeBuiltFaceVisible(false);
+                        BuildDiscountStamps(card, definition);
+                    }
+
+
+                    UpdateCounters(card);
                 }
             }
             catch (Exception e)
@@ -258,6 +322,143 @@ namespace Indoctrination.Net
             _button.onClick.RemoveAllListeners();
             _button.interactable = true;
             _button.onClick.AddListener(() => CardPreview.Show(this));
+        }
+
+        /// <summary>Disables previews and hover motion on a locked presentation card.</summary>
+        public void SetPreviewEnabled(bool enabled)
+        {
+            _button.interactable = enabled;
+            if (_hover != null)
+            {
+                _hover.enabled = enabled;
+            }
+        }
+
+        /// <summary>Refreshes the visible chip stack without rebuilding the card.</summary>
+        public void UpdateCounters(CardView card)
+        {
+            Card = card;
+            var counters = card?.counters ?? Array.Empty<CounterView>();
+            var signature = string.Join("|", counters.Select(counter => $"{counter.name}:{counter.count}"));
+            var changed = !string.Equals(signature, _counterSignature, StringComparison.Ordinal);
+            _counterSignature = signature;
+
+            UIFactory.DestroyChildren(_counterStack);
+            _counterStack.gameObject.SetActive(counters.Length > 0);
+
+            for (var i = 0; i < counters.Length; i++)
+            {
+                var counter = counters[i];
+                var chip = UIFactory.Panel(counter.name, _counterStack,
+                    Color.Lerp(UITheme.SurfaceRaised, UITheme.Signal, 0.34f));
+                chip.anchorMin = chip.anchorMax = new Vector2(1f, 1f);
+                chip.pivot = new Vector2(1f, 1f);
+                chip.anchoredPosition = new Vector2(-(i % 2) * 17f, -i * 20f);
+                UIFactory.SetSize(chip, 34f, 34f);
+                var image = chip.GetComponent<Image>();
+                image.sprite = BoardArt.Disc;
+                image.raycastTarget = false;
+                UITheme.Frame(image, 1.2f, UITheme.Bone);
+
+                var initial = string.IsNullOrEmpty(counter.name)
+                    ? "•"
+                    : counter.name.Substring(0, 1).ToUpperInvariant();
+                var label = UIFactory.Label("Count", chip, $"{initial}{counter.count}",
+                    12, TextAnchor.MiddleCenter, UITheme.Bone);
+                label.fontStyle = FontStyle.Bold;
+                label.raycastTarget = false;
+                UIFactory.Stretch(label.rectTransform);
+            }
+
+            if (changed && counters.Length > 0)
+            {
+                BoardEffects.Instance.Pop(_counterStack, 1.22f, 0.3f);
+            }
+        }
+
+        private void SetCodeBuiltFaceVisible(bool visible)
+        {
+            _headerText.gameObject.SetActive(visible);
+            _titleText.gameObject.SetActive(visible);
+            _costText.gameObject.SetActive(visible);
+            _activatesText.gameObject.SetActive(visible);
+            _effectText.gameObject.SetActive(visible);
+        }
+
+        /// <summary>
+        /// Draws one circled -1 for each resource removed from the printed cost,
+        /// colored by the resource that was actually reduced.
+        /// </summary>
+        private void BuildDiscountStamps(CardView card, CardDefinition definition)
+        {
+            if (!card.isDiscounted || string.IsNullOrEmpty(card.costForYou)
+                                   || definition.Cost.IsSpecial)
+            {
+                return;
+            }
+
+            foreach (var color in DiscountStampColors(card, definition))
+            {
+                CreateDiscountStamp(_discountStamps, color, 32f, 15);
+            }
+
+            _discountStamps.gameObject.SetActive(_discountStamps.childCount > 0);
+        }
+
+        /// <summary>The resource color of every single point removed from a printed cost.</summary>
+        public static System.Collections.Generic.IEnumerable<ResourceColor> DiscountStampColors(
+            CardView card, CardDefinition definition)
+        {
+            if (card == null || definition == null || !card.isDiscounted
+                || string.IsNullOrEmpty(card.costForYou) || definition.Cost.IsSpecial)
+            {
+                yield break;
+            }
+
+            var actual = CardCost.Parse(card.costForYou);
+            var colors = new[]
+            {
+                ResourceColor.Red, ResourceColor.Green,
+                ResourceColor.Blue, ResourceColor.Yellow
+            };
+
+            foreach (var color in colors)
+            {
+                var printedAmount = definition.Cost.Amounts.TryGetValue(color, out var printed)
+                    ? printed
+                    : 0;
+                var actualAmount = actual.Amounts.TryGetValue(color, out var paid)
+                    ? paid
+                    : 0;
+
+                for (var i = 0; i < printedAmount - actualAmount; i++)
+                {
+                    yield return color;
+                }
+            }
+        }
+
+        /// <summary>Builds the circled -1 used over both a card and its enlarged PDF.</summary>
+        public static RectTransform CreateDiscountStamp(
+            Transform parent, ResourceColor color, float size, int fontSize)
+        {
+            var badge = UIFactory.Panel($"Discount {color}", parent, BoardArt.ColorOf(color));
+            UIFactory.SetSize(badge, size, size);
+            var image = badge.GetComponent<Image>();
+            image.sprite = BoardArt.Disc;
+            image.raycastTarget = false;
+            UITheme.Frame(image, 1.4f, UITheme.Bone);
+
+            var pin = badge.gameObject.AddComponent<LayoutElement>();
+            pin.minWidth = pin.preferredWidth = size;
+            pin.minHeight = pin.preferredHeight = size;
+
+            var label = UIFactory.Label(
+                "Value", badge, "−1", fontSize, TextAnchor.MiddleCenter, UITheme.Bone);
+            label.fontStyle = FontStyle.Bold;
+            label.raycastTarget = false;
+            UIFactory.Stretch(label.rectTransform);
+            return badge;
         }
 
         /// <summary>
@@ -338,6 +539,46 @@ namespace Indoctrination.Net
             var edge = Edge();
             edge.effectColor = new Color(tint.r, tint.g, tint.b, 0.9f);
             edge.effectDistance = new Vector2(2f, -2f);
+        }
+
+        /// <summary>
+        /// Removes the standing dice highlight without rebuilding the card. Die
+        /// results are presentation layered over a stable table, so changing a
+        /// roll should not deal every card onto the board again.
+        /// </summary>
+        public void ClearDueToActivate()
+        {
+            _background.color = UITheme.SurfaceRaised;
+
+            var edge = Edge();
+            edge.effectColor = Definition == null
+                ? UITheme.Border
+                : Color.Lerp(UITheme.Border, BoardArt.ColorOf(Definition.Color), 0.52f);
+            edge.effectDistance = new Vector2(1f, -1f);
+        }
+
+        /// <summary>
+        /// During Activation, queued Units burn white while everything else is
+        /// deliberately dulled. A Unit stays bright when duplicate dice still
+        /// owe it another turn.
+        /// </summary>
+        public void SetActivationState(bool presenting, bool queued)
+        {
+            var group = gameObject.GetComponent<CanvasGroup>();
+            if (group == null)
+            {
+                group = gameObject.AddComponent<CanvasGroup>();
+            }
+
+            group.alpha = presenting ? (queued ? 1f : 0.30f) : 1f;
+            if (!presenting)
+            {
+                return;
+            }
+
+            var edge = Edge();
+            edge.effectColor = queued ? Color.white : new Color(0.15f, 0.14f, 0.18f, 0.55f);
+            edge.effectDistance = queued ? new Vector2(3f, -3f) : new Vector2(1f, -1f);
         }
 
         /// <summary>

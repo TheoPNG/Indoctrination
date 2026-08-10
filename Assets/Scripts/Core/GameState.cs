@@ -6,6 +6,33 @@ using Indoctrination.Core.Effects;
 namespace Indoctrination.Core
 {
     /// <summary>
+    /// One die-triggered Unit in the exact round-robin order it will resolve.
+    /// The network layer exposes this public table information so every client
+    /// can present the same activation rather than guessing from the final state.
+    /// </summary>
+    public sealed class ActivationSequenceEntry
+    {
+        public int Index { get; }
+        public CardInstance Source { get; }
+        public PlayerState Controller { get; }
+        public int DieValue { get; }
+        public ActivationCategory Category { get; }
+        public bool Completed { get; internal set; }
+        public bool Skipped { get; internal set; }
+
+        public ActivationSequenceEntry(
+            int index, CardInstance source, PlayerState controller,
+            int dieValue, ActivationCategory category)
+        {
+            Index = index;
+            Source = source;
+            Controller = controller;
+            DieValue = dieValue;
+            Category = category;
+        }
+    }
+
+    /// <summary>
     /// The authoritative state of a single game of Indoctrination, and the rules
     /// operations that move it forward. Deliberately free of Unity and netcode
     /// types: the server owns one of these and replicates the results.
@@ -39,6 +66,7 @@ namespace Indoctrination.Core
         // Card effects waiting to run, oldest first. See ResolveEffects.
         private readonly Queue<PendingEffect> _effectQueue = new();
         private PendingEffect _resolving;
+        private readonly List<ActivationSequenceEntry> _activationSequence = new();
 
         /// <summary>
         /// Set when the Buy phase ends: the turn cannot actually close until the
@@ -57,6 +85,16 @@ namespace Indoctrination.Core
         public IReadOnlyList<CardInstance> DraftZone => _draftZone;
         public IReadOnlyList<CardInstance> Discard => _discard;
         public int DeckCount => _deck.Count;
+        public IReadOnlyList<ActivationSequenceEntry> ActivationSequence => _activationSequence;
+        public int ActivationCompletedCount { get; private set; }
+        public int ActivationBatch { get; private set; }
+
+        /// <summary>
+        /// The live network game resolves one activation per broadcast so clients
+        /// can show it. Rules tests and other in-process callers keep the original
+        /// synchronous behavior unless they explicitly opt in.
+        /// </summary>
+        public bool PaceActivations { get; set; }
 
         public TurnPhase Phase { get; private set; } = TurnPhase.Draft;
 
@@ -801,6 +839,11 @@ namespace Indoctrination.Core
                 throw new InvalidOperationException("A card is still waiting on a decision.");
             }
 
+            if (Phase == TurnPhase.Activation && PaceActivations && HasEffectsPending)
+            {
+                throw new InvalidOperationException("Unit activations are still resolving.");
+            }
+
             if (CheckForGameOver())
             {
                 return;
@@ -849,7 +892,12 @@ namespace Indoctrination.Core
                     throw new InvalidOperationException($"Cannot advance from {Phase}.");
             }
 
-            ResolveEffects();
+            // Live games reveal one activation at a time. Other phases, and the
+            // in-process rules harness, retain the original synchronous drain.
+            if (Phase != TurnPhase.Activation || !PaceActivations)
+            {
+                ResolveEffects();
+            }
         }
 
         /// <summary>
@@ -1451,6 +1499,7 @@ namespace Indoctrination.Core
             public EffectRoutine Routine;
             public string Description;
             public IEnumerator<ChoiceRequest> Steps;
+            public ActivationSequenceEntry Activation;
         }
 
         /// <summary>
@@ -1484,6 +1533,13 @@ namespace Indoctrination.Core
 
         public void EnqueueEffect(CardInstance source, PlayerState controller, EffectRoutine routine, string description)
         {
+            EnqueueEffect(source, controller, routine, description, null);
+        }
+
+        private void EnqueueEffect(
+            CardInstance source, PlayerState controller, EffectRoutine routine,
+            string description, ActivationSequenceEntry activation)
+        {
             if (routine == null || controller == null)
             {
                 return;
@@ -1496,7 +1552,8 @@ namespace Indoctrination.Core
                 Source = source,
                 Controller = controller,
                 Routine = routine,
-                Description = description
+                Description = description,
+                Activation = activation
             });
         }
 
@@ -1505,6 +1562,20 @@ namespace Indoctrination.Core
         /// Safe to call at any time; does nothing if a choice is already pending.
         /// </summary>
         public void ResolveEffects()
+        {
+            ResolveEffects(stopAfterOneActivation: false);
+        }
+
+        /// <summary>
+        /// Resolves through one die-triggered Unit, or until that Unit asks a
+        /// question. Used only by the paced network presentation.
+        /// </summary>
+        public void ResolveNextActivation()
+        {
+            ResolveEffects(stopAfterOneActivation: true);
+        }
+
+        private void ResolveEffects(bool stopAfterOneActivation)
         {
             // Two cards that retaliate against each other would otherwise trade
             // blows forever. The board is in a legal state at every step, so
@@ -1549,7 +1620,10 @@ namespace Indoctrination.Core
                     // A card whose controller died before it got its turn does nothing.
                     if (!_resolving.Controller.IsAlive)
                     {
+                        CompleteActivation(_resolving, skipped: true);
                         _resolving = null;
+                        // Dead players consume no presentation beat. Continue
+                        // through every skipped entry until a living Unit fires.
                         continue;
                     }
 
@@ -1559,8 +1633,14 @@ namespace Indoctrination.Core
 
                 if (!_resolving.Steps.MoveNext())
                 {
+                    var completedActivation = _resolving.Activation != null;
+                    CompleteActivation(_resolving, skipped: false);
                     _resolving = null;
                     CheckForGameOver();
+                    if (stopAfterOneActivation && completedActivation)
+                    {
+                        return;
+                    }
                     continue;
                 }
 
@@ -1580,13 +1660,32 @@ namespace Indoctrination.Core
                 // abandoned rather than left waiting for an answer that can never come.
                 if (!GetPlayer(request.AskedOfPlayerId).IsAlive)
                 {
+                    var completedActivation = _resolving.Activation != null;
+                    CompleteActivation(_resolving, skipped: false);
                     _resolving = null;
                     CheckForGameOver();
+                    if (stopAfterOneActivation && completedActivation)
+                    {
+                        return;
+                    }
                     continue;
                 }
 
                 PendingChoice = request;
             }
+        }
+
+        private void CompleteActivation(PendingEffect effect, bool skipped)
+        {
+            if (effect?.Activation == null || effect.Activation.Completed)
+            {
+                return;
+            }
+
+            effect.Activation.Skipped = skipped;
+            effect.Activation.Completed = true;
+            ActivationCompletedCount = Math.Max(
+                ActivationCompletedCount, effect.Activation.Index + 1);
         }
 
         /// <summary>
@@ -1624,7 +1723,14 @@ namespace Indoctrination.Core
         private void Answered()
         {
             PendingChoice = null;
-            ResolveEffects();
+            if (PaceActivations && Phase == TurnPhase.Activation)
+            {
+                ResolveNextActivation();
+            }
+            else
+            {
+                ResolveEffects();
+            }
         }
 
         public void AnswerPlayerChoice(int playerId, int chosenPlayerId)
@@ -1718,14 +1824,18 @@ namespace Indoctrination.Core
         /// matching units twice. Private dice from Standardized Uniforms only ever
         /// wake their owner's units.
         ///
-        /// Everyone's activating Units are gathered first and then queued in a
-        /// fixed order - Draw, Block, Followers, Damage, Health, then everything
-        /// else - rather than seat by seat, so a Block granted by one unit is on
-        /// the board before Damage from another unit this same round can be
-        /// reduced by it. See <see cref="ActivationCategory"/>.
+        /// Everyone's activating Units are gathered first and then dealt one per
+        /// player around the table, beginning with the first drafter. A player's
+        /// own compound order is preserved, so dragging is their activation-order
+        /// decision. Categories describe the animation only; they never reorder
+        /// rules resolution.
         /// </summary>
         private void QueueActivations()
         {
+            _activationSequence.Clear();
+            ActivationCompletedCount = 0;
+            ActivationBatch++;
+
             var shared = LivingPlayers.Select(p => p.PrimaryDie).ToList();
             var queues = new List<Queue<(PlayerState Player, CardInstance Unit, int DieValue)>>();
 
@@ -1770,7 +1880,13 @@ namespace Indoctrination.Core
                     var (player, unit, dieValue) = queue.Dequeue();
 
                     player.UnitsTriggeredThisTurn++;
-                    EnqueueEffect(unit, player, CardEffects.For(unit.Definition.Id, dieValue), unit.Title);
+                    var activation = new ActivationSequenceEntry(
+                        _activationSequence.Count, unit, player, dieValue,
+                        CardEffects.CategoryFor(unit.Definition.Id, dieValue));
+                    _activationSequence.Add(activation);
+                    EnqueueEffect(
+                        unit, player, CardEffects.For(unit.Definition.Id, dieValue),
+                        unit.Title, activation);
                 }
             }
         }

@@ -142,6 +142,24 @@ namespace Indoctrination.EditorTools
             }
 
             Check("every card's type, colour, and cost parse", parsed == database.All.Count);
+
+            var blueCards = database.All.Where(card => card.Color == ResourceColor.Blue).ToList();
+            var missingBlueFaces = blueCards
+                .Where(card => CardArt.FaceFor(card.Id) == null)
+                .Select(card => card.Title)
+                .ToList();
+            Check("every Blue card has a printed face", missingBlueFaces.Count == 0,
+                  string.Join(", ", missingBlueFaces));
+
+            var wrongAspect = blueCards
+                .Select(card => new { card.Title, Face = CardArt.FaceFor(card.Id) })
+                .Where(entry => entry.Face != null
+                                && !Mathf.Approximately(
+                                    entry.Face.rect.width / entry.Face.rect.height, 5f / 7f))
+                .Select(entry => entry.Title)
+                .ToList();
+            Check("printed faces preserve the PDF 5:7 aspect", wrongAspect.Count == 0,
+                  string.Join(", ", wrongAspect));
         }
 
         /// <summary>
@@ -207,9 +225,25 @@ namespace Indoctrination.EditorTools
             foreach (var card in renderedCards)
             {
                 var title = card.transform.Find("Title")?.GetComponent<Text>();
+                var printedFace = card.transform.Find("Printed Face")?.GetComponent<Image>();
                 CardDatabase.Instance.TryGet(card.Card.definitionId, out var definition);
                 var expected = definition?.Title ?? card.Card.definitionId;
                 var cardRect = ((RectTransform)card.transform).rect;
+
+                if (printedFace != null && printedFace.gameObject.activeSelf)
+                {
+                    var faceRect = printedFace.rectTransform.rect;
+                    if (printedFace.sprite == null
+                        || !printedFace.preserveAspect
+                        || faceRect.width <= 0f
+                        || faceRect.height <= 0f)
+                    {
+                        titleFailures.Add($"{expected}: printed face is missing or has no size");
+                    }
+
+                    continue;
+                }
+
                 var titleBounds = title == null
                     ? new Bounds()
                     : RectTransformUtility.CalculateRelativeRectTransformBounds(
@@ -233,10 +267,10 @@ namespace Indoctrination.EditorTools
                 }
             }
 
-            Check("every draft card renders its full title in a visible text row",
+            Check("every draft card renders a printed face or a visible title row",
                   renderedCards.Count == game.DraftZone.Count && titleFailures.Count == 0,
                   titleFailures.Count == 0
-                      ? $"{renderedCards.Count} titles"
+                      ? $"{renderedCards.Count} cards"
                       : string.Join(" | ", titleFailures));
 
             while (game.CurrentDrafterId is int drafter)
@@ -254,7 +288,8 @@ namespace Indoctrination.EditorTools
             {
                 board.RenderForTesting(GameViewBuilder.Build(game, player.PlayerId));
                 var gameRoot = canvas.transform.Find("Game Root") as RectTransform;
-                var actionViewport = gameRoot?.Find("Popup Panel/Action Viewport") as RectTransform;
+                var popupPanel = gameRoot?.Find("Popup Panel") as RectTransform;
+                var actionViewport = popupPanel?.Find("Action Viewport") as RectTransform;
                 var actionContent = actionViewport?.Find("Action Content") as RectTransform;
                 var roll = actionContent?.Find("Roll") as RectTransform;
                 LayoutRebuilder.ForceRebuildLayoutImmediate(gameRoot);
@@ -266,8 +301,12 @@ namespace Indoctrination.EditorTools
                 var viewportRect = actionViewport?.rect ?? new Rect();
                 var rollIsVisible = roll != null
                     && roll.gameObject.activeInHierarchy
-                    && roll.rect.width >= 200f
-                    && roll.rect.height >= 50f
+                    && roll.rect.width >= 240f
+                    && roll.rect.width <= 280f
+                    && roll.rect.height >= 48f
+                    && roll.rect.height <= 58f
+                    && popupPanel.rect.width <= 310f
+                    && popupPanel.rect.height <= 100f
                     && rollBounds.min.x >= viewportRect.xMin - 0.1f
                     && rollBounds.max.x <= viewportRect.xMax + 0.1f
                     && rollBounds.min.y >= viewportRect.yMin - 0.1f
@@ -368,14 +407,26 @@ namespace Indoctrination.EditorTools
                   && handRow.GetComponent<LayoutElement>().ignoreLayout,
                   handRow == null ? "hand row not found" : "hand row is still laid out in a row");
 
-            // The tray floats over the board, so it needs a solid background of
-            // its own - both to read as a surface and to stop clicks meant for
-            // the hand falling through to whatever compound is behind it.
-            Check("the hand has a background of its own to sit on",
+            // The hand has no visible tray, but its transparent Graphic remains
+            // the hover and draft-drop surface instead of letting input fall
+            // through to the compound behind it.
+            Check("the fanned hand has an invisible input surface, not a box",
                   handRow != null
                   && handRow.GetComponent<Image>() != null
-                  && handRow.GetComponent<Image>().raycastTarget,
-                  "the hand row needs a raycast-target graphic of its own");
+                  && handRow.GetComponent<Image>().raycastTarget
+                  && handRow.GetComponent<Image>().color.a <= 0.001f,
+                  "the hand row should be transparent while still receiving input");
+
+            var dropZone = gameRoot.Find("Hand Drop Zone") as RectTransform;
+            var dropArc = dropZone?.Find("Drop Arc") as RectTransform;
+            Check("drafting has a wide clipped-semicircle target behind the hand",
+                  dropZone != null
+                  && dropArc != null
+                  && dropZone.GetComponent<RectMask2D>() != null
+                  && !dropZone.GetComponent<Image>().raycastTarget
+                  && dropZone.rect.width > BoardCardView.Width * 2f
+                  && dropArc.rect.height >= dropZone.rect.height * 1.9f,
+                  dropZone == null ? "drop zone not found" : $"drop zone {dropZone.rect.size}");
 
             var popupBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(gameRoot, popupPanel);
             Check("the popup leaves the bottom of the screen clear for the hand",

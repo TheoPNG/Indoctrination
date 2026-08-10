@@ -206,6 +206,11 @@ namespace Indoctrination.Net
         /// </summary>
         public const float ScrollContentPadding = 4f;
 
+        // Cards swell around their centre on hover. The horizontal inset has to
+        // clear half of that growth or the scroll mask shaves the first card's
+        // left edge precisely when the player points at it.
+        private const float ScrollHorizontalPadding = 8f;
+
         public static RectTransform HorizontalScroll(string name, Transform parent, float height)
         {
             var root = Panel(name, parent, Color.clear);
@@ -227,14 +232,22 @@ namespace Indoctrination.Net
             content.anchorMin = new Vector2(0, 0);
             content.anchorMax = new Vector2(0, 1);
             content.pivot = new Vector2(0, 0.5f);
+            // Changing a fresh RectTransform from its centred default pivot to
+            // a left pivot preserves its old visual position, which leaves the
+            // content anchoredPosition at -50 and clips the first child. The
+            // scroll strip itself must begin exactly at the viewport's left edge.
+            content.anchoredPosition = Vector2.zero;
 
-            var pad = (int)ScrollContentPadding;
+            var verticalPad = (int)ScrollContentPadding;
+            var horizontalPad = (int)ScrollHorizontalPadding;
 
             // childControlHeight is deliberately off: the cards carry their own
             // pinned height, and letting the strip resize them squeezed them
             // until they overflowed the viewport that clips them.
             var layout = HorizontalLayout(
-                content, 8, new RectOffset(pad, pad, pad, pad), controlHeight: false);
+                content, 8,
+                new RectOffset(horizontalPad, horizontalPad, verticalPad, verticalPad),
+                controlHeight: false);
             layout.childAlignment = TextAnchor.MiddleLeft;
 
             FitToContent(content);

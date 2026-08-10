@@ -58,6 +58,19 @@ namespace Indoctrination.Net
                 pendingChoice = ToChoiceView(game.PendingChoice),
                 resolvingDescription = game.ResolvingDescription,
                 resolvingCardId = game.ResolvingCardId,
+                activationBatch = game.ActivationBatch,
+                activationCompletedCount = game.ActivationCompletedCount,
+                activations = game.ActivationSequence.Select(entry => new ActivationView
+                {
+                    sequence = entry.Index,
+                    cardInstanceId = entry.Source.InstanceId,
+                    definitionId = entry.Source.Definition.Id,
+                    controllerPlayerId = entry.Controller.PlayerId,
+                    dieValue = entry.DieValue,
+                    category = entry.Category.ToString(),
+                    completed = entry.Completed,
+                    skipped = entry.Skipped
+                }).ToArray(),
                 players = game.Players.Select(player => new PlayerView
                 {
                     playerId = player.PlayerId,
@@ -111,7 +124,16 @@ namespace Indoctrination.Net
 
         private static CardView ToCardView(CardInstance card)
         {
-            return new CardView { instanceId = card.InstanceId, definitionId = card.Definition.Id };
+            return new CardView
+            {
+                instanceId = card.InstanceId,
+                definitionId = card.Definition.Id,
+                counters = card.CounterNames.Select(name => new CounterView
+                {
+                    name = name,
+                    count = card.GetCounter(name)
+                }).ToArray()
+            };
         }
 
         /// <summary>

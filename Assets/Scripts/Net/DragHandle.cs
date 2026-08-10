@@ -26,6 +26,20 @@ namespace Indoctrination.Net
         /// <summary>Called on release, with the pointer's final screen position.</summary>
         public Action<PointerEventData> OnDropped;
 
+        /// <summary>
+        /// Reports the live pointer while a card is carried, for destinations
+        /// that light up before the player releases it.
+        /// </summary>
+        public Action<PointerEventData> OnDragMoved;
+
+        /// <summary>
+        /// Raised however the drag ends - dropped, or abandoned because the card
+        /// stopped existing. Anything switched on for the duration of a drag has
+        /// to be switched off from here, not from <see cref="OnDropped"/>, or it
+        /// stays on forever when the drag is abandoned.
+        /// </summary>
+        public Action OnDragFinished;
+
         private RectTransform _ghost;
         private CanvasGroup _dim;
 
@@ -59,6 +73,7 @@ namespace Indoctrination.Net
             ghostGroup.blocksRaycasts = false;
 
             PositionGhost(eventData);
+            OnDragMoved?.Invoke(eventData);
 
             // The card left behind dims, so it is obvious the real move has not
             // happened yet - only the drop decides that.
@@ -74,9 +89,37 @@ namespace Indoctrination.Net
         public void OnDrag(PointerEventData eventData)
         {
             PositionGhost(eventData);
+            OnDragMoved?.Invoke(eventData);
         }
 
         public void OnEndDrag(PointerEventData eventData)
+        {
+            ClearGhost();
+            OnDropped?.Invoke(eventData);
+        }
+
+        /// <summary>
+        /// The ghost is destroyed from here as well as from OnEndDrag, because
+        /// OnEndDrag is not guaranteed to run at all.
+        ///
+        /// The board destroys and rebuilds its cards whenever the server sends a
+        /// new view, which can easily happen mid-drag. Unity does not deliver
+        /// OnEndDrag to a destroyed object, so the ghost - which lives on the
+        /// flight layer, not on the card - was orphaned there permanently: a
+        /// half-transparent card sitting over the board for the rest of the
+        /// session, surviving even a return to the connect screen, because the
+        /// flight layer is a sibling of the board and never hidden with it.
+        ///
+        /// Tying cleanup to this component's own lifetime is what makes it
+        /// unconditional. Anything parented outside the object that created it
+        /// needs the same treatment.
+        /// </summary>
+        private void OnDisable() => ClearGhost();
+
+        private void OnDestroy() => ClearGhost();
+
+        /// <summary>Safe to call repeatedly, and from any of the ways a drag can end.</summary>
+        private void ClearGhost()
         {
             if (_dim != null)
             {
@@ -85,11 +128,22 @@ namespace Indoctrination.Net
 
             if (_ghost != null)
             {
-                Destroy(_ghost.gameObject);
+                var doomed = _ghost.gameObject;
                 _ghost = null;
-            }
 
-            OnDropped?.Invoke(eventData);
+                if (Application.isPlaying)
+                {
+                    Destroy(doomed);
+                }
+                else
+                {
+                    DestroyImmediate(doomed);
+                }
+
+                // Only announced when there was actually a drag in progress, so
+                // a plain disable does not fire it.
+                OnDragFinished?.Invoke();
+            }
         }
 
         private void PositionGhost(PointerEventData eventData)

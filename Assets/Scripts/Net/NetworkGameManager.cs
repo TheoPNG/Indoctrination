@@ -285,7 +285,8 @@ namespace Indoctrination.Net
 
             _game = new GameState(names, CardDatabase.Instance.All, seed)
             {
-                FirstDrafterIndex = new System.Random(seed).Next(names.Count)
+                FirstDrafterIndex = new System.Random(seed).Next(names.Count),
+                PaceActivations = true
             };
             _game.BeginDraft();
             _phaseStartedAt = Time.time;
@@ -587,6 +588,7 @@ namespace Indoctrination.Net
 
         /// <summary>Time.time the Activation phase began, for its own short dwell.</summary>
         private float _activationEnteredAt;
+        private float _nextActivationAt;
 
         private void AdvancePhase()
         {
@@ -598,7 +600,41 @@ namespace Indoctrination.Net
             if (_game.Phase == TurnPhase.Activation)
             {
                 _activationEnteredAt = Time.time;
+                _nextActivationAt = Time.time;
             }
+        }
+
+        /// <summary>
+        /// Resolves exactly one real Unit activation and broadcasts its result.
+        /// Choices interrupt before completion, so their answer is visibly made
+        /// before the card performs its animation.
+        /// </summary>
+        private bool TickActivation()
+        {
+            if (_game.Phase != TurnPhase.Activation
+                || _game.PendingChoice != null
+                || !_game.HasEffectsPending)
+            {
+                return false;
+            }
+
+            if (Time.time < _nextActivationAt)
+            {
+                return true;
+            }
+
+            var completedBefore = _game.ActivationCompletedCount;
+            _game.ResolveNextActivation();
+
+            if (_game.ActivationCompletedCount > completedBefore)
+            {
+                _activationEnteredAt = Time.time;
+                _phaseStartedAt = Time.time;
+                _nextActivationAt = Time.time + GameSettings.ActivationStepSeconds;
+            }
+
+            BroadcastState();
+            return true;
         }
 
         /// <summary>
@@ -615,6 +651,11 @@ namespace Indoctrination.Net
         private void Update()
         {
             if (!IsServer || _game == null)
+            {
+                return;
+            }
+
+            if (TickActivation())
             {
                 return;
             }
@@ -731,6 +772,7 @@ namespace Indoctrination.Net
             var phaseBefore = _game.Phase;
             var turnBefore = _game.TurnInRound;
             var hadPendingChoice = _game.PendingChoice != null;
+            var completedActivationsBefore = _game.ActivationCompletedCount;
 
             try
             {
@@ -750,6 +792,13 @@ namespace Indoctrination.Net
                 || (hadPendingChoice && _game.PendingChoice == null))
             {
                 _phaseStartedAt = Time.time;
+            }
+
+            if (_game.ActivationCompletedCount > completedActivationsBefore)
+            {
+                _activationEnteredAt = Time.time;
+                _phaseStartedAt = Time.time;
+                _nextActivationAt = Time.time + GameSettings.ActivationStepSeconds;
             }
 
             // A new question starts its own clock rather than inheriting the

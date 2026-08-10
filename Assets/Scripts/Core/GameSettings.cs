@@ -80,6 +80,13 @@ namespace Indoctrination.Core
         public const float ActivationDwellSeconds = 2.5f;
 
         /// <summary>
+        /// The minimum screen time between two Unit activations. The rules have
+        /// already resolved when this expires; this is presentation pacing so a
+        /// table can follow the round-robin sequence instead of seeing one jump.
+        /// </summary>
+        public const float ActivationStepSeconds = 1.65f;
+
+        /// <summary>
         /// A ceiling on how much work one batch of card effects may do. Two cards
         /// that retaliate against each other would otherwise trade blows forever;
         /// this stops the server hanging on a board nobody expected.

@@ -23,6 +23,20 @@ namespace Indoctrination.Net
         public int maxAmount;
     }
 
+    /// <summary>One public Unit activation in its authoritative table order.</summary>
+    [Serializable]
+    public class ActivationView
+    {
+        public int sequence;
+        public int cardInstanceId;
+        public string definitionId;
+        public int controllerPlayerId;
+        public int dieValue;
+        public string category;
+        public bool completed;
+        public bool skipped;
+    }
+
 
     /// <summary>
     /// What one player is allowed to see of the game. The server builds a separate
@@ -138,6 +152,14 @@ namespace Indoctrination.Net
         /// </summary>
         public string resolvingCardId;
 
+        /// <summary>
+        /// Exact die-triggered order for this Activation phase. Repeated entries
+        /// are intentional: two matching dice make the same Unit fire twice.
+        /// </summary>
+        public ActivationView[] activations = Array.Empty<ActivationView>();
+        public int activationCompletedCount;
+        public int activationBatch;
+
         public PlayerView Viewer
         {
             get
@@ -224,6 +246,16 @@ namespace Indoctrination.Net
 
         /// <summary>Whether the viewer can afford it right now.</summary>
         public bool canAfford;
+
+        /// <summary>Public counters physically sitting on this card.</summary>
+        public CounterView[] counters = Array.Empty<CounterView>();
+    }
+
+    [Serializable]
+    public class CounterView
+    {
+        public string name;
+        public int count;
     }
 
     /// <summary>

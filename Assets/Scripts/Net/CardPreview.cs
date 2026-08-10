@@ -15,15 +15,25 @@ namespace Indoctrination.Net
     /// </summary>
     public class CardPreview : MonoBehaviour
     {
+        private const float PrintedWidth = 320f;
+        private const float PrintedHeight = PrintedWidth * 7f / 5f;
+        private const float PrintedY = 100f;
+        private const float PrintedControlGap = 10f;
+        private const float MaxPrintedControlHeight = 200f;
+
         private static CardPreview _instance;
 
         private RectTransform _panel;
+        private RectTransform _printedPanel;
+        private Image _printedFace;
+        private RectTransform _printedDiscountStamps;
         private Text _titleText;
         private Text _metaText;
         private Text _effectText;
         private RectTransform _actionRow;
         private RectTransform _extraContent;
         private Image _accent;
+        private bool _printedMode;
 
         /// <summary>
         /// Creates the preview once, parented to the canvas, and keeps it hidden
@@ -80,14 +90,22 @@ namespace Indoctrination.Net
             ShowDefinition(ritual, "Ritual");
             _actionRow.gameObject.SetActive(false);
 
+            // The printed card is the thing that falls away. Its separate control
+            // tray is hidden for the flash, just as the text card hides its buttons.
+            var animated = _printedMode ? _printedPanel : _panel;
+            if (_printedMode)
+            {
+                _panel.gameObject.SetActive(false);
+            }
+
             // Nothing behind this is actionable while it plays, so the board is
             // dimmed harder than for an ordinary preview.
             var backdrop = GetComponent<Image>();
             var restingDim = backdrop.color;
             backdrop.color = new Color(0f, 0f, 0f, 0.88f);
 
-            var start = _panel.position;
-            var startScale = _panel.localScale;
+            var start = animated.position;
+            var startScale = animated.localScale;
 
             // Held long enough to read, since a Ritual is often the biggest thing
             // that happens in a turn and there is nothing left on the board to
@@ -102,13 +120,14 @@ namespace Indoctrination.Net
                 elapsed += Time.deltaTime;
                 var t = Mathf.SmoothStep(0f, 1f, elapsed / fall);
 
-                _panel.position = Vector3.Lerp(start, discardPosition, t);
-                _panel.localScale = startScale * (1f - (0.75f * t));
+                animated.position = Vector3.Lerp(start, discardPosition, t);
+                animated.localScale = startScale * (1f - (0.75f * t));
                 yield return null;
             }
 
-            _panel.position = start;
-            _panel.localScale = startScale;
+            animated.position = start;
+            animated.localScale = startScale;
+            _panel.gameObject.SetActive(true);
             _actionRow.gameObject.SetActive(true);
             backdrop.color = restingDim;
             gameObject.SetActive(false);
@@ -157,6 +176,30 @@ namespace Indoctrination.Net
             dismiss.transition = Selectable.Transition.None;
             dismiss.onClick.AddListener(Hide);
 
+            // Imported cards get a literal enlarged print, kept separate from the
+            // control tray so live card actions never cover their rules text.
+            _printedPanel = UIFactory.Panel("Printed Card", root, Color.white);
+            UITheme.Frame(_printedPanel.GetComponent<Image>(), 1.5f, UITheme.Border);
+            _printedPanel.anchorMin = _printedPanel.anchorMax = new Vector2(0.5f, 0.5f);
+            _printedPanel.anchoredPosition = new Vector2(0f, PrintedY);
+            UIFactory.SetSize(_printedPanel, PrintedWidth, PrintedHeight);
+
+            _printedFace = _printedPanel.GetComponent<Image>();
+            _printedFace.preserveAspect = true;
+
+            _printedDiscountStamps = UIFactory.Group("Discount Stamps", _printedPanel);
+            _printedDiscountStamps.anchorMin = _printedDiscountStamps.anchorMax = new Vector2(0.5f, 0.5f);
+            _printedDiscountStamps.pivot = new Vector2(0.5f, 0.5f);
+            UIFactory.SetSize(_printedDiscountStamps, 240f, 48f);
+            var discountLayout = UIFactory.HorizontalLayout(
+                _printedDiscountStamps, 7, new RectOffset(0, 0, 0, 0),
+                controlWidth: false, controlHeight: false);
+            discountLayout.childAlignment = TextAnchor.MiddleCenter;
+            _printedDiscountStamps.gameObject.SetActive(false);
+
+            _printedPanel.gameObject.AddComponent<Button>().transition = Selectable.Transition.None;
+            _printedPanel.gameObject.SetActive(false);
+
             _panel = UIFactory.Panel("Preview Card", root, UITheme.SurfaceRaised);
             UITheme.Frame(_panel.GetComponent<Image>(), 1.5f);
             _panel.anchorMin = _panel.anchorMax = new Vector2(0.5f, 0.5f);
@@ -185,7 +228,7 @@ namespace Indoctrination.Net
             effectRow.flexibleWidth = 1;
 
             // A card whose ability is a small menu of its own builds it here,
-            // between what the card says and the buttons that close the preview.
+            // between what the card says and any action it offers.
             _extraContent = UIFactory.Group("Extra", _panel);
             UIFactory.VerticalLayout(_extraContent, 6, new RectOffset(0, 0, 0, 0), controlHeight: true);
             UIFactory.FitToContent(
@@ -224,6 +267,8 @@ namespace Indoctrination.Net
             var lead = string.IsNullOrEmpty(banner) ? "" : $"{banner.ToUpperInvariant()}   ";
             _metaText.text = $"{lead}{definition.Color} {definition.Type}    Cost: {cost}{activates}";
             _effectText.text = definition.Effect;
+
+            SetPrintedFace(CardArt.FaceFor(definition.Id));
         }
 
         private void Display(BoardCardView card)
@@ -233,6 +278,7 @@ namespace Indoctrination.Net
 
             if (card.Definition == null)
             {
+                SetPrintedFace(null);
                 _titleText.text = card.Card?.definitionId ?? "Unknown card";
                 _metaText.text = "";
                 _effectText.text = "This client does not recognise that card.";
@@ -243,10 +289,11 @@ namespace Indoctrination.Net
                 ShowDefinition(card.Definition, null);
             }
 
+            ShowDiscountStamps(card);
+
             UIFactory.DestroyChildren(_extraContent);
             card.ExtraContentBuilder?.Invoke(_extraContent);
 
-            _actionRow.gameObject.SetActive(true);
             UIFactory.DestroyChildren(_actionRow);
 
             if (card.Action != null)
@@ -261,8 +308,91 @@ namespace Indoctrination.Net
                 }, UITheme.Affirm, 200, 40);
             }
 
-            UIFactory.ButtonWithLabel("Close", _actionRow, "Close", Hide,
-                UITheme.ButtonQuiet, 120, 40);
+            _actionRow.gameObject.SetActive(_actionRow.childCount > 0);
+
+            SizePrintedControlTray();
+        }
+
+        private void SetPrintedFace(Sprite face)
+        {
+            _printedMode = face != null;
+            _printedFace.sprite = face;
+            UIFactory.DestroyChildren(_printedDiscountStamps);
+            _printedDiscountStamps.gameObject.SetActive(false);
+            _printedPanel.gameObject.SetActive(_printedMode);
+            _printedPanel.anchoredPosition = new Vector2(0f, PrintedY);
+            _printedPanel.localScale = Vector3.one;
+
+            _accent.gameObject.SetActive(!_printedMode);
+            _titleText.gameObject.SetActive(!_printedMode);
+            _metaText.gameObject.SetActive(!_printedMode);
+            _effectText.gameObject.SetActive(!_printedMode);
+
+            _panel.gameObject.SetActive(true);
+            if (!_printedMode)
+            {
+                UIFactory.SetSize(_panel, 460f, 420f);
+                _panel.anchoredPosition = Vector2.zero;
+            }
+        }
+
+        private void ShowDiscountStamps(BoardCardView card)
+        {
+            if (!_printedMode || card?.Definition == null)
+            {
+                return;
+            }
+
+            foreach (var color in BoardCardView.DiscountStampColors(card.Card, card.Definition))
+            {
+                BoardCardView.CreateDiscountStamp(_printedDiscountStamps, color, 44f, 20);
+            }
+
+            _printedDiscountStamps.gameObject.SetActive(_printedDiscountStamps.childCount > 0);
+        }
+
+        /// <summary>
+        /// Keeps controls below the printed card rather than covering its effect
+        /// text. A plain printed preview needs no tray because clicking the
+        /// backdrop dismisses it; live controls grow one only as much as needed.
+        /// </summary>
+        private void SizePrintedControlTray()
+        {
+            var hasExtra = _extraContent.childCount > 0;
+            var hasActions = _actionRow.childCount > 0;
+
+            if (!_printedMode)
+            {
+                _extraContent.gameObject.SetActive(hasExtra);
+                _actionRow.gameObject.SetActive(hasActions);
+                return;
+            }
+
+            _extraContent.gameObject.SetActive(hasExtra);
+            _actionRow.gameObject.SetActive(hasActions);
+
+            if (!hasExtra && !hasActions)
+            {
+                _panel.gameObject.SetActive(false);
+                return;
+            }
+
+            _panel.gameObject.SetActive(true);
+            if (hasExtra)
+            {
+                LayoutRebuilder.ForceRebuildLayoutImmediate(_extraContent);
+            }
+
+            var extraHeight = hasExtra ? LayoutUtility.GetPreferredHeight(_extraContent) : 0f;
+            var height = 36f
+                         + (hasActions ? 44f : 0f)
+                         + (hasExtra ? PrintedControlGap + extraHeight : 0f);
+            height = Mathf.Clamp(height, 52f, MaxPrintedControlHeight);
+
+            UIFactory.SetSize(_panel, 460f, height);
+            var printedBottom = PrintedY - (PrintedHeight / 2f);
+            var trayTop = printedBottom - PrintedControlGap;
+            _panel.anchoredPosition = new Vector2(0f, trayTop - (height / 2f));
         }
 
         /// <summary>

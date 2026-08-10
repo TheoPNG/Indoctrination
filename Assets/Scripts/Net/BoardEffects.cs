@@ -497,6 +497,25 @@ namespace Indoctrination.Net
             _pulseBaseColors.Clear();
             _restingScales.Clear();
             _shake = null;
+
+            // A stopped coroutine never reaches its own cleanup, so every pip
+            // that was mid-flight is stranded on the layer. Same failure as a
+            // drag ghost outliving its card: whatever is parented here has to be
+            // cleared by whoever owns the layer, not by the routine that made it.
+            ClearFlightLayer();
+        }
+
+        /// <summary>
+        /// Empties the flight layer. Nothing here is part of the game - it is
+        /// pips and drag ghosts in transit - so it is always safe to drop, and
+        /// leaving anything behind means a phantom sitting over the board.
+        /// </summary>
+        public void ClearFlightLayer()
+        {
+            if (_flightLayer != null)
+            {
+                UIFactory.DestroyChildren(_flightLayer);
+            }
         }
 
         /// <summary>Forgets a card's resting scale, for when the board is rebuilt.</summary>

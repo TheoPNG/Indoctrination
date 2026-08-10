@@ -7,6 +7,365 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-09 — Codex (semicircle draft target and unclipped hand fan)
+
+The current drafter now gets a 620x112 maximum drop affordance behind the hand:
+the upper half of a clipped glowing ellipse labelled `DROP TO DRAFT`. The hand's
+transparent input rectangle grows to cover it, so the first pick and later picks
+have the same generous target. Dragging a legal draft card into the target
+brightens the arc and slightly enlarges it; every drag exit/disable restores its
+resting glow through `DragHandle`'s new live-move callback.
+
+The expanded fan now sizes against the rotated card bounds rather than the
+upright PDF. Its maximum height grew to 318 pixels, card centres are separated a
+little further, the middle rises instead of the angled outside cards, and cards
+paint from the outside toward the centre. Together these keep all four PDF
+corners inside the hand surface and stop later cards from visually slicing across
+their neighbours' upper corners.
+
+### Files
+
+- Updated `Assets/Scripts/Net/BoardUI.cs` and
+  `Assets/Scripts/Net/DragHandle.cs`.
+- Added semicircle/hot-state and rotated-corner regression assertions to
+  `Assets/Tests/PlayMode/BoardRenderTests.cs` and
+  `Assets/Scripts/Editor/AlphaSmokeTest.cs`.
+
+### Verification
+
+- CompileCheck clean.
+- RulesCheck all green.
+- `git diff --check` clean.
+- PlayModeTests and SmokeTest were not runnable because the local Unity
+  6000.5.7/Hub licensing protocol mismatch still prevents the Editor from
+  reaching project import. Their new regressions remain unexecuted until that
+  external issue is cleared.
+
+## 2026-08-09 — Codex (authoritative paced Unit activation)
+
+Network games now opt into paced Activation. `GameState` still builds the same
+first-drafter, round-the-table sequence from each player's chosen compound
+order, including one entry for every matching shared/private die, but it exposes
+that sequence and resolves only one living Unit per server beat. Rules-only
+callers keep synchronous resolution. A paced Activation cannot be advanced while
+effects remain, choices interrupt before their Unit is marked complete, and dead
+controllers are skipped without consuming an empty presentation beat.
+
+`GameView` now carries the activation batch, completion cursor, exact card/player/
+die/category entries, and public card counters. This keeps every client on the
+server's real order instead of deriving animations from dice after state has
+already jumped to the end.
+
+The board dims everything outside the remaining queue and gives queued Units a
+white edge; repeated Units stay bright until their final matching die is spent.
+Each completed Unit then opens a raycast-blocking, non-dismissible full-screen
+stage with a 1.5x card and every player's large health/follower tracks visible
+along the bottom. Damage jolts upward before track loss, follower effects move
+down more gently, healing shakes and sends red hearts down, Block sends green
+pluses, and other effects swell and settle. Stat bars interpolate only after the
+card motion. Lethal final activations still play before the game-over view takes
+over. Card counters now render as physical chip stacks and pop when their count
+changes. Activation choices omit source-card/prompt chrome when the options are
+self-explanatory; card choices become compact title buttons.
+
+### Files
+
+- Added `Assets/Scripts/Net/ActivationStage.cs` and its meta file.
+- Updated `Assets/Scripts/Core/GameSettings.cs`,
+  `Assets/Scripts/Core/GameState.cs`, `Assets/Scripts/Net/GameView.cs`,
+  `Assets/Scripts/Net/GameViewBuilder.cs`,
+  `Assets/Scripts/Net/NetworkGameManager.cs`,
+  `Assets/Scripts/Net/BoardCardView.cs`, and `Assets/Scripts/Net/BoardUI.cs`.
+- Added paced-order/cursor coverage to `Tools/RulesCheck/RulesCheck.cs` and a
+  live host/stage regression to `Assets/Tests/PlayMode/BoardRenderTests.cs`.
+
+### Verification
+
+- CompileCheck clean.
+- RulesCheck all green, including paced duplicate order, one-Unit resolution,
+  cursor replication, and the no-skip guard.
+- Fuzz: 800/800 games reached a legal end state (seed 1234).
+- PlayModeTests and SmokeTest could not run: Unity 6000.5.7 repeatedly failed
+  before compilation with licensing protocol 505 (`Unsupported protocol version
+  '1.18.1'`) and no result XML. The hung batch process was stopped and its empty
+  stale lock removed. The new PlayMode test is present but remains unexecuted.
+- No known implementation work is intentionally left incomplete; Unity visual
+  verification is still required once the local licensing client is healthy.
+
+## 2026-08-09 — Codex (fanned hand, drag drafting, discount stamps)
+
+The hand no longer draws a tray or uses a horizontal scroll layout. Its Image
+is transparent but still receives hover and draft drops. Expanded cards scale
+from the actual hand count up to their full 180x252 print, overlap at 62% of a
+card width, rise slightly toward the outside, and fan between +9 and -9 degrees.
+The collapsed peek uses the same silhouette at a smaller scale. During Buy the
+fan shifts left enough to reserve the recycle bin on narrow player windows.
+
+Ordinary draft cards no longer offer `Draft this card` from their enlarged
+preview. Legal picks receive drag handles and draft only when dropped into the
+hand. An empty hand remains a 34-pixel invisible drop surface with a quiet
+`YOUR HAND · DROP DRAFT HERE` caption, so the first pick has a destination.
+Card-choice effects in the draft zone retain their explicit Choose action.
+
+Discounted printed cards now show one centered circular `−1` stamp per resource
+actually removed from their cost. Each stamp uses that resource's color, so
+stacked stones and multi-point reductions remain legible without rewriting the
+PDF's printed price. The same stamp layer appears on the board/hand card and its
+enlarged PDF popup. Code-built fallback cards keep their detailed adjusted-cost
+text until their printed art exists.
+
+The card text overlap test now measures rows in card-local coordinates. Its old
+axis-aligned world bounds reported false overlaps as soon as the hand cards were
+intentionally rotated; the underlying no-overflow guarantee is unchanged.
+
+### Files
+
+- Updated `Assets/Scripts/Net/BoardUI.cs`,
+  `Assets/Scripts/Net/BoardCardView.cs`,
+  `Assets/Scripts/Net/CardPreview.cs`,
+  `Assets/Tests/PlayMode/BoardRenderTests.cs`, and
+  `Assets/Scripts/Editor/AlphaSmokeTest.cs`.
+
+### Verification
+
+- CompileCheck clean.
+- RulesCheck all green.
+- PlayModeTests **35/35**, including the fanned-hand shape, drag-to-hand draft,
+  thumbnail and enlarged-PDF discount stamps, and rotation-safe text geometry.
+- SmokeTest passing through the complete board lifecycle.
+- No fuzz run: no `GameState` or effect behavior changed.
+- No incomplete work from this pass.
+
+## 2026-08-09 — Codex (click-away previews, recycler, stable rolls)
+
+Four related interaction cleanups landed together:
+
+- Card previews no longer build a Close button. Their existing backdrop remains
+  the dismiss target, and a plain printed card now appears without an empty
+  control tray. Cards with a real action or mini-menu still receive only the
+  controls they need below the print.
+- The Roll Die button is back at 260x54; the oversized object was its generic
+  460x400 question window. Rolling now uses a dedicated 300x94 frame that hugs
+  the button, while card questions and game-over screens keep the full window.
+- The repeated Recycle row was removed from every hand card. During Buy, one
+  78x96 recycle bin appears at the right edge of the open hand. Every hand card
+  drags: dropping it on the battlefield buys it only when affordable, while
+  dropping it in the bin always recycles it through the existing server RPC.
+  The client immediately predicts the earned resource and flies a color-matched
+  pip from the bin into the permanent resource HUD; the server's next view
+  remains authoritative.
+- Battlefield cards now rebuild only when their actual hierarchy changes.
+  Dice and ready updates refresh roll outlines and live card mini-menus in place,
+  so rolling no longer destroys the table and restarts every entrance fade.
+
+### Files
+
+- Updated `Assets/Scripts/Net/BoardUI.cs`,
+  `Assets/Scripts/Net/BoardCardView.cs`,
+  `Assets/Scripts/Net/CardPreview.cs`,
+  `Assets/Tests/PlayMode/BoardRenderTests.cs`, and
+  `Assets/Scripts/Editor/AlphaSmokeTest.cs`.
+
+### Verification
+
+- CompileCheck clean.
+- RulesCheck all green.
+- PlayModeTests **34/34**, including click-away/no-Close, drag-to-recycle with
+  resource flight, compact rolling frame, and stable card identity after a roll.
+- SmokeTest passing through the complete board lifecycle; Rolling renders a
+  260x54 button inside its 300x94 frame for every player perspective.
+- No fuzz run: no `GameState` or effect behavior changed.
+- No incomplete work from this pass.
+
+## 2026-08-09 — Codex (compact Roll Die control)
+
+The Rolling popup was using the generic maximum action-button size, making its
+single control dominate the panel at 260x54. Roll Die now has its own compact
+160x40 dimensions; larger decision and game-over controls keep their existing
+responsive sizing. PlayMode and SmokeTest assertions pin both a usable minimum
+and compact maximum so the button cannot silently stretch back across the panel.
+
+### Files
+
+- Updated `Assets/Scripts/Net/BoardUI.cs`,
+  `Assets/Tests/PlayMode/BoardRenderTests.cs`, and
+  `Assets/Scripts/Editor/AlphaSmokeTest.cs`.
+
+### Verification
+
+- CompileCheck clean.
+- RulesCheck all green.
+- PlayModeTests **33/33**.
+- SmokeTest passing; Roll Die rendered at **160x40** for all three perspectives.
+- No incomplete work from this fix.
+
+## 2026-08-09 — Codex (first hand card no longer clipped)
+
+Playable hand cards were being centred over zero-width `Card Slot` transforms.
+The wrapper's vertical layout controlled child width, but a plain slot reports
+no preferred width, so Unity collapsed it despite the explicit `SetSize`. This
+put half of every card to the left of its intended position and clipped the
+first card through the hand's scroll mask.
+
+The wrapper now respects the explicit widths of its card slot and button row.
+Horizontal scroll content is also explicitly reset to the viewport's left edge
+after its pivot changes, and carries an 8-unit horizontal inset so the standard
+6% card hover swell remains inside the mask. A PlayMode regression opens the
+hand during Buy, hovers its first card, and asserts that the complete left edge
+stays within the viewport.
+
+### Files
+
+- Updated `Assets/Scripts/Net/BoardUI.cs`,
+  `Assets/Scripts/Net/UIFactory.cs`, and
+  `Assets/Tests/PlayMode/BoardRenderTests.cs`.
+
+### Verification
+
+- CompileCheck clean.
+- RulesCheck all green.
+- PlayModeTests **33/33**, including the new first-card hover containment test.
+- SmokeTest passing through the complete board lifecycle.
+- No incomplete work from this fix.
+
+## 2026-08-09 — Codex (printed-card popups)
+
+Blue cards now open as a large 320x448 rendering of their imported 5:7 face
+instead of the code-built title/effect popup. The existing live actions are not
+painted over the card: `CardPreview` turns its old panel into a compact control
+tray immediately below the print, growing it only when a card such as Baal has
+extra controls. Cards without imported art keep the old text preview.
+
+Ritual flashes animate the printed card itself and hide the control tray during
+the fall to the discard. PlayMode's preview test now chooses a card with art and
+pins the popup sprite, active state, aspect preservation, and 5:7 dimensions.
+
+### Files
+
+- Updated `Assets/Scripts/Net/CardPreview.cs` and
+  `Assets/Tests/PlayMode/BoardRenderTests.cs`.
+
+### Verification
+
+- CompileCheck clean.
+- RulesCheck all green.
+- PlayModeTests **32/32**; the preview test asserts the exact imported sprite,
+  active printed popup, aspect preservation, and 5:7 dimensions.
+- SmokeTest passing through the complete board lifecycle.
+
+## 2026-08-09 — Codex (the Blue printed-card pass)
+
+Imported the complete first printed-art set from `AllBlue cards`: 33 one-page
+PDFs matched one-to-one with the 33 Blue definitions and rendered into
+`Assets/Resources/CardArt/` as 700x980 PNGs. Every source page is 5:7, so
+`BoardCardView` moved from 180x250 to an exact 180x252 logical card. The image
+preserves its aspect instead of stretching, and the old code-built title,
+cost, activation, and effect rows remain the automatic fallback for every card
+whose printed face has not been imported yet.
+
+`CardArt.cs` loads and caches a face by the existing definition id. This means
+the art appears everywhere backed by `BoardCardView`: draft, compounds, hand,
+discard, and drag ghosts. Draft markers stay above the face, and affordability
+and activation outlines still belong to the card itself. `CardPreview` remains
+the canonical text/action view when a card is clicked; it was deliberately not
+replaced because several cards build live controls there.
+
+The four nonliteral filename matches were made explicit in
+`Tools/import_card_art.py`: `Baal` -> `Baal_The_Manipulator`, `Double Agent` ->
+`Double_Agent_Japanese_Art`, `Worshipper of the Bone God` -> the existing
+single-p `Worshiper_of_the_Bone_God` id, and `Brain Washer` -> `Hydro_Plant`.
+The last id stays stable so effects and network views do not change, but its
+displayed title in `Cards.json` is now **Brain Washer**. RulesCheck pins that
+rename.
+
+The importer requires every PDF and every definition in the requested color to
+match exactly once, renders only page one, and writes deterministic Unity meta
+GUIDs. SmokeTest now proves every Blue face loads through `Resources` and is
+5:7. The draft rendering checks in SmokeTest and PlayMode accept either a valid
+printed face or the visible code-built title fallback.
+
+### Files
+
+- Added `Assets/Resources/CardArt.meta`, 33 PNGs and their 33 `.meta` files.
+- Added `Assets/Scripts/Net/CardArt.cs` and `.meta`.
+- Added `Tools/import_card_art.py`.
+- Updated `Assets/Resources/Data/Cards.json`,
+  `Assets/Scripts/Net/BoardCardView.cs`, `Assets/Scripts/Net/BoardUI.cs`,
+  `Assets/Scripts/Editor/AlphaSmokeTest.cs`,
+  `Assets/Tests/PlayMode/BoardRenderTests.cs`, and
+  `Tools/RulesCheck/RulesCheck.cs`.
+- Existing uncommitted `BoardEffects.cs` / `DragHandle.cs` work was preserved
+  and is not part of this pass.
+
+### Verification
+
+- Visual QA of all 33 rendered faces: complete, upright, uncropped, 700x980.
+- CompileCheck clean.
+- RulesCheck all green, including the Brain Washer title assertion.
+- PlayModeTests **32/32**.
+- SmokeTest passing, including all Blue art/resource/aspect checks.
+- No fuzz run: no `GameState` or effect behavior changed.
+
+## 2026-08-09 — Claude (finishing the activation sequence Codex started)
+
+Codex had built most of this and left it uncommitted. The server-side design
+was sound and I kept all of it: `GameState.PaceActivations` +
+`ResolveEffects(stopAfterOneActivation)` so a live game resolves **one** unit
+per broadcast, `ActivationSequenceEntry` recording the planned order, and
+`ActivationView[]` carrying it to clients. `ActivationStage` presents them by
+diffing consecutive server views - it never decides anything, it only gives
+already-decided changes room to be understood. That separation is worth
+keeping.
+
+What was wrong or missing:
+
+**The crash.** `Present` called `StartCoroutine` while the stage root was still
+inactive - trap #5 in AGENTS.md, and the one failing test. The root is woken
+before the coroutine starts now, not inside it.
+
+**Questions were asked in the wrong place.** A card that stops to ask something
+mid-activation was routed to the board's popup, which is nowhere near the card
+asking. The entry sitting at the `activationCompletedCount` mark is by
+definition the one still resolving, so that is the card the question belongs
+to. The stage now holds that card up with its options directly beneath it and
+**no prompt** - the card is on screen at full size saying what it does. Order
+is guaranteed by construction: the effect has not finished, so there is nothing
+to animate yet; answering completes it, and only then does it animate.
+`DecidePopup` returns false outright during Activation so the same decision
+cannot be offered twice.
+
+**Glow only applied during Activation**, so the roll and the sequence that
+followed it used two different highlights for the same statement. Units woken
+by the dice now light white and everything else falls away from the moment the
+dice land, carrying straight through into the sequence.
+
+**Counters had nowhere to go.** `CardView.counters` was already plumbed but
+unused; they render as chips stacked on the card, one per kind with its count,
+coloured stably by name hash so a counter is the same chip every time.
+
+Also: healing hearts and block plus-signs now fly at the bar they change
+rather than the panel around it.
+
+Not changed, because it already worked: repeated die values repeat the
+animation. `QueueActivations` enqueues one entry per (unit, matching die), so
+two players rolling the same face genuinely produces two entries - the
+sequence, not the presentation, is what repeats.
+
+### Verification
+
+All five green. PlayModeTests **37/37**, including Codex's pacing/repeat/glow
+test (which the crash had been failing) and a new
+`AQuestionMidActivationIsAskedOnTheStage` covering the stage-vs-popup routing.
+RulesCheck clean plus 1200 fuzzed games - worth running here because Core's
+resolution loop was modified, and a stepping bug there would be a hang rather
+than a wrong pixel.
+
+### Left undone
+
+The stage's HUD rebuilds every activation rather than animating between them,
+so bars jump to their starting value at each step before easing. Fine at the
+current pace, would show if the dwell got shorter.
+
 ## 2026-08-09 — Claude (the hand flicker, actually fixed)
 
 The tray was still flickering after the entry below, and never opened on hover.
