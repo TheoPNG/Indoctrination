@@ -313,6 +313,7 @@ static class RulesCheck
         CheckEffectResolution(cards);
         CheckSettledCards(cards);
         CheckActivationOrder(cards);
+        CheckStandardizedUniforms(cards);
         CheckConcessions(cards);
         CheckEndStates(cards);
         CheckPerPlayerViews(cards);
@@ -783,6 +784,76 @@ static class RulesCheck
 
         Check("and only your own units can be moved",
               Throws(() => game.ReorderUnit(1 - first, late.InstanceId, 0)));
+    }
+
+    /// <summary>
+    /// Standardized Uniforms buys a second die that only its owner's units
+    /// answer to. Checked end to end - granted on the roll, visible in the view,
+    /// and actually waking a unit that the shared dice missed - because a die
+    /// nobody can see is indistinguishable from a card that does nothing.
+    /// </summary>
+    static void CheckStandardizedUniforms(List<CardDefinition> cards)
+    {
+        Console.WriteLine("\nStandardized Uniforms (the extra die):");
+
+        var game = new GameState(new[] { "A", "B" }, cards, randomSeed: 71);
+        FinishDraft(game);
+
+        var owner = game.Players[0];
+        owner.Compound.Add(new CardInstance(-70, cards.First(c => c.id == CardIds.StandardizedUniforms)));
+
+        foreach (var player in game.LivingPlayers.ToList())
+        {
+            game.RollPrimaryDie(player.PlayerId);
+        }
+
+        Check("its owner is dealt a second die", owner.PrivateDice.Count == 1,
+              $"{owner.PrivateDice.Count} private dice");
+        Check("and nobody else is", game.Players[1].PrivateDice.Count == 0);
+
+        // Pin both shared dice away from the private one, so anything that
+        // activates can only have been woken by the private die.
+        var privateFace = owner.PrivateDice[0];
+        var otherFace = privateFace == 1 ? 2 : 1;
+        game.SetPrimaryDie(game.Players[0], otherFace);
+        game.SetPrimaryDie(game.Players[1], otherFace);
+
+        var onlyOnPrivate = new CardDefinition
+        {
+            id = CardIds.SolarPanels, title = "test", type = "Unit", costRaw = "R",
+            color = "Red", effect = "test", count = 1, activationNumbers = new[] { privateFace }
+        };
+
+        var mine = new CardInstance(-71, onlyOnPrivate);
+        var theirs = new CardInstance(-72, onlyOnPrivate);
+        owner.Compound.Add(mine);
+        game.Players[1].Compound.Add(theirs);
+
+        var woken = new List<int>();
+        game.EffectQueued += (card, controller) =>
+        {
+            if (card != null && card.InstanceId is -71 or -72)
+            {
+                woken.Add(card.InstanceId);
+            }
+        };
+
+        game.AdvancePhase();   // Rolling -> Activation
+
+        Check("the private die wakes its owner's unit",
+              woken.Contains(mine.InstanceId), string.Join(",", woken));
+
+        Check("but not an opponent's identical unit",
+              !woken.Contains(theirs.InstanceId),
+              "the extra die is supposed to be private");
+
+        // The whole point of the card is a second number to plan around, so the
+        // client has to actually be told about it.
+        var view = GameViewBuilder.Build(game, owner.PlayerId);
+        var seen = view.players.First(p => p.playerId == owner.PlayerId).privateDice;
+        Check("and the owner's view carries it, or the card is invisible in play",
+              seen != null && seen.Length == 1 && seen[0] == privateFace,
+              seen == null ? "no privateDice field" : string.Join(",", seen));
     }
 
     static bool DoesNotThrow(Action action)

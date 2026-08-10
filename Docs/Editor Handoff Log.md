@@ -306,6 +306,54 @@ printed face or the visible code-built title fallback.
 - SmokeTest passing, including all Blue art/resource/aspect checks.
 - No fuzz run: no `GameState` or effect behavior changed.
 
+## 2026-08-09 — Claude (five playtest reports)
+
+**Resources could not be taken with the hand open.** The tray is opaque and
+answers the pointer, and it spanned the full width - so it was not merely
+sitting over the resource HUD, it was eating the clicks meant for it. It now
+stops clear of the HUD (`HandLeftInset`), and the fan measures its width from
+the tray rather than the window. Checked as geometry in
+`TheOpenHandLeavesTheResourceHudClickable`: the two rects must not overlap at
+all, which is the actual invariant - anything softer passes while the bug is
+present at a different screen size.
+
+**Hand cards were clipped at the top.** Fan angle 9° -> 4°, centre lift 18 ->
+8, and a `HandFanTopMargin` that is budgeted into the card sizing as well as
+added to the tray height. The old maths was exact, which left nothing for the
+outline, the hover lift, or a rounding error - and any of those clips a card.
+
+**The extra-die card "did nothing".** It was working perfectly. Standardized
+Uniforms granted the die, kept it private, and woke only its owner's units -
+all confirmed by a new end-to-end RulesCheck. The card was invisible: the die
+was never carried in the view or drawn anywhere, so its units woke on a number
+that was not on the table. `PlayerView.privateDice` now carries it and the
+stat bar shows it accented beside the shared die. This also fixed a real bug
+downstream - `MarkIfDueToActivate` only looked at `primaryDie`, so a unit woken
+solely by a private die sat dull and then activated anyway.
+
+Worth keeping the check: it asserts the die reaches the *view*, not just the
+rules, precisely because "works but cannot be seen" is what this was.
+
+**Activation pacing.** `ActivationStepSeconds` 1.65 -> 3.4 and every tween
+roughly doubled, with the bar animation given the largest share (1.2-1.35s) -
+the strike is punctuation, the number moving is the point, and it used to be
+over before it registered. The card now rises out of its own place on the
+board (`BoardCardPosition` resolves it live from the battlefield, uncached,
+because the board rebuilds constantly) so whose it is reads without a label.
+The all-player HUD moved from the bottom of the stage to the top, so a damage
+card jolting upward is jolting at the bars it empties.
+
+**The blue half-circle** was a `BoardArt.Disc` stretched to twice its zone's
+height and clipped to its upper half - the one round thing on a hard-edged
+board. Replaced with a flat shelf: a faint band with a single lit edge along
+the top, the line the card is dropped across. Both the PlayMode and smoke
+assertions were pinned to the semicircle shape and now pin the shelf instead.
+
+### Verification
+
+All five green. PlayModeTests 39/39 (two new), RulesCheck with the new
+Standardized Uniforms block plus 800 fuzzed games, SmokeTest, CompileCheck.
+
 ## 2026-08-09 — Claude (finishing the activation sequence Codex started)
 
 Codex had built most of this and left it uncommitted. The server-side design

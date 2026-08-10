@@ -76,10 +76,24 @@ namespace Indoctrination.Net
         private const float RollButtonHeight = 54f;
         private const float RecycleBinWidth = 78f;
         private const float RecycleBinHeight = 96f;
-        private const float HandFanOverlap = 0.72f;
-        private const float HandFanMaxAngle = 9f;
-        private const float HandFanCenterLift = 18f;
-        private const float HandFanPadding = 12f;
+        private const float HandFanOverlap = 0.82f;
+
+        /// <summary>
+        /// Deliberately shallow. A pronounced fan looks like a hand of cards but
+        /// costs height at the outer edges, which is where the tops were getting
+        /// cut off - and the tilt makes the titles harder to read for no gain.
+        /// </summary>
+        private const float HandFanMaxAngle = 4f;
+
+        private const float HandFanCenterLift = 8f;
+        private const float HandFanPadding = 10f;
+
+        /// <summary>
+        /// Clearance above the tallest card in the fan. The fan's own height maths
+        /// is exact, which leaves nothing for the outline, the hover lift, or a
+        /// rounding error - and any of those clips the top of a card.
+        /// </summary>
+        private const float HandFanTopMargin = 14f;
         private const float DraftDropZoneHeight = 112f;
         private const float DraftDropZoneMaxWidth = 620f;
 
@@ -791,17 +805,28 @@ namespace Indoctrination.Net
             _handDropZone.gameObject.AddComponent<RectMask2D>();
             _handDropZone.GetComponent<Image>().raycastTarget = false;
 
+            // A flat shelf, not a shape. This was a full ellipse stretched to
+            // twice the zone's height and clipped to its top half, which read as
+            // a large blue bubble rising out of the floor - the roundest, most
+            // decorative thing on an otherwise hard-edged board.
             var dropArc = UIFactory.Panel(
                 "Drop Arc", _handDropZone,
-                new Color(UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.20f));
-            dropArc.anchorMin = dropArc.anchorMax = new Vector2(0.5f, 0f);
-            dropArc.pivot = new Vector2(0.5f, 0.5f);
-            dropArc.anchoredPosition = Vector2.zero;
-            UIFactory.SetSize(dropArc, DraftDropZoneMaxWidth - 8f, DraftDropZoneHeight * 2f);
+                new Color(UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.10f));
+            dropArc.anchorMin = Vector2.zero;
+            dropArc.anchorMax = Vector2.one;
+            dropArc.offsetMin = new Vector2(4f, 0f);
+            dropArc.offsetMax = new Vector2(-4f, 0f);
             _handDropArc = dropArc.GetComponent<Image>();
-            _handDropArc.sprite = BoardArt.Disc;
             _handDropArc.raycastTarget = false;
-            UITheme.Frame(_handDropArc, 2f, UITheme.SignalSoft);
+
+            // The whole affordance is one lit edge along the top - the line the
+            // card is being dropped across.
+            var dropEdge = UIFactory.Panel("Drop Edge", dropArc, UITheme.Signal);
+            dropEdge.anchorMin = new Vector2(0f, 1f);
+            dropEdge.anchorMax = new Vector2(1f, 1f);
+            dropEdge.pivot = new Vector2(0.5f, 1f);
+            dropEdge.sizeDelta = new Vector2(0f, 2f);
+            dropEdge.GetComponent<Image>().raycastTarget = false;
 
             _handDropLabel = UIFactory.Label(
                 "Drop Label", _handDropZone, "DROP TO DRAFT", 13,
@@ -818,8 +843,9 @@ namespace Indoctrination.Net
             _handRow.anchorMin = new Vector2(0f, 0f);
             _handRow.anchorMax = new Vector2(1f, 0f);
             _handRow.pivot = new Vector2(0.5f, 0f);
-            _handRow.anchoredPosition = new Vector2(0f, DockTopHeight + BoardSafeInset);
-            _handRow.sizeDelta = new Vector2(-(BoardSafeInset * 2f), HandPeekHeight);
+            _handRow.sizeDelta = new Vector2(-(HandLeftInset + BoardSafeInset), HandPeekHeight);
+            _handRow.anchoredPosition = new Vector2(
+                (HandLeftInset - BoardSafeInset) / 2f, DockTopHeight + BoardSafeInset);
             _handRow.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
 
             // Recycling is a place, not a button repeated under every card. It
@@ -1035,7 +1061,10 @@ namespace Indoctrination.Net
             _actionPanel.anchoredPosition = new Vector2(_actionPanel.anchoredPosition.x, 0f);
             _actionScroll.verticalNormalizedPosition = 1f;
             RefreshHand(view);
-            _activationStage.Present(view, parent => BuildActivationChoice(parent, manager, view));
+            _activationStage.Present(
+                view,
+                parent => BuildActivationChoice(parent, manager, view),
+                BoardCardPosition);
         }
 
         /// <summary>One line saying what this phase wants, for the banner.</summary>
@@ -1600,6 +1629,31 @@ namespace Indoctrination.Net
         /// the side panel. Standing highlight, not a pulse - it is a statement
         /// about what is queued, not an event.
         /// </summary>
+        /// <summary>
+        /// Where a card is sitting on the board right now, so the activation
+        /// stage can lift it out of its own compound rather than materialising it
+        /// mid-screen. Read live rather than cached: the board rebuilds often,
+        /// and a remembered RectTransform would be pointing at a destroyed card
+        /// as often as not.
+        /// </summary>
+        private Vector3? BoardCardPosition(int cardInstanceId)
+        {
+            if (_battlefield == null)
+            {
+                return null;
+            }
+
+            foreach (var card in _battlefield.GetComponentsInChildren<BoardCardView>())
+            {
+                if (card.Card != null && card.Card.instanceId == cardInstanceId)
+                {
+                    return card.transform.position;
+                }
+            }
+
+            return null;
+        }
+
         private void MarkIfDueToActivate(BoardCardView card, GameView view)
         {
             if (view.phase == nameof(TurnPhase.Activation))
@@ -1628,8 +1682,19 @@ namespace Indoctrination.Net
             // Activation phase then uses, so the roll and the sequence that
             // follows it read as one continuous statement rather than two
             // different highlights meaning the same thing.
-            var faces = view.players.Where(p => p.isAlive && p.primaryDie > 0)
+            // Shared dice wake everybody's units; a private die wakes only its
+            // owner's. Leaving private dice out here meant a unit woken solely by
+            // Standardized Uniforms sat dull and then activated anyway, which
+            // read as the card not working.
+            var shared = view.players.Where(p => p.isAlive && p.primaryDie > 0)
                 .Select(p => p.primaryDie).ToHashSet();
+
+            var owner = view.players.FirstOrDefault(p => p.compound
+                .Any(c => card.Card != null && c.instanceId == card.Card.instanceId));
+
+            var faces = owner?.privateDice == null
+                ? shared
+                : shared.Concat(owner.privateDice).ToHashSet();
 
             var willActivate = card.Definition.Type == CardType.Unit
                                && card.Definition.ActivationNumbers.Any(faces.Contains);
@@ -1768,24 +1833,32 @@ namespace Indoctrination.Net
             // Overlap makes room for a larger, held-card silhouette. The span is
             // measured from the actual hand count rather than the maximum seven,
             // so a small hand does not shrink merely because it could grow later.
+            // Measured from the tray's own width, which now stops clear of the
+            // resource HUD, rather than from the whole window.
             var available = Mathf.Max(
-                240f, _gameRoot.rect.width - (canBuy ? RecycleBinWidth + 64f : 40f));
+                240f,
+                _gameRoot.rect.width - HandLeftInset - BoardSafeInset
+                - (canBuy ? RecycleBinWidth + 24f : 0f));
+
             var angle = HandFanMaxAngle * Mathf.Deg2Rad;
             var aspect = BoardCardView.Height / BoardCardView.Width;
             var rotatedWidthUnits = Mathf.Cos(angle) + (aspect * Mathf.Sin(angle));
             var rotatedHeightUnits = (aspect * Mathf.Cos(angle)) + Mathf.Sin(angle);
             var spanUnits = rotatedWidthUnits + (HandFanOverlap * Mathf.Max(0, count - 1));
             var widthAllows = available / spanUnits;
-            var heightAllows = (MaxHandHeight - HandFanCenterLift - (HandFanPadding * 2f))
-                               / rotatedHeightUnits;
+
+            // The top margin is budgeted here as well as added below, so the
+            // cards are sized to leave room for it rather than sized to fill the
+            // tray and then pushed out through the top of it.
+            var chrome = HandFanCenterLift + (HandFanPadding * 2f) + HandFanTopMargin;
+            var heightAllows = (MaxHandHeight - chrome) / rotatedHeightUnits;
 
             var handCardWidth = Mathf.Clamp(
                 Mathf.Min(widthAllows, heightAllows), MinCardWidth, BoardCardView.Width);
 
             var handCardHeight = handCardWidth * (BoardCardView.Height / BoardCardView.Width);
             var rotatedHeight = handCardWidth * rotatedHeightUnits;
-            var handStripHeight = Mathf.Min(
-                MaxHandHeight, rotatedHeight + HandFanCenterLift + (HandFanPadding * 2f));
+            var handStripHeight = Mathf.Min(MaxHandHeight, rotatedHeight + chrome);
             var fanCenterX = canBuy ? -((RecycleBinWidth + 24f) / 2f) : 0f;
 
             SetHandHeight(handStripHeight);
@@ -1935,11 +2008,13 @@ namespace Indoctrination.Net
 
             var width = Mathf.Min(DraftDropZoneMaxWidth, Mathf.Max(300f, _gameRoot.rect.width - 80f));
             _handDropZone.sizeDelta = new Vector2(width, DraftDropZoneHeight);
-            _handDropArc.rectTransform.sizeDelta = new Vector2(width - 8f, DraftDropZoneHeight * 2f);
+
+            // The band stretches with its zone now, so there is no second size
+            // to keep in step with it.
             SetHandDropZoneHot(false);
         }
 
-        /// <summary>Brightens the semicircle while the carried draft card is inside it.</summary>
+        /// <summary>Lights the shelf while the carried draft card is over it.</summary>
         private void SetHandDropZoneHot(bool hot)
         {
             if (_handDropArc == null)
@@ -1948,8 +2023,8 @@ namespace Indoctrination.Net
             }
 
             _handDropArc.color = hot
-                ? new Color(UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.50f)
-                : new Color(UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.20f);
+                ? new Color(UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.26f)
+                : new Color(UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.10f);
             _handDropLabel.color = hot ? UITheme.Bone : UITheme.BoneDim;
             _handDropZone.localScale = hot ? Vector3.one * 1.035f : Vector3.one;
         }
@@ -1960,8 +2035,18 @@ namespace Indoctrination.Net
         /// </summary>
         private void SetHandHeight(float height)
         {
-            _handRow.sizeDelta = new Vector2(-(BoardSafeInset * 2f), height);
+            // Stops short of the resource HUD rather than spanning the whole
+            // width. The tray is opaque and answers the pointer, so covering the
+            // HUD did not merely hide the circles - it swallowed the clicks
+            // meant for them, and resources could not be taken with the hand open.
+            var left = HandLeftInset;
+            _handRow.sizeDelta = new Vector2(-(left + BoardSafeInset), height);
+            _handRow.anchoredPosition = new Vector2(
+                (left - BoardSafeInset) / 2f, DockTopHeight + BoardSafeInset);
         }
+
+        /// <summary>How far the hand keeps clear of the permanent resource HUD.</summary>
+        private const float HandLeftInset = BoardSafeInset + ResourceHudWidth + 10f;
 
         /// <summary>
         /// Everything about the hand that would change what is drawn: which

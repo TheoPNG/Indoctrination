@@ -185,6 +185,15 @@ namespace Indoctrination.Net
         public int health;
         public int followers;
         public int primaryDie;
+
+        /// <summary>
+        /// Extra dice only this player's units answer to - Standardized
+        /// Uniforms. Public information: everyone can see the dice on the table,
+        /// and an opponent needs to know which numbers are live for you to
+        /// read the board at all.
+        /// </summary>
+        public int[] privateDice = Array.Empty<int>();
+
         public bool hasRolled;
         public bool isAlive;
 

@@ -417,15 +417,20 @@ namespace Indoctrination.EditorTools
                   && handRow.GetComponent<Image>().color.a <= 0.001f,
                   "the hand row should be transparent while still receiving input");
 
+            // A flat shelf spanning the zone, deliberately not the stretched-and-
+            // clipped ellipse this used to be - that read as a blue bubble
+            // rising out of the floor, the one round thing on a hard-edged board.
             var dropZone = gameRoot.Find("Hand Drop Zone") as RectTransform;
             var dropArc = dropZone?.Find("Drop Arc") as RectTransform;
-            Check("drafting has a wide clipped-semicircle target behind the hand",
+            var dropEdge = dropArc?.Find("Drop Edge") as RectTransform;
+            Check("drafting has a wide flat drop shelf behind the hand",
                   dropZone != null
                   && dropArc != null
-                  && dropZone.GetComponent<RectMask2D>() != null
+                  && dropEdge != null
                   && !dropZone.GetComponent<Image>().raycastTarget
                   && dropZone.rect.width > BoardCardView.Width * 2f
-                  && dropArc.rect.height >= dropZone.rect.height * 1.9f,
+                  && dropArc.rect.height <= dropZone.rect.height + 0.5f
+                  && dropArc.GetComponent<Image>().sprite == null,
                   dropZone == null ? "drop zone not found" : $"drop zone {dropZone.rect.size}");
 
             var popupBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(gameRoot, popupPanel);

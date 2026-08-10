@@ -75,7 +75,14 @@ namespace Indoctrination.Net
         private int _batch = -1;
         private int _seen;
         private bool _playing;
-        private const float StageCardScale = 1.5f;
+        private const float StageCardScale = 1.25f;
+
+        /// <summary>
+        /// Where a card sits on the board, so it can rise from its own place.
+        /// Null when the board cannot find it - a card that has already left play
+        /// by the time its activation is presented.
+        /// </summary>
+        private Func<int, Vector3?> _originResolver;
 
         public static ActivationStage CreateOn(Transform parent)
         {
@@ -94,33 +101,36 @@ namespace Indoctrination.Net
             _root.GetComponent<Image>().raycastTarget = true;
             _group = root.gameObject.AddComponent<CanvasGroup>();
 
+            // Above the card, not below it. A damage card jolts upward, and the
+            // bars are what it is jolting at - the hit and the health it takes
+            // off should be the same gesture, read in one place.
             _hud = UIFactory.Group("All Player Tracks", root);
-            _hud.anchorMin = Vector2.zero;
-            _hud.anchorMax = new Vector2(1f, 0f);
-            _hud.pivot = new Vector2(0.5f, 0f);
-            _hud.offsetMin = new Vector2(22f, 18f);
-            _hud.offsetMax = new Vector2(-22f, 154f);
+            _hud.anchorMin = new Vector2(0f, 1f);
+            _hud.anchorMax = new Vector2(1f, 1f);
+            _hud.pivot = new Vector2(0.5f, 1f);
+            _hud.offsetMin = new Vector2(22f, -152f);
+            _hud.offsetMax = new Vector2(-22f, -14f);
             var hudLayout = UIFactory.HorizontalLayout(
                 _hud, 14, new RectOffset(8, 8, 8, 8), controlWidth: true, controlHeight: true);
             hudLayout.childForceExpandWidth = true;
             hudLayout.childForceExpandHeight = true;
 
             _ownerLabel = UIFactory.Label(
-                "Controller", root, "", 28, TextAnchor.MiddleCenter, UITheme.Bone);
+                "Controller", root, "", 24, TextAnchor.MiddleCenter, UITheme.Bone);
             _ownerLabel.fontStyle = FontStyle.Bold;
-            _ownerLabel.rectTransform.anchorMin = new Vector2(0.2f, 0.86f);
-            _ownerLabel.rectTransform.anchorMax = new Vector2(0.8f, 0.94f);
+            _ownerLabel.rectTransform.anchorMin = new Vector2(0.15f, 0.17f);
+            _ownerLabel.rectTransform.anchorMax = new Vector2(0.85f, 0.23f);
             _ownerLabel.rectTransform.offsetMin = _ownerLabel.rectTransform.offsetMax = Vector2.zero;
 
             _cardCell = UIFactory.Group("Locked Card", root);
-            _cardCell.anchorMin = _cardCell.anchorMax = new Vector2(0.5f, 0.52f);
+            _cardCell.anchorMin = _cardCell.anchorMax = new Vector2(0.5f, 0.47f);
             _cardCell.pivot = new Vector2(0.5f, 0.5f);
-            UIFactory.SetSize(_cardCell, 270f, 378f);
+            UIFactory.SetSize(_cardCell, 225f, 312f);
 
             _detailLabel = UIFactory.Label(
-                "Activation Detail", root, "", 18, TextAnchor.MiddleCenter, UITheme.BoneDim);
-            _detailLabel.rectTransform.anchorMin = new Vector2(0.2f, 0.19f);
-            _detailLabel.rectTransform.anchorMax = new Vector2(0.8f, 0.25f);
+                "Activation Detail", root, "", 16, TextAnchor.MiddleCenter, UITheme.BoneDim);
+            _detailLabel.rectTransform.anchorMin = new Vector2(0.15f, 0.12f);
+            _detailLabel.rectTransform.anchorMax = new Vector2(0.85f, 0.165f);
             _detailLabel.rectTransform.offsetMin = _detailLabel.rectTransform.offsetMax = Vector2.zero;
 
             // Counters sit on the card itself, stacked like chips pushed onto it.
@@ -136,8 +146,8 @@ namespace Indoctrination.Net
             // The question a card asks arrives here, directly under it, so the
             // decision is made looking at the card it belongs to.
             _choiceRow = UIFactory.Group("Choice", root);
-            _choiceRow.anchorMin = new Vector2(0.12f, 0.24f);
-            _choiceRow.anchorMax = new Vector2(0.88f, 0.34f);
+            _choiceRow.anchorMin = new Vector2(0.12f, 0.025f);
+            _choiceRow.anchorMax = new Vector2(0.88f, 0.105f);
             _choiceRow.offsetMin = _choiceRow.offsetMax = Vector2.zero;
             var choiceLayout = UIFactory.HorizontalLayout(_choiceRow, 10, new RectOffset(0, 0, 0, 0));
             choiceLayout.childAlignment = TextAnchor.MiddleCenter;
@@ -147,9 +157,13 @@ namespace Indoctrination.Net
         private const float ChipSize = 30f;
 
         /// <summary>Consumes newly completed entries from a server view.</summary>
-        public void Present(GameView view, Action<RectTransform> choiceBuilder = null)
+        public void Present(
+            GameView view,
+            Action<RectTransform> choiceBuilder = null,
+            Func<int, Vector3?> originResolver = null)
         {
             _choiceBuilder = choiceBuilder;
+            _originResolver = originResolver;
             var finishingLethalActivation = view != null
                                             && view.activationBatch == _batch
                                             && view.activationCompletedCount > _seen;
@@ -306,51 +320,70 @@ namespace Indoctrination.Net
             BuildCard(playback.Activation, playback.After);
             LayoutRebuilder.ForceRebuildLayoutImmediate(_root);
 
-            _cardRect.localScale = Vector3.one * (StageCardScale * 0.72f);
-            yield return Tween(0.18f, t =>
+            // Rises out of its own place on the table rather than fading in at
+            // the middle of the screen. Which compound it came from is the first
+            // thing you need to know about an activation, and watching it leave
+            // says it without a label.
+            var home = _cardCell.position;
+            var origin = _originResolver?.Invoke(playback.Activation.cardInstanceId) ?? home;
+
+            _cardRect.position = origin;
+            _cardRect.localScale = Vector3.one * (StageCardScale * 0.35f);
+
+            yield return Tween(0.55f, t =>
             {
-                _group.alpha = Smooth(t);
+                var eased = Smooth(t);
+                _group.alpha = Mathf.Min(1f, eased * 1.6f);
+                _cardRect.position = Vector3.Lerp(origin, home, eased);
                 _cardRect.localScale = Vector3.one
-                                       * (StageCardScale * Mathf.Lerp(0.72f, 1f, Smooth(t)));
+                                       * (StageCardScale * Mathf.Lerp(0.35f, 1f, eased));
             });
+
+            _cardRect.position = home;
+            _cardRect.anchoredPosition = Vector2.zero;
 
             Enum.TryParse(playback.Activation.category, out ActivationCategory category);
             switch (category)
             {
+                // One hit per effect, then the bar takes as long as it needs.
+                // The strike is the punctuation; the number moving is the point,
+                // and it used to be over before it registered.
                 case ActivationCategory.Damage:
-                    yield return Jolt(42f, 0.32f);
-                    yield return AnimateStats(playback.Before, playback.After, 0.52f);
+                    yield return Jolt(46f, 0.55f);
+                    yield return AnimateStats(playback.Before, playback.After, 1.30f);
                     break;
 
                 case ActivationCategory.Followers:
-                    yield return Jolt(-20f, 0.38f);
-                    yield return AnimateStats(playback.Before, playback.After, 0.48f);
+                    yield return Jolt(-22f, 0.60f);
+                    yield return AnimateStats(playback.Before, playback.After, 1.20f);
                     break;
 
                 case ActivationCategory.Health:
-                    yield return ShakeCard(0.34f);
+                    yield return ShakeCard(0.55f);
                     FlyChangedGlyphs(playback, health: true);
-                    yield return AnimateStats(playback.Before, playback.After, 0.58f);
+                    yield return AnimateStats(playback.Before, playback.After, 1.35f);
                     break;
 
                 case ActivationCategory.Block:
-                    yield return ShakeCard(0.30f);
+                    yield return ShakeCard(0.50f);
                     FlyChangedGlyphs(playback, health: false);
-                    yield return AnimateStats(playback.Before, playback.After, 0.52f);
+                    yield return AnimateStats(playback.Before, playback.After, 1.25f);
                     break;
 
                 default:
                     yield return GrowAndSettle();
-                    yield return AnimateStats(playback.Before, playback.After, 0.4f);
+                    yield return AnimateStats(playback.Before, playback.After, 1.00f);
                     break;
             }
 
-            yield return new WaitForSeconds(0.18f);
-            yield return Tween(0.20f, t =>
+            yield return new WaitForSeconds(0.40f);
+            yield return Tween(0.35f, t =>
             {
-                _group.alpha = 1f - Smooth(t);
+                var eased = Smooth(t);
+                _group.alpha = 1f - eased;
+                _cardRect.position = Vector3.Lerp(home, origin, eased * 0.55f);
                 _cardRect.localScale = Vector3.one
-                                       * (StageCardScale * Mathf.Lerp(1f, 0.78f, Smooth(t)));
+                                       * (StageCardScale * Mathf.Lerp(1f, 0.55f, eased));
             });
         }
 

@@ -33,6 +33,7 @@ namespace Indoctrination.Net
         private Text _followerText;
         private RectTransform _dieBox;
         private Text _dieText;
+        private RectTransform _privateDice;
 
         /// <summary>Health-bar pixels per point, so Block can extend it by exactly as much as it is worth.</summary>
         private float _pointWidth;
@@ -84,6 +85,18 @@ namespace Indoctrination.Net
                 UITheme.Void);
             _dieText.fontStyle = FontStyle.Bold;
             UIFactory.Stretch(_dieText.rectTransform);
+
+            // Dice only this player's units answer to. Standardized Uniforms
+            // grants one, and without somewhere to show it the card reads as
+            // doing nothing at all - its units wake on a number that is not on
+            // the table anywhere.
+            _privateDice = UIFactory.Group("Private Dice", rect);
+            var privatePin = _privateDice.gameObject.AddComponent<LayoutElement>();
+            privatePin.minHeight = privatePin.preferredHeight = DieSize;
+            privatePin.flexibleWidth = 0;
+            var privateLayout = UIFactory.HorizontalLayout(_privateDice, 3, new RectOffset(0, 0, 0, 0));
+            privateLayout.childAlignment = TextAnchor.MiddleLeft;
+            UIFactory.FitToContent(_privateDice);
 
             // Health and Block share one visual run: Block is armour standing in
             // front of health rather than a separate pool, so it reads as the
@@ -155,6 +168,8 @@ namespace Indoctrination.Net
             _dieBox.gameObject.SetActive(player.hasRolled && player.primaryDie > 0);
             _dieText.text = player.primaryDie.ToString();
 
+            BuildPrivateDice(player);
+
             _healthText.text = $"{player.health}/{GameSettings.MaxHealth}";
             BoardEffects.Instance.FillTo(_healthFill, (float)player.health / GameSettings.MaxHealth);
 
@@ -173,6 +188,39 @@ namespace Indoctrination.Net
             _followerText.text = $"{player.followers}/{GameSettings.FollowersToWin}";
             BoardEffects.Instance.FillTo(
                 _followerFill, (float)player.followers / GameSettings.FollowersToWin);
+        }
+
+        /// <summary>
+        /// Draws this player's private dice beside their shared one, accented so
+        /// the difference is visible at a glance: these numbers wake only their
+        /// units, and reading the board depends on knowing that.
+        /// </summary>
+        private void BuildPrivateDice(PlayerView player)
+        {
+            var dice = player.privateDice ?? System.Array.Empty<int>();
+            var show = player.hasRolled && dice.Length > 0;
+
+            _privateDice.gameObject.SetActive(show);
+            if (!show)
+            {
+                return;
+            }
+
+            UIFactory.DestroyChildren(_privateDice);
+
+            foreach (var face in dice)
+            {
+                var box = UIFactory.Panel($"Private Die {face}", _privateDice, UITheme.Signal);
+                UIFactory.SetSize(box, DieSize, DieSize);
+                var pin = box.gameObject.AddComponent<LayoutElement>();
+                pin.minWidth = pin.preferredWidth = DieSize;
+                pin.minHeight = pin.preferredHeight = DieSize;
+
+                var text = UIFactory.Label(
+                    "Face", box, face.ToString(), 14, TextAnchor.MiddleCenter, UITheme.Void);
+                text.fontStyle = FontStyle.Bold;
+                UIFactory.Stretch(text.rectTransform);
+            }
         }
 
         public static StatBar Create(Transform parent)

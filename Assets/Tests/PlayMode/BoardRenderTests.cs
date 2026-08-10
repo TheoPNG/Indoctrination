@@ -196,14 +196,19 @@ namespace Indoctrination.Tests
             Assert.IsTrue(handRow.gameObject.activeInHierarchy, "the hand drop target should be active");
 
             var dropZone = GameObject.Find("Hand Drop Zone")?.GetComponent<RectTransform>();
-            Assert.IsNotNull(dropZone, "a legal pick should expose the semicircular draft target");
+            Assert.IsNotNull(dropZone, "a legal pick should expose the draft target");
             Assert.Greater(dropZone.rect.width, 400f, "the draft target should be substantially wider than one card");
-            Assert.GreaterOrEqual(handRow.rect.height, dropZone.rect.height,
-                "the transparent hit surface must cover the whole visible semicircle");
-            Assert.IsNotNull(dropZone.GetComponent<RectMask2D>(),
-                "the full ellipse should be clipped into a clean upper semicircle");
+
+            // A flat shelf that fills its zone, not an oversized ellipse clipped
+            // down to a semicircle - that read as a blue bubble on a board with
+            // no other round shapes on it.
             var dropArc = dropZone.Find("Drop Arc").GetComponent<Image>();
-            Assert.GreaterOrEqual(dropArc.rectTransform.rect.height, dropZone.rect.height * 1.9f);
+            Assert.IsNull(dropArc.sprite, "the drop target should be a plain band, not a disc");
+            Assert.LessOrEqual(dropArc.rectTransform.rect.height, dropZone.rect.height + 0.5f,
+                "the band should fit its zone rather than overflow and be clipped");
+            Assert.IsNotNull(dropArc.transform.Find("Drop Edge"),
+                "the affordance is a lit edge along the top of the shelf");
+
             var restingGlow = dropArc.color.a;
 
             var drop = new PointerEventData(EventSystem.current)
@@ -1353,6 +1358,61 @@ namespace Indoctrination.Tests
                 Assert.LessOrEqual(bounds.max.y, handRow.rect.yMax + 0.5f,
                     $"{slot.name}'s rotated top corner would be clipped");
             }
+        }
+
+        /// <summary>
+        /// Resources stay takeable with the hand open.
+        ///
+        /// The tray is opaque and answers the pointer, so when it spanned the
+        /// whole width it did not merely sit over the resource HUD - it ate the
+        /// clicks meant for it, and a turn's resources could not be collected
+        /// without closing the hand first. Geometry, so it is checked as
+        /// geometry: the two must not overlap at all.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheOpenHandLeavesTheResourceHudClickable()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Resource);
+            yield return ExpandHand();
+            Canvas.ForceUpdateCanvases();
+
+            var handRow = (RectTransform)typeof(BoardUI)
+                .GetField("_handRow", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(_board);
+            Assert.IsNotNull(handRow, "the board should have a hand tray");
+
+            var hud = Object.FindAnyObjectByType<ResourceHud>();
+            Assert.IsNotNull(hud, "the resource HUD should be on screen");
+
+            var handRect = WorldRect(handRow);
+            foreach (Transform slot in hud.transform)
+            {
+                var slotRect = WorldRect((RectTransform)slot);
+                Assert.IsFalse(handRect.Overlaps(slotRect),
+                    $"the open hand covers the {slot.name} resource circle, which swallows its clicks "
+                    + $"(hand {handRect}, circle {slotRect})");
+            }
+
+            // And the circles genuinely answer a click while it is open.
+            var before = TotalResources(_manager.View.Viewer);
+            var disc = FindButtonNamed("Red Slot");
+            Assert.IsNotNull(disc, $"with the hand open: {WhyButtonNamedUnusable("Red Slot")}");
+
+            disc.onClick.Invoke();
+            yield return WaitForFrames(3);
+
+            Assert.AreEqual(before + 1, TotalResources(_manager.View.Viewer) + _pendingPickCount(),
+                            "clicking a resource with the hand open has to register");
+        }
+
+        /// <summary>How many picks are staged locally but not yet submitted.</summary>
+        private int _pendingPickCount()
+        {
+            var pending = typeof(BoardUI)
+                .GetField("_pendingResources", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(_board);
+            return ((System.Collections.ICollection)pending).Count;
         }
 
         /// <summary>
