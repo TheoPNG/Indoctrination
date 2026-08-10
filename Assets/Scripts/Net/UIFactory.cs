@@ -78,7 +78,7 @@ namespace Indoctrination.Net
             label.font = fontSize >= 20 ? UITheme.TitleFont : DefaultFont;
             label.fontSize = fontSize;
             label.alignment = anchor;
-            label.color = color ?? UITheme.Parchment;
+            label.color = color ?? UITheme.Bone;
             label.text = text;
             label.lineSpacing = 1.05f;
             label.horizontalOverflow = wrap ? HorizontalWrapMode.Wrap : HorizontalWrapMode.Overflow;
@@ -102,13 +102,13 @@ namespace Indoctrination.Net
             var button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = rect.GetComponent<Image>();
             UITheme.StyleButton(button);
-            UITheme.Frame(rect.GetComponent<Image>(), 0.75f, UITheme.RitualGoldSoft);
+            UITheme.Frame(rect.GetComponent<Image>(), 1f, UITheme.Border);
             if (onClick != null)
             {
                 button.onClick.AddListener(() => onClick());
             }
 
-            var label = Label($"{name} Text", rect, text, 15, TextAnchor.MiddleCenter, UITheme.Parchment);
+            var label = Label($"{name} Text", rect, text, 15, TextAnchor.MiddleCenter, UITheme.Bone);
             label.fontStyle = FontStyle.Bold;
             Stretch(Child(rect, $"{name} Text"));
             return button;
@@ -118,7 +118,7 @@ namespace Indoctrination.Net
         public static InputField TextInput(string name, Transform parent, string startingValue)
         {
             var rect = Panel(name, parent, UITheme.SurfaceSoft);
-            UITheme.Frame(rect.GetComponent<Image>(), 0.75f, UITheme.RitualGoldSoft);
+            UITheme.Frame(rect.GetComponent<Image>(), 1f, UITheme.Border);
             var field = rect.gameObject.AddComponent<InputField>();
 
             var text = Label($"{name} Text", rect, startingValue, 15, TextAnchor.MiddleLeft);
@@ -130,7 +130,7 @@ namespace Indoctrination.Net
             field.textComponent = text;
             field.text = startingValue;
             field.selectionColor = new Color(
-                UITheme.RitualGold.r, UITheme.RitualGold.g, UITheme.RitualGold.b, 0.42f);
+                UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.42f);
             return field;
         }
 

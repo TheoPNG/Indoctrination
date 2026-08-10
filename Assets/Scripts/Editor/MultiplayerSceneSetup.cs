@@ -38,7 +38,15 @@ namespace Indoctrination.EditorTools
             var go = existing != null ? existing.gameObject : new GameObject("NetworkManager");
             var manager = existing != null ? existing : go.AddComponent<NetworkManager>();
 
-            var transport = go.GetComponent<UnityTransport>() ?? go.AddComponent<UnityTransport>();
+            // Not `?? AddComponent`: Unity's fake-null for a missing component is
+            // not a C# null, so `??` never fires. An existing NetworkManager with
+            // no transport would reach SetConnectionData on nothing.
+            var transport = go.GetComponent<UnityTransport>();
+            if (transport == null)
+            {
+                transport = go.AddComponent<UnityTransport>();
+            }
+
             transport.SetConnectionData("127.0.0.1", 7777, "0.0.0.0");
 
             manager.NetworkConfig ??= new NetworkConfig();

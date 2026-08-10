@@ -44,13 +44,15 @@ namespace Indoctrination.Net
             _group.blocksRaycasts = false;
             _group.interactable = false;
 
+            // A band across the middle rather than a bordered plate. Thinner and
+            // darker than it was: the announcement should register at the edge
+            // of your attention and get out of the way, not be read.
             _panel = UIFactory.Panel("Banner", root, new Color(
-                UITheme.RitualBlack.r, UITheme.RitualBlack.g, UITheme.RitualBlack.b, 0.82f));
-            UITheme.Frame(_panel.GetComponent<Image>(), 0.8f, UITheme.RitualGoldSoft);
+                UITheme.Void.r, UITheme.Void.g, UITheme.Void.b, 0.88f));
             _panel.anchorMin = new Vector2(0f, 0.5f);
             _panel.anchorMax = new Vector2(1f, 0.5f);
             _panel.pivot = new Vector2(0.5f, 0.5f);
-            _panel.sizeDelta = new Vector2(0f, 96f);
+            _panel.sizeDelta = new Vector2(0f, 84f);
 
             var layout = UIFactory.VerticalLayout(_panel, 0, new RectOffset(0, 0, 8, 8), controlHeight: true);
             layout.childAlignment = TextAnchor.MiddleCenter;
@@ -61,7 +63,7 @@ namespace Indoctrination.Net
             FixedRow(_label.rectTransform, 52);
 
             _subtitle = UIFactory.Label("Detail", _panel, "", 16, TextAnchor.MiddleCenter,
-                UITheme.ParchmentMuted);
+                UITheme.BoneDim);
             FixedRow(_subtitle.rectTransform, 22);
 
             gameObject.SetActive(false);

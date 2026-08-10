@@ -30,33 +30,15 @@ namespace Indoctrination.Net
         public ushort port = 7777;
 
         private const float DockTopHeight = StatBar.BarHeight + 4f;
-        /// <summary>
-        /// A card strip has to clear the card itself plus the padding inside it.
-        /// Undersizing this clips the top of every card, which is exactly where
-        /// the title sits - the whole board looked title-less because of it.
-        /// </summary>
-        private const float CardStripHeight = BoardCardView.Height + (UIFactory.ScrollContentPadding * 2f) + 6f;
 
-        /// <summary>The strip, plus its header row and the spacing between them.</summary>
-        private const float BattlefieldRowHeight = CardStripHeight + 30f;
-
-        /// <summary>Height of the Play/Recycle row under a card in hand.</summary>
+        /// <summary>Height of the Recycle row under a card in hand.</summary>
         private const float HandCardButtonHeight = 28f;
 
-        /// <summary>A card in hand plus the buttons beneath it, and the gap between.</summary>
-        private const float HandCardHeight = BoardCardView.Height + 4f + HandCardButtonHeight;
         /// <summary>Smallest a card may shrink to and still be recognisable.</summary>
         private const float MinCardWidth = 72f;
 
         /// <summary>Gap between cards in a battlefield grid.</summary>
         private const float CardGap = 6f;
-
-        /// <summary>
-        /// The least the board itself may be squeezed to. The hand is sized around
-        /// whatever is left after this, so opening it can never push the board out
-        /// of the window - nor be pushed out of it itself.
-        /// </summary>
-        private const float MinBattlefieldHeight = 250f;
 
         /// <summary>Diameter of a resource-picker disc.</summary>
         private const float ResourceButtonSize = 44f;
@@ -71,13 +53,29 @@ namespace Indoctrination.Net
         private const float StatusRowHeight = 22f;
 
         private const int BoardSafeInset = 10;
-        private const int DraftZoneLeftInset = 12;
 
         /// <summary>The permanent resource HUD's column width.</summary>
         private const float ResourceHudWidth = 62f;
 
         /// <summary>How tall the hand tray is while collapsed - just enough to say "there is a hand here".</summary>
-        private const float HandPeekHeight = 30f;
+        private const float HandPeekHeight = 34f;
+
+        /// <summary>
+        /// The tallest the hand may grow to when hovered. Capped so it never
+        /// reaches the popup floating above it, and so it can never swallow the
+        /// whole board on a short window.
+        /// </summary>
+        private const float MaxHandHeight = 260f;
+
+        private const float PopupWidth = 460f;
+        private const float PopupHeight = 400f;
+
+        /// <summary>
+        /// How far above centre the popup sits. It clears the hand at full
+        /// height, so a question can be read and answered while your own cards
+        /// are open in front of you.
+        /// </summary>
+        private const float PopupLift = 46f;
 
         // --------------------------------------------------------------- Panels
         private RectTransform _connectPanel;
@@ -102,12 +100,12 @@ namespace Indoctrination.Net
         private ResourceHud _resourceHud;
 
         /// <summary>
-        /// The popup that stands in for the old side panel: a scrim over the
-        /// whole board and a centred box, shown only while something actually
-        /// needs an answer. Empty phases show nothing here at all - the
-        /// compounds are the only thing on screen.
+        /// The floating box that stands in for the old side panel, shown only
+        /// while something actually needs an answer. It neither dims nor blocks
+        /// the board behind it - a card's question is usually answered by
+        /// looking at your own hand or somebody's compound first. Empty phases
+        /// show nothing here at all.
         /// </summary>
-        private RectTransform _popupScrim;
         private RectTransform _popupPanel;
         private RectTransform _actionViewport;
         private RectTransform _actionPanel;
@@ -115,8 +113,12 @@ namespace Indoctrination.Net
         private Button _readyButton;
         private Text _readyLabel;
         private Text _waitingLabel;
+
+        /// <summary>
+        /// The hand tray. Floats above the bottom edge rather than taking a row
+        /// in the layout, so hovering it open never moves the board.
+        /// </summary>
         private RectTransform _handRow;
-        private LayoutElement _handRowPin;
         private LayoutElement _dockPin;
         private Text _handCountLabel;
         private RectTransform _dragLayer;
@@ -240,7 +242,7 @@ namespace Indoctrination.Net
             camera.orthographic = true;
             camera.orthographicSize = 6f;
             camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = UITheme.RitualBlack;
+            camera.backgroundColor = UITheme.Void;
         }
 
         private void Update()
@@ -386,7 +388,7 @@ namespace Indoctrination.Net
         private RectTransform BuildConnectPanel(Transform parent)
         {
             var panel = UIFactory.Panel("Connect Panel", parent, new Color(
-                UITheme.RitualBlack.r, UITheme.RitualBlack.g, UITheme.RitualBlack.b, 0.72f));
+                UITheme.Void.r, UITheme.Void.g, UITheme.Void.b, 0.72f));
             UIFactory.Stretch(panel);
 
             var box = UIFactory.Panel("Connect Box", panel, UITheme.SurfaceRaised);
@@ -398,10 +400,10 @@ namespace Indoctrination.Net
 
             AddFixedHeight(UIFactory.Label(
                 "Title", box, "I N D O C T R I N A T I O N", 26,
-                TextAnchor.MiddleCenter, UITheme.RitualGold), 40);
+                TextAnchor.MiddleCenter, UITheme.Signal), 40);
             AddFixedHeight(UIFactory.Label(
                 "Subtitle", box, "Host a game, or join one that is already running.", 14,
-                TextAnchor.MiddleCenter, UITheme.ParchmentMuted), 22);
+                TextAnchor.MiddleCenter, UITheme.BoneDim), 22);
 
             var addressRow = UIFactory.Group("Address Row", box);
             AddFixedHeight(addressRow, 34);
@@ -457,7 +459,7 @@ namespace Indoctrination.Net
         private RectTransform BuildLobbyPanel(Transform parent)
         {
             var panel = UIFactory.Panel("Lobby Panel", parent, new Color(
-                UITheme.RitualBlack.r, UITheme.RitualBlack.g, UITheme.RitualBlack.b, 0.72f));
+                UITheme.Void.r, UITheme.Void.g, UITheme.Void.b, 0.72f));
             UIFactory.Stretch(panel);
 
             var box = UIFactory.Panel("Lobby Box", panel, UITheme.SurfaceRaised);
@@ -468,7 +470,7 @@ namespace Indoctrination.Net
             layout.childAlignment = TextAnchor.UpperCenter;
 
             AddFixedHeight(UIFactory.Label(
-                "Title", box, "THE GATHERING", 24, TextAnchor.MiddleCenter, UITheme.RitualGold), 34);
+                "Title", box, "THE GATHERING", 24, TextAnchor.MiddleCenter, UITheme.Signal), 34);
             // Your name, chosen here rather than being assigned. It travels with
             // the seat, so it is fixed once the game starts.
             var nameRow = UIFactory.Group("Name Row", box);
@@ -513,7 +515,7 @@ namespace Indoctrination.Net
                 : "Timers: off";
 
             _timerToggle.targetGraphic.color = _timersOn
-                ? UITheme.Moss
+                ? UITheme.Affirm
                 : UITheme.ButtonQuiet;
 
             NetworkGameManager.Instance?.RequestSetTimersRpc(_timersOn);
@@ -572,7 +574,7 @@ namespace Indoctrination.Net
                 UITheme.ButtonQuiet, 24, 22);
 
             _statusText = UIFactory.Label("Status", status, "", 12, TextAnchor.MiddleLeft,
-                UITheme.ParchmentMuted);
+                UITheme.BoneDim);
             AddFlexibleWidth(_statusText.rectTransform);
 
             // Conceding and offering a draw live behind the same chip as the
@@ -586,7 +588,7 @@ namespace Indoctrination.Net
                 "Resign", status, "Resign", PressResign,
                 UITheme.Blood, 90, StatusRowHeight);
             _resignLabel = _resignButton.GetComponentInChildren<Text>();
-            _timerText = UIFactory.Label("Timer", status, "", 13, TextAnchor.MiddleRight, UITheme.RitualGold);
+            _timerText = UIFactory.Label("Timer", status, "", 13, TextAnchor.MiddleRight, UITheme.Signal);
             AddResponsiveWidth(_timerText.rectTransform, 150, 230, 0);
 
             // Opponents across the top of the board. This row scrolls rather than
@@ -650,13 +652,13 @@ namespace Indoctrination.Net
             battlefieldScroll.viewport = battlefieldViewport;
             battlefieldScroll.content = _battlefield;
 
-            // Bottom dock: your own stat bar, then the collapsible hand. Its
-            // height is recomputed in RefreshHand every time the tray opens or
-            // closes - a size fixed once at build time would either waste space
-            // collapsed or clip the hand open.
+            // Bottom dock: your own stat bar and the controls that end a phase.
+            // The hand is no longer inside it - see below.
             var dock = UIFactory.Group("Bottom Dock", root);
             UIFactory.VerticalLayout(dock, 4, new RectOffset(0, 0, 0, 0), controlHeight: true);
             _dockPin = dock.gameObject.AddComponent<LayoutElement>();
+            _dockPin.preferredHeight = DockTopHeight;
+            _dockPin.minHeight = DockTopHeight;
 
             var dockTop = UIFactory.Group("Dock Top", dock);
             AddFixedHeight(dockTop, 44);
@@ -669,17 +671,17 @@ namespace Indoctrination.Net
             // that ends a phase should never be something you have to go looking
             // for.
             _readyButton = UIFactory.ButtonWithLabel(
-                "Ready", dockTop, "Ready", ToggleReady, UITheme.Moss, 130, 34);
+                "Ready", dockTop, "Ready", ToggleReady, UITheme.Affirm, 130, 34);
             _readyLabel = _readyButton.GetComponentInChildren<Text>();
 
             _waitingLabel = UIFactory.Label("Waiting", dockTop, "", 12, TextAnchor.MiddleLeft,
-                UITheme.ParchmentMuted);
+                UITheme.BoneDim);
             AddFlexibleWidth(_waitingLabel.rectTransform);
 
             // The hand tray only peeks by default, so this is the one place its
             // size is still visible without hovering over it.
             _handCountLabel = UIFactory.Label("Hand Count", dockTop, "", 12, TextAnchor.MiddleRight,
-                UITheme.ParchmentMuted);
+                UITheme.BoneDim);
             AddFixedWidth(_handCountLabel.rectTransform, 70);
 
             // The discard is public information and Rituals fly into it, so it is
@@ -695,40 +697,30 @@ namespace Indoctrination.Net
             BoardEffects.Instance.SetFlightLayer(flightLayer);
             _dragLayer = flightLayer;
 
-            // The hand is always present, never hidden outright - it just peeks a
-            // sliver above the bottom edge until the pointer finds it, then
-            // expands to its full playable size. Hovering off it collapses it
-            // again, so the compounds get the screen back the moment you look away.
-            _handRow = UIFactory.Group("Hand Row", dock);
-            _handRowPin = _handRow.gameObject.AddComponent<LayoutElement>();
-            _handRowPin.flexibleWidth = 1;
-
-            var handHover = _handRow.gameObject.AddComponent<EventTrigger>();
-            var handEnter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
-            handEnter.callback.AddListener(_ => SetHandExpanded(true));
-            handHover.triggers.Add(handEnter);
-            var handExit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
-            handExit.callback.AddListener(_ => SetHandExpanded(false));
-            handHover.triggers.Add(handExit);
-
-            // The popup that stands in for the old always-on side panel: a scrim
-            // over the whole board and a centred box, built last among root's
-            // children so it draws above everything else in it, and ignored by
-            // root's own layout so it can freely stretch to cover the board
-            // rather than becoming another row. Empty until something actually
-            // needs an answer - most phases show nothing here at all.
-            _popupScrim = UIFactory.Panel("Popup Scrim", root, new Color(
-                UITheme.RitualBlack.r, UITheme.RitualBlack.g, UITheme.RitualBlack.b, 0.72f));
-            UIFactory.Stretch(_popupScrim);
-            _popupScrim.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
-            _popupScrim.gameObject.SetActive(false);
-
+            // The popup that stands in for the old always-on side panel. It does
+            // NOT dim or block the board: a card's question is very often
+            // answered by looking at your own hand or somebody's compound
+            // first, and a scrim over all of it made that impossible. It floats
+            // just above centre so the bottom of the screen - your compound and
+            // your hand - stays clear, and it only blocks clicks inside its own
+            // rect. Empty until something actually needs an answer.
             _popupPanel = UIFactory.Panel("Popup Panel", root, UITheme.SurfaceRaised);
-            UITheme.Frame(_popupPanel.GetComponent<Image>(), 1.25f);
+            UITheme.Frame(_popupPanel.GetComponent<Image>(), 1f, UITheme.SignalSoft);
             _popupPanel.anchorMin = _popupPanel.anchorMax = new Vector2(0.5f, 0.5f);
-            UIFactory.SetSize(_popupPanel, 480, 460);
+            _popupPanel.pivot = new Vector2(0.5f, 0.5f);
+            UIFactory.SetSize(_popupPanel, PopupWidth, PopupHeight);
+            _popupPanel.anchoredPosition = new Vector2(0f, PopupLift);
             _popupPanel.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
             _popupPanel.gameObject.SetActive(false);
+
+            // Without a scrim behind it the popup has to earn its own attention,
+            // so it gets the accent as a bar across its top edge.
+            var popupAccent = UIFactory.Panel("Accent", _popupPanel, UITheme.Signal);
+            popupAccent.anchorMin = new Vector2(0f, 1f);
+            popupAccent.anchorMax = new Vector2(1f, 1f);
+            popupAccent.pivot = new Vector2(0.5f, 1f);
+            popupAccent.sizeDelta = new Vector2(0f, 2f);
+            popupAccent.GetComponent<Image>().raycastTarget = false;
 
             _actionViewport = UIFactory.Panel("Action Viewport", _popupPanel, Color.clear);
             _actionViewport.gameObject.AddComponent<RectMask2D>();
@@ -757,6 +749,41 @@ namespace Indoctrination.Net
             _actionScroll.viewport = _actionViewport;
             _actionScroll.content = _actionPanel;
 
+            // The hand, built last so it draws over everything including the
+            // popup - you can always pull your own cards up to read them, even
+            // while a question is open.
+            //
+            // It floats rather than taking a row in the layout. As a laid-out
+            // row, expanding it resized the dock, which reflowed the board,
+            // which rebuilt every card on it - so opening your hand made the
+            // whole screen jump. Anchored to the bottom, expanding changes
+            // nothing but the hand itself.
+            _handRow = UIFactory.Panel("Hand Row", root, new Color(
+                UITheme.Void.r, UITheme.Void.g, UITheme.Void.b, 0.90f));
+            UITheme.Frame(_handRow.GetComponent<Image>(), 1f, UITheme.Border);
+            _handRow.anchorMin = new Vector2(0f, 0f);
+            _handRow.anchorMax = new Vector2(1f, 0f);
+            _handRow.pivot = new Vector2(0.5f, 0f);
+            _handRow.anchoredPosition = new Vector2(0f, DockTopHeight + BoardSafeInset);
+            _handRow.sizeDelta = new Vector2(-(BoardSafeInset * 2f), HandPeekHeight);
+            _handRow.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
+
+            // The row carries its own Image, and that is load-bearing rather
+            // than decorative: a RectTransform with no Graphic receives no
+            // raycasts at all, so PointerEnter/Exit only ever fired for the
+            // child cards. Rebuilding the hand destroys those children, which
+            // fired PointerExit, which collapsed the hand, which rebuilt it -
+            // the tray flickered open and shut every frame. The row's own
+            // background is never destroyed, so the pointer stays "inside" it
+            // across a rebuild and the loop cannot start.
+            var handHover = _handRow.gameObject.AddComponent<EventTrigger>();
+            var handEnter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
+            handEnter.callback.AddListener(_ => SetHandExpanded(true));
+            handHover.triggers.Add(handEnter);
+            var handExit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
+            handExit.callback.AddListener(_ => SetHandExpanded(false));
+            handHover.triggers.Add(handExit);
+
             return root;
         }
 
@@ -780,18 +807,18 @@ namespace Indoctrination.Net
                 return;
             }
 
-            // The hand's own row, and the board resized around it. Neither the
-            // stat bars nor their animations are touched - opening a tray is not
-            // a change to the game.
+            // Only the hand. The board is deliberately left alone: it is laid
+            // out with room for the hand at full height already, so opening one
+            // never resizes the other. Rebuilding the battlefield here is what
+            // used to make the whole screen flicker on every hover.
             RefreshHand(manager.View);
-            RefreshBattlefield(manager, manager.View);
         }
 
         private void BuildErrorLabel(Transform parent)
         {
             var panel = UIFactory.Panel("Error Banner", parent, new Color(
                 UITheme.Blood.r, UITheme.Blood.g, UITheme.Blood.b, 0.94f));
-            UITheme.Frame(panel.GetComponent<Image>(), 1f, UITheme.RitualGoldSoft);
+            UITheme.Frame(panel.GetComponent<Image>(), 1f, UITheme.SignalSoft);
             panel.anchorMin = new Vector2(0.5f, 1f);
             panel.anchorMax = new Vector2(0.5f, 1f);
             panel.pivot = new Vector2(0.5f, 1f);
@@ -930,12 +957,12 @@ namespace Indoctrination.Net
 
         private static Color PhaseTint(string phase) => phase switch
         {
-            nameof(TurnPhase.Draft) => new Color(0.58f, 0.55f, 0.82f),
-            nameof(TurnPhase.Rolling) => UITheme.Parchment,
-            nameof(TurnPhase.Activation) => new Color(0.82f, 0.34f, 0.38f),
-            nameof(TurnPhase.Resource) => new Color(0.43f, 0.68f, 0.47f),
-            nameof(TurnPhase.Buy) => UITheme.RitualGold,
-            _ => UITheme.Parchment
+            nameof(TurnPhase.Draft) => new Color(0.588f, 0.573f, 0.827f),
+            nameof(TurnPhase.Rolling) => UITheme.Bone,
+            nameof(TurnPhase.Activation) => new Color(0.925f, 0.322f, 0.388f),
+            nameof(TurnPhase.Resource) => new Color(0.290f, 0.831f, 0.588f),
+            nameof(TurnPhase.Buy) => UITheme.Signal,
+            _ => UITheme.Bone
         };
 
         /// <summary>
@@ -1205,7 +1232,13 @@ namespace Indoctrination.Net
         private float CardWidthForBoard(List<PlannedRow> rows)
         {
             var width = Mathf.Max(200f, _battlefield.rect.width - 12f);
-            var height = Mathf.Max(200f, _battlefieldViewport.rect.height - 8f);
+
+            // The resting hand floats over the bottom of the board, so that
+            // strip is kept clear. Only the peek is reserved, not the whole
+            // open tray: an expanded hand is something you are looking at on
+            // purpose, and it drops away again the moment you look elsewhere.
+            var height = Mathf.Max(
+                200f, _battlefieldViewport.rect.height - 8f - HandPeekHeight - 6f);
 
             for (var candidate = BoardCardView.Width; candidate >= MinCardWidth; candidate -= 4f)
             {
@@ -1242,7 +1275,7 @@ namespace Indoctrination.Net
             rowLayout.childAlignment = TextAnchor.UpperLeft;
 
             var header = UIFactory.Label("Header", row, plan.Label, 13, TextAnchor.MiddleLeft,
-                new Color(0.75f, 0.75f, 0.8f));
+                UITheme.BoneDim);
             header.fontStyle = FontStyle.Bold;
             AddFixedHeight(header.rectTransform, RowHeaderHeight);
 
@@ -1498,11 +1531,12 @@ namespace Indoctrination.Net
 
             if (you == null || count == 0)
             {
-                _handRowPin.preferredHeight = 0f;
-                _handRowPin.minHeight = 0f;
-                _dockPin.preferredHeight = DockTopHeight;
+                SetHandHeight(0f);
+                _handRow.gameObject.SetActive(false);
                 return;
             }
+
+            _handRow.gameObject.SetActive(true);
 
             // Never hidden outright - it peeks until the pointer finds it, then
             // opens to its full playable size. Only the expanded state offers
@@ -1518,10 +1552,6 @@ namespace Indoctrination.Net
 
             // Sized so a full hand fits across without scrolling. The hand limit
             // is what makes that possible: seven is the widest it can ever be.
-            // Sized against both directions. Width alone was not enough: during Buy
-            // the cards carry a row of buttons underneath, and on a short window
-            // the whole tray ran past the bottom of the screen - which is what was
-            // cutting the hand off.
             var across = Mathf.Max(240f, _gameRoot.rect.width - 40f);
             var widthAllows = (across - ((GameSettings.HandLimit - 1) * CardGap) - 24f)
                               / GameSettings.HandLimit;
@@ -1529,14 +1559,10 @@ namespace Indoctrination.Net
             var chrome = (UIFactory.ScrollContentPadding * 2f) + 6f
                          + (canBuy ? HandCardButtonHeight + 4f : 0f);
 
-            var heightForTray = _gameRoot.rect.height
-                                - StatusRowHeight
-                                - (StatBar.BarHeight + (UIFactory.ScrollContentPadding * 2f) + 4f)
-                                - MinBattlefieldHeight
-                                - DockTopHeight
-                                - (BoardSafeInset * 2f) - 24f;
-
-            var heightAllows = (Mathf.Max(80f, heightForTray) - chrome)
+            // The tray floats over the board now, so its height is capped
+            // outright rather than negotiated against the layout - it takes what
+            // it needs and no more, and the board underneath never moves.
+            var heightAllows = (MaxHandHeight - chrome)
                                * (BoardCardView.Width / BoardCardView.Height);
 
             var handCardWidth = Mathf.Clamp(
@@ -1545,12 +1571,8 @@ namespace Indoctrination.Net
             var handCardHeight = handCardWidth * (BoardCardView.Height / BoardCardView.Width);
             var handStripHeight = handCardHeight + chrome;
 
-            _handRowPin.preferredHeight = handStripHeight;
-            _handRowPin.minHeight = handStripHeight;
-            _dockPin.preferredHeight = DockTopHeight + handStripHeight + 4f;
+            SetHandHeight(handStripHeight);
 
-            // Sized to the cards it holds and no wider, so the board stays visible
-            // either side of it. It sits just above the dock.
             var content = UIFactory.HorizontalScroll("Hand Scroll", _handRow, handStripHeight);
             UIFactory.Stretch(UIFactory.Child(_handRow, "Hand Scroll"));
 
@@ -1639,7 +1661,7 @@ namespace Indoctrination.Net
                 UIFactory.HorizontalLayout(buttons, 4, new RectOffset(0, 0, 0, 0));
                 UIFactory.ButtonWithLabel("Recycle", buttons, "Recycle",
                     () => NetworkGameManager.Instance?.RequestRecycleRpc(instanceId),
-                    new Color(0.39f, 0.27f, 0.11f), handCardWidth, HandCardButtonHeight);
+                    new Color(0.278f, 0.208f, 0.129f), handCardWidth, HandCardButtonHeight);
             }
         }
 
@@ -1653,9 +1675,7 @@ namespace Indoctrination.Net
             var peekCardHeight = HandPeekHeight + 6f;
             var peekCardWidth = peekCardHeight * (BoardCardView.Width / BoardCardView.Height);
 
-            _handRowPin.preferredHeight = HandPeekHeight;
-            _handRowPin.minHeight = HandPeekHeight;
-            _dockPin.preferredHeight = DockTopHeight + HandPeekHeight + 4f;
+            SetHandHeight(HandPeekHeight);
 
             var content = UIFactory.HorizontalScroll("Hand Scroll", _handRow, HandPeekHeight);
             UIFactory.Stretch(UIFactory.Child(_handRow, "Hand Scroll"));
@@ -1675,6 +1695,15 @@ namespace Indoctrination.Net
                 peek.Populate(card, null, null);
                 peek.ScaleTo(peekCardWidth);
             }
+        }
+
+        /// <summary>
+        /// Resizes the floating hand tray. It grows upward from the bottom edge,
+        /// so nothing else on the board has to move to make room for it.
+        /// </summary>
+        private void SetHandHeight(float height)
+        {
+            _handRow.sizeDelta = new Vector2(-(BoardSafeInset * 2f), height);
         }
 
         // ------------------------------------------------------- Action panel
@@ -1712,7 +1741,6 @@ namespace Indoctrination.Net
             var show = DecidePopup(manager, view);
 
             _popupPanel.gameObject.SetActive(show);
-            _popupScrim.gameObject.SetActive(show);
         }
 
         private bool DecidePopup(NetworkGameManager manager, GameView view)
@@ -1754,15 +1782,15 @@ namespace Indoctrination.Net
             banner.alignment = TextAnchor.MiddleCenter;
             banner.fontStyle = FontStyle.Bold;
             banner.color = view.isDraw
-                ? UITheme.ParchmentMuted
+                ? UITheme.BoneDim
                 : youWon
-                    ? new Color(0.48f, 0.72f, 0.46f)
-                    : new Color(0.78f, 0.31f, 0.36f);
+                    ? new Color(0.361f, 0.878f, 0.647f)
+                    : new Color(0.902f, 0.361f, 0.416f);
             SetRowHeight(banner.rectTransform, 48);
 
             var subtitle = ActionLabel(GameOverHeadline(view), 15);
             subtitle.alignment = TextAnchor.MiddleCenter;
-            subtitle.color = UITheme.ParchmentMuted;
+            subtitle.color = UITheme.BoneDim;
             SetRowHeight(subtitle.rectTransform, 40);
 
             foreach (var player in view.players
@@ -1777,7 +1805,7 @@ namespace Indoctrination.Net
             if (network != null && network.IsHost)
             {
                 UIFactory.ButtonWithLabel("Play Again", _actionPanel, "Play Again",
-                    () => manager.RequestPlayAgainRpc(), UITheme.Moss, ActionButtonWidth(), 44);
+                    () => manager.RequestPlayAgainRpc(), UITheme.Affirm, ActionButtonWidth(), 44);
             }
             else
             {
@@ -1792,7 +1820,7 @@ namespace Indoctrination.Net
         private void BuildFinalStanding(PlayerView player, bool won, bool isViewer)
         {
             var row = UIFactory.Panel($"Standing {player.playerId}", _actionPanel,
-                won ? new Color(0.16f, 0.25f, 0.17f, 0.94f) : UITheme.SurfaceSoft);
+                won ? new Color(0.098f, 0.216f, 0.184f, 0.96f) : UITheme.SurfaceSoft);
             SetRowHeight(row, 62);
 
             var layout = UIFactory.VerticalLayout(row, 2, new RectOffset(8, 8, 5, 5), controlHeight: true);
@@ -1807,9 +1835,9 @@ namespace Indoctrination.Net
             SetRowHeight(name.rectTransform, 18);
 
             FinalBar(row, "Followers", player.followers, GameSettings.FollowersToWin,
-                     UITheme.RitualGold);
+                     UITheme.Signal);
             FinalBar(row, "Health", player.health, GameSettings.MaxHealth,
-                     new Color(0.68f, 0.15f, 0.20f));
+                     new Color(0.800f, 0.247f, 0.318f));
         }
 
         private void FinalBar(Transform parent, string label, int value, int max, Color color)
@@ -1869,7 +1897,7 @@ namespace Indoctrination.Net
             {
                 UIFactory.ButtonWithLabel(
                     "Roll", _actionPanel, "ROLL DIE", () => manager.RequestRollRpc(),
-                    UITheme.Moss, width: ActionButtonWidth(), height: 54);
+                    UITheme.Affirm, width: ActionButtonWidth(), height: 54);
                 return true;
             }
 
@@ -2020,7 +2048,7 @@ namespace Indoctrination.Net
             {
                 _resignArmed = true;
                 _resignLabel.text = "Sure?";
-                _resignButton.targetGraphic.color = new Color(0.62f, 0.10f, 0.15f);
+                _resignButton.targetGraphic.color = new Color(0.906f, 0.267f, 0.310f);
                 return;
             }
 
@@ -2062,7 +2090,7 @@ namespace Indoctrination.Net
                 : "Offer draw";
 
             _drawButton.targetGraphic.color = you.offeringDraw
-                ? UITheme.Moss
+                ? UITheme.Affirm
                 : UITheme.ButtonQuiet;
 
             // A confirmation left armed from an earlier turn is stale, and would
@@ -2076,7 +2104,7 @@ namespace Indoctrination.Net
 
             _resignLabel.text = _resignArmed ? "Sure?" : "Resign";
             _resignButton.targetGraphic.color = _resignArmed
-                ? new Color(0.62f, 0.10f, 0.15f)
+                ? new Color(0.906f, 0.267f, 0.310f)
                 : UITheme.Blood;
         }
 
@@ -2171,14 +2199,14 @@ namespace Indoctrination.Net
 
             _readyButton.interactable = owes == null;
             _readyLabel.text = you.isReady ? "Not Ready" : "Ready";
-            _readyLabel.color = owes == null ? UITheme.Parchment : new Color(
-                UITheme.Parchment.r, UITheme.Parchment.g, UITheme.Parchment.b, 0.45f);
+            _readyLabel.color = owes == null ? UITheme.Bone : new Color(
+                UITheme.Bone.r, UITheme.Bone.g, UITheme.Bone.b, 0.45f);
 
             _readyButton.targetGraphic.color = owes != null
                 ? UITheme.ButtonQuiet
                 : you.isReady
-                    ? new Color(0.39f, 0.27f, 0.11f)
-                    : UITheme.Moss;
+                    ? new Color(0.278f, 0.208f, 0.129f)
+                    : UITheme.Affirm;
 
             BoardEffects.Instance.SetPulsing(_readyButton.targetGraphic, actionable);
 
@@ -2281,7 +2309,7 @@ namespace Indoctrination.Net
                     AddFixedHeight(yesNoRow, 36);
                     UIFactory.HorizontalLayout(yesNoRow, 8, new RectOffset(0, 0, 0, 0));
                     UIFactory.ButtonWithLabel("Yes", yesNoRow, "Yes", () => manager.RequestAnswerYesNoRpc(true),
-                        UITheme.Moss, 90, 32);
+                        UITheme.Affirm, 90, 32);
                     UIFactory.ButtonWithLabel("No", yesNoRow, "No", () => manager.RequestAnswerYesNoRpc(false),
                         UITheme.Blood, 90, 32);
                     break;
@@ -2381,18 +2409,6 @@ namespace Indoctrination.Net
             }
         }
 
-        private static Color ColorSwatch(ResourceColor color)
-        {
-            return color switch
-            {
-                ResourceColor.Red => new Color(0.6f, 0.2f, 0.2f),
-                ResourceColor.Green => new Color(0.2f, 0.5f, 0.25f),
-                ResourceColor.Blue => new Color(0.2f, 0.35f, 0.6f),
-                ResourceColor.Yellow => new Color(0.55f, 0.45f, 0.15f),
-                _ => new Color(0.3f, 0.3f, 0.3f)
-            };
-        }
-
         // --------------------------------------------------------------- Helpers
 
         private static int HighestUniqueRoller(GameView view)
@@ -2472,7 +2488,12 @@ namespace Indoctrination.Net
 
         private static void AddFixedWidthHeight(Component rect, float width, float height)
         {
-            var element = rect.gameObject.GetComponent<LayoutElement>() ?? rect.gameObject.AddComponent<LayoutElement>();
+            var element = rect.gameObject.GetComponent<LayoutElement>();
+            if (element == null)
+            {
+                element = rect.gameObject.AddComponent<LayoutElement>();
+            }
+
             element.preferredWidth = width;
             element.minWidth = width;
             element.preferredHeight = height;
@@ -2487,7 +2508,12 @@ namespace Indoctrination.Net
 
         private static void AddResponsiveWidth(Component rect, float minWidth, float preferredWidth, float flexGrow)
         {
-            var element = rect.gameObject.GetComponent<LayoutElement>() ?? rect.gameObject.AddComponent<LayoutElement>();
+            var element = rect.gameObject.GetComponent<LayoutElement>();
+            if (element == null)
+            {
+                element = rect.gameObject.AddComponent<LayoutElement>();
+            }
+
             element.minWidth = minWidth;
             element.preferredWidth = preferredWidth;
             element.flexibleWidth = flexGrow;

@@ -143,11 +143,14 @@ namespace Indoctrination.Net
             var root = (RectTransform)transform;
             UIFactory.Stretch(root);
 
-            // A dimmed backdrop that also swallows clicks, so anywhere outside the
-            // card closes the preview rather than acting on the board underneath.
+            // A backdrop that swallows clicks, so anywhere outside the card
+            // closes the preview rather than acting on the board underneath.
+            // Deliberately light: you often open a card to decide something
+            // about the board, and blacking the board out to read one card in
+            // front of it defeats the point.
             var backdrop = gameObject.AddComponent<Image>();
             backdrop.color = new Color(
-                UITheme.RitualBlack.r, UITheme.RitualBlack.g, UITheme.RitualBlack.b, 0.84f);
+                UITheme.Void.r, UITheme.Void.g, UITheme.Void.b, 0.62f);
 
             var dismiss = gameObject.AddComponent<Button>();
             dismiss.targetGraphic = backdrop;
@@ -169,14 +172,14 @@ namespace Indoctrination.Net
             _accent = UIFactory.Panel("Accent", _panel, Color.white).GetComponent<Image>();
             FixedRow(_accent.rectTransform, 5);
 
-            _titleText = UIFactory.Label("Title", _panel, "", 30, TextAnchor.UpperLeft, UITheme.Parchment);
+            _titleText = UIFactory.Label("Title", _panel, "", 30, TextAnchor.UpperLeft, UITheme.Bone);
             _titleText.fontStyle = FontStyle.Bold;
             FixedRow(_titleText.rectTransform, 40);
 
-            _metaText = UIFactory.Label("Meta", _panel, "", 16, TextAnchor.UpperLeft, UITheme.ParchmentMuted);
+            _metaText = UIFactory.Label("Meta", _panel, "", 16, TextAnchor.UpperLeft, UITheme.BoneDim);
             FixedRow(_metaText.rectTransform, 46);
 
-            _effectText = UIFactory.Label("Effect", _panel, "", 18, TextAnchor.UpperLeft, UITheme.Parchment);
+            _effectText = UIFactory.Label("Effect", _panel, "", 18, TextAnchor.UpperLeft, UITheme.Bone);
             var effectRow = _effectText.gameObject.AddComponent<LayoutElement>();
             effectRow.flexibleHeight = 1;
             effectRow.flexibleWidth = 1;
@@ -255,7 +258,7 @@ namespace Indoctrination.Net
                 {
                     Hide();
                     action();
-                }, UITheme.Moss, 200, 40);
+                }, UITheme.Affirm, 200, 40);
             }
 
             UIFactory.ButtonWithLabel("Close", _actionRow, "Close", Hide,

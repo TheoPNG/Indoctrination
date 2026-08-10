@@ -2,6 +2,107 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
+## 2026-08-09 — Claude (cold restyle, the hand flicker, and popups that do not block)
+
+### The look
+
+The fantasy theme is gone. `UITheme` was rewritten rather than retinted, and
+every member renamed, so nothing is left calling a cool grey "Parchment":
+
+| was | is |
+| --- | --- |
+| `RitualBlack` / `DeepPlum` | `Void` / `Fog` |
+| `Parchment` / `ParchmentMuted` | `Bone` / `BoneDim` |
+| `RitualGold` / `RitualGoldSoft` | `Signal` / `SignalSoft` |
+| `Moss` | `Affirm` |
+| `AshBlue` | (gone - folded into `Signal`) |
+
+Near-black surfaces with a faint blue-green cast, a cool off-white for text,
+and **one** accent - a cold cyan (`Signal`) - deliberately rationed so it still
+means something. It marks exactly three things now: a card you can afford, the
+activation numbers on a unit, and a cost that has been discounted. Full-price
+costs went to `BoneDim`, because "ordinary" should look ordinary.
+
+Type is a clean grotesque throughout (Helvetica Neue / Inter / Avenir Next),
+no serifs anywhere. `UITheme.Frame` is a one-pixel hairline now regardless of
+the weight it is passed - the argument survives because callers use it to mean
+"how important is this edge", which now reads as colour rather than thickness.
+Buttons dropped their gold edging for the same hairline.
+
+`BoardArt.Backdrop` lost the occult seal (two rings, inverted triangle, axis)
+entirely. It is now an empty dark room: a soft pool of cold light low and
+centre, corners falling away hard, fine grain to stop a flat dark field
+banding on a big display. Resource and category colours were re-picked to sit
+against near-black without glaring.
+
+### The hand flicker
+
+Root cause, and worth remembering: **`_handRow` was a `UIFactory.Group`, which
+has no `Image`, and a RectTransform with no `Graphic` receives no raycasts at
+all.** So `PointerEnter`/`PointerExit` never fired for the row itself - only
+for its child cards, bubbling up. `RefreshHand` then destroyed those children,
+which fired `PointerExit`, which collapsed the hand, which rebuilt it, which
+put a card back under the pointer, which fired `PointerEnter`... every frame.
+
+Two changes, both needed:
+
+1. The row carries its own `Image` now. It is never destroyed (only children
+   are), so the pointer stays "inside" it across a rebuild and the loop cannot
+   start. This is load-bearing, not decoration - do not swap it back to a
+   `Group`.
+2. The hand no longer sits in the layout at all. It is anchored to the bottom
+   of `Game Root` with `ignoreLayout`, and grows upward. As a laid-out row,
+   expanding it resized the dock, which reflowed the board, which rebuilt every
+   card on it - so opening your hand made the whole screen jump even once the
+   raycast bug was fixed. `SetHandExpanded` now touches only the hand;
+   `RefreshBattlefield` is no longer called from it.
+
+`CardWidthForBoard` reserves `HandPeekHeight` at the bottom so the resting
+hand never covers the bottom compound row. The *expanded* hand is not
+reserved - it overlays, and drops away the moment you look elsewhere. Hand
+height is capped by `MaxHandHeight` so it can never swallow the board or reach
+the popup.
+
+Dead after this: `MinBattlefieldHeight`, `HandCardHeight`, `CardStripHeight`,
+`BattlefieldRowHeight`, `DraftZoneLeftInset`, `ColorSwatch`, `_handRowPin` -
+all removed.
+
+### Popups no longer block
+
+The scrim is gone outright. A card's question is very often answered by
+looking at your own hand or somebody's compound first, and grey-ing all of it
+out made that impossible. The popup floats slightly above centre
+(`PopupLift`), leaves the bottom of the screen clear for the hand and your own
+compound, and only blocks clicks inside its own rect. It earns attention with
+an accent bar across its top edge instead of by dimming everything else. The
+hand is built last so it draws *over* the popup - you can always pull your own
+cards up to read them mid-question.
+
+`CardPreview`'s backdrop went from 0.84 to 0.62 alpha for the same reason. It
+still swallows clicks so clicking outside closes it.
+
+### Also
+
+Fixed the `GetComponent<T>() ?? AddComponent<T>()` bug in three more places
+while touching those lines - `BoardCardView.SetAffordable`/`SetDueToActivate`
+(now share an `Edge()` helper) and `MultiplayerSceneSetup.EnsureNetworkManager`,
+where an existing NetworkManager with no transport would have reached
+`SetConnectionData` on nothing. There are now **no** instances of that pattern
+left in the codebase.
+
+### Verification
+
+CompileCheck clean. RulesCheck all green, `--fuzz 800` clean. PlayModeTests
+31/31. SmokeTest updated and passing, with four new structural checks that
+pin the things this session fixed: no scrim is built, the hand ignores layout,
+the hand has a raycast-target graphic of its own, and the popup clears the
+bottom of the screen.
+
+### Still for a later pass
+
+The popup is still a fixed 460x400 regardless of content. The hand's collapsed
+peek is a uniform scale-down rather than a true "just the tops poke out" clip.
+
 ## 2026-08-09 — Claude (the compounds take the screen: HUD, popup, and drag)
 
 A stale Unity Licensing Client left over from a previous session was blocking

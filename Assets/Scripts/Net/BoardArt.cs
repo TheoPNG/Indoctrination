@@ -20,12 +20,16 @@ namespace Indoctrination.Net
         private static Sprite _disc;
         private static Sprite _glow;
 
+        /// <summary>
+        /// The four resources. Saturated enough to tell apart instantly against
+        /// a near-black board, dark enough not to glare out of it.
+        /// </summary>
         public static Color ColorOf(ResourceColor color) => color switch
         {
-            ResourceColor.Red => new Color(0.72f, 0.20f, 0.25f),
-            ResourceColor.Green => new Color(0.29f, 0.57f, 0.34f),
-            ResourceColor.Blue => new Color(0.34f, 0.43f, 0.74f),
-            ResourceColor.Yellow => new Color(0.79f, 0.59f, 0.20f),
+            ResourceColor.Red => new Color(0.839f, 0.278f, 0.353f),
+            ResourceColor.Green => new Color(0.247f, 0.722f, 0.502f),
+            ResourceColor.Blue => new Color(0.290f, 0.561f, 0.902f),
+            ResourceColor.Yellow => new Color(0.882f, 0.686f, 0.251f),
             _ => Color.white
         };
 
@@ -37,12 +41,12 @@ namespace Indoctrination.Net
         /// </summary>
         public static Color ColorOfCategory(ActivationCategory category) => category switch
         {
-            ActivationCategory.Damage => new Color(0.92f, 0.28f, 0.28f),
-            ActivationCategory.Followers => new Color(0.34f, 0.80f, 0.38f),
-            ActivationCategory.Draw => new Color(0.36f, 0.60f, 0.95f),
-            ActivationCategory.Health => new Color(0.95f, 0.82f, 0.30f),
-            ActivationCategory.Block => new Color(0.65f, 0.72f, 0.85f),
-            _ => new Color(0.80f, 0.80f, 0.85f)
+            ActivationCategory.Damage => new Color(0.925f, 0.322f, 0.388f),
+            ActivationCategory.Followers => new Color(0.290f, 0.831f, 0.588f),
+            ActivationCategory.Draw => new Color(0.361f, 0.639f, 0.965f),
+            ActivationCategory.Health => new Color(0.961f, 0.769f, 0.318f),
+            ActivationCategory.Block => new Color(0.573f, 0.643f, 0.741f),
+            _ => new Color(0.741f, 0.776f, 0.831f)
         };
 
         public static IReadOnlyList<ResourceColor> Colors { get; } = new[]
@@ -53,8 +57,13 @@ namespace Indoctrination.Net
         private static Sprite _backdrop;
 
         /// <summary>
-        /// A dark ritual-cloth field with a vignette and faint geometric seal.
-        /// It gives the board one mystical surface without requiring imported art.
+        /// The surface the board sits on: near-black, with cold light bleeding
+        /// up from the bottom and the corners falling away into nothing.
+        ///
+        /// Deliberately featureless. The old backdrop carried an occult seal,
+        /// which made the screen read as a fantasy rulebook; an empty dark room
+        /// is both more modern and more unsettling, and it stops competing with
+        /// the cards for attention.
         /// </summary>
         public static Sprite Backdrop => _backdrop ??= BuildGradientSprite(512, 256);
 
@@ -76,30 +85,21 @@ namespace Indoctrination.Net
                     var centred = (uv - new Vector2(0.5f, 0.5f)) * 2f;
                     centred.x *= width / (float)height;
 
-                    var distance = Mathf.Clamp01(centred.magnitude / 1.75f);
-                    var halo = Mathf.Pow(1f - distance, 1.8f);
-                    var grain = (Mathf.PerlinNoise(x * 0.045f, y * 0.045f) - 0.5f) * 0.035f;
-                    var colour = Color.Lerp(UITheme.RitualBlack, UITheme.DeepPlum, 0.32f + (halo * 0.42f) + grain);
+                    // A soft pool of light low and centre, as though the table
+                    // is lit by something just off the bottom of the screen.
+                    var toGlow = new Vector2(centred.x * 0.75f, (centred.y + 0.85f) * 1.15f);
+                    var glow = Mathf.Pow(Mathf.Clamp01(1f - (toGlow.magnitude / 2.1f)), 2.2f);
 
-                    // A seal hidden in the cloth: two rings, an inverted triangle,
-                    // and a central axis. Close enough to feel engraved, quiet
-                    // enough that cards and controls remain the focal point.
-                    var radius = centred.magnitude;
-                    var rings = Mathf.Max(
-                        ThinLine(Mathf.Abs(radius - 0.44f), 0.009f),
-                        ThinLine(Mathf.Abs(radius - 0.31f), 0.006f));
+                    // Corners fall away hard, so the play area is the only part
+                    // of the screen that is genuinely lit.
+                    var vignette = Mathf.Pow(Mathf.Clamp01(1f - (centred.magnitude / 1.95f)), 1.5f);
 
-                    var top = new Vector2(0f, 0.32f);
-                    var left = new Vector2(-0.28f, -0.20f);
-                    var right = new Vector2(0.28f, -0.20f);
-                    var triangle = Mathf.Max(
-                        ThinLine(DistanceToSegment(centred, top, left), 0.006f),
-                        Mathf.Max(
-                            ThinLine(DistanceToSegment(centred, left, right), 0.006f),
-                            ThinLine(DistanceToSegment(centred, right, top), 0.006f)));
-                    var axis = Mathf.Abs(centred.x) < 0.0045f && Mathf.Abs(centred.y) < 0.43f ? 1f : 0f;
-                    var seal = Mathf.Max(rings, Mathf.Max(triangle, axis)) * (1f - (distance * 0.35f));
-                    colour = Color.Lerp(colour, UITheme.RitualGold, seal * 0.085f);
+                    // Fine grain keeps a flat dark field from banding on a big
+                    // display, and reads as film rather than as a gradient.
+                    var grain = (Mathf.PerlinNoise(x * 0.9f, y * 0.9f) - 0.5f) * 0.022f;
+
+                    var lift = Mathf.Clamp01((glow * 0.85f) + (vignette * 0.30f) + grain);
+                    var colour = Color.Lerp(UITheme.Void, UITheme.Fog, lift);
 
                     pixels[(y * width) + x] = colour;
                 }
@@ -109,22 +109,6 @@ namespace Indoctrination.Net
             texture.Apply();
 
             return Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f));
-        }
-
-        private static float ThinLine(float distance, float width) =>
-            1f - Mathf.SmoothStep(width * 0.35f, width, distance);
-
-        private static float DistanceToSegment(Vector2 point, Vector2 start, Vector2 end)
-        {
-            var segment = end - start;
-            var lengthSquared = segment.sqrMagnitude;
-            if (lengthSquared <= Mathf.Epsilon)
-            {
-                return Vector2.Distance(point, start);
-            }
-
-            var t = Mathf.Clamp01(Vector2.Dot(point - start, segment) / lengthSquared);
-            return Vector2.Distance(point, start + (segment * t));
         }
 
         private static Sprite _solid;

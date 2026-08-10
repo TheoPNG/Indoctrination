@@ -74,24 +74,25 @@ namespace Indoctrination.Net
             namePin.preferredWidth = 90;
             namePin.flexibleWidth = 0;
 
-            _dieBox = UIFactory.Panel("Die", rect, UITheme.Parchment);
+            _dieBox = UIFactory.Panel("Die", rect, UITheme.Bone);
             UIFactory.SetSize(_dieBox, DieSize, DieSize);
             var diePin = _dieBox.gameObject.AddComponent<LayoutElement>();
             diePin.minWidth = diePin.preferredWidth = DieSize;
             diePin.minHeight = diePin.preferredHeight = DieSize;
 
             _dieText = UIFactory.Label("Die Face", _dieBox, "", 14, TextAnchor.MiddleCenter,
-                UITheme.RitualBlack);
+                UITheme.Void);
             _dieText.fontStyle = FontStyle.Bold;
             UIFactory.Stretch(_dieText.rectTransform);
 
             // Health and Block share one visual run: Block is armour standing in
             // front of health rather than a separate pool, so it reads as the
             // health bar simply continuing on past its usual end.
-            (_healthFill, _healthText) = MakeBar("Health", new Color(0.74f, 0.14f, 0.16f), rect, HealthTrackWidth);
+            (_healthFill, _healthText) = MakeBar(
+                "Health", new Color(0.800f, 0.247f, 0.318f), rect, HealthTrackWidth);
             _pointWidth = HealthTrackWidth / GameSettings.MaxHealth;
 
-            _blockTrack = UIFactory.Panel("Block", rect, new Color(0.20f, 0.62f, 0.28f, 0.92f));
+            _blockTrack = UIFactory.Panel("Block", rect, new Color(0.247f, 0.722f, 0.502f, 0.95f));
             var blockPin = _blockTrack.gameObject.AddComponent<LayoutElement>();
             blockPin.minHeight = blockPin.preferredHeight = 18;
             blockPin.minWidth = blockPin.preferredWidth = 0;
@@ -99,7 +100,8 @@ namespace Indoctrination.Net
             _blockFill = _blockTrack.GetComponent<Image>();
             _blockTrack.gameObject.SetActive(false);
 
-            (_followerFill, _followerText) = MakeBar("Followers", new Color(0.30f, 0.44f, 0.82f), rect, FollowerTrackWidth);
+            (_followerFill, _followerText) = MakeBar(
+                "Followers", new Color(0.290f, 0.561f, 0.902f), rect, FollowerTrackWidth);
         }
 
         /// <summary>
@@ -110,7 +112,7 @@ namespace Indoctrination.Net
         private (Image Fill, Text Label) MakeBar(string name, Color color, Transform parent, float width)
         {
             var track = UIFactory.Panel(name, parent, new Color(
-                UITheme.RitualBlack.r, UITheme.RitualBlack.g, UITheme.RitualBlack.b, 0.76f));
+                UITheme.Void.r, UITheme.Void.g, UITheme.Void.b, 0.76f));
 
             var pin = track.gameObject.AddComponent<LayoutElement>();
             pin.minWidth = pin.preferredWidth = width;
@@ -146,7 +148,7 @@ namespace Indoctrination.Net
             _nameText.text = player.isAlive
                 ? $"{player.name}{(isViewer ? " (you)" : "")}{(player.offeringDraw ? "  ✋" : "")}"
                 : $"{player.name} ({(player.hasResigned ? "resigned" : "out")})";
-            _nameText.color = player.isAlive ? UITheme.Parchment : UITheme.ParchmentMuted;
+            _nameText.color = player.isAlive ? UITheme.Bone : UITheme.BoneDim;
 
             // Blank until they have actually rolled, so an old face never lingers
             // as though this turn's roll had already happened.

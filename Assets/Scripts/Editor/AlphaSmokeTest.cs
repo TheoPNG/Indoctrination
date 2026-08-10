@@ -280,10 +280,10 @@ namespace Indoctrination.EditorTools
                             $"viewport y {viewportRect.yMin:0}..{viewportRect.yMax:0}, " +
                             $"button y {rollBounds.min.y:0}..{rollBounds.max.y:0}");
 
-                // The hand is hover-based now: always present in the dock, but
-                // only reads as "open" while something is actually pointing at
-                // it. A fresh phase should always start collapsed.
-                var handRow = gameRoot?.Find("Bottom Dock/Hand Row");
+                // The hand is hover-based now: always present, floating above
+                // the bottom edge, but only reads as "open" while something is
+                // actually pointing at it. A fresh phase should start collapsed.
+                var handRow = gameRoot?.Find("Hand Row");
                 var handExpanded = typeof(BoardUI)
                     .GetField("_handExpanded", BindingFlags.NonPublic | BindingFlags.Instance)?
                     .GetValue(board) as bool?;
@@ -350,6 +350,39 @@ namespace Indoctrination.EditorTools
                   && battlefieldBounds.max.x <= middle.rect.xMax + 0.1f,
                   $"frame {middle.rect.xMin:0}..{middle.rect.xMax:0}, " +
                   $"content {hudBounds.min.x:0}..{battlefieldBounds.max.x:0}");
+
+            // A question is usually answered by looking at your own hand or
+            // somebody's compound first, so the popup must never cover the board
+            // the way the old scrim did. Nothing full-screen may sit behind it,
+            // and it has to leave the bottom of the screen - the hand, and your
+            // own compound - alone.
+            var scrim = gameRoot.Find("Popup Scrim");
+            Check("no scrim greys the board out behind the popup", scrim == null,
+                  scrim == null ? "" : "a full-screen scrim is still being built");
+
+            var handRow = gameRoot.Find("Hand Row") as RectTransform;
+            Check("the hand floats free of the layout, so opening it cannot move the board",
+                  handRow != null
+                  && handRow.parent == gameRoot
+                  && handRow.GetComponent<LayoutElement>() != null
+                  && handRow.GetComponent<LayoutElement>().ignoreLayout,
+                  handRow == null ? "hand row not found" : "hand row is still laid out in a row");
+
+            // The row's own Image is what makes hover survive a rebuild: with no
+            // graphic it receives no raycasts, and the tray flickers open and
+            // shut as its cards are destroyed underneath the pointer.
+            Check("the hand is its own raycast target, so hovering it cannot flicker",
+                  handRow != null
+                  && handRow.GetComponent<Image>() != null
+                  && handRow.GetComponent<Image>().raycastTarget,
+                  "the hand row needs a raycast-target graphic of its own");
+
+            var popupBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(gameRoot, popupPanel);
+            Check("the popup leaves the bottom of the screen clear for the hand",
+                  handRow != null
+                  && popupBounds.min.y > gameRoot.rect.yMin + handRow.rect.height,
+                  $"popup reaches down to {popupBounds.min.y:0}, " +
+                  $"floor is {gameRoot.rect.yMin:0}");
         }
 
         /// <summary>

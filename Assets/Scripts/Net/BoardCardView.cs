@@ -108,7 +108,7 @@ namespace Indoctrination.Net
 
             // A draft marker decides whether a card can be taken at all, so it is
             // the loudest thing on the card rather than a caption above the title.
-            _tagText = UIFactory.Label("Tag", transform, "", 16, TextAnchor.MiddleCenter, UITheme.Parchment);
+            _tagText = UIFactory.Label("Tag", transform, "", 16, TextAnchor.MiddleCenter, UITheme.Bone);
             _tagText.fontStyle = FontStyle.Bold;
 
             var tagPlate = _tagText.gameObject.AddComponent<Outline>();
@@ -118,17 +118,18 @@ namespace Indoctrination.Net
             // title label was the field disappearing during layout; the old header
             // (colour/type) was already rendering reliably in every card row.
             _headerText = UIFactory.Label(
-                "Title", transform, "", 20, TextAnchor.UpperLeft, UITheme.Parchment);
+                "Title", transform, "", 20, TextAnchor.UpperLeft, UITheme.Bone);
             _headerText.fontStyle = FontStyle.Bold;
             var titleOutline = _headerText.gameObject.AddComponent<Outline>();
             titleOutline.effectColor = new Color(0f, 0f, 0f, 0.9f);
             titleOutline.effectDistance = new Vector2(1f, -1f);
             _titleText = UIFactory.Label("Details", transform, "", 13, TextAnchor.UpperLeft);
-            _costText = UIFactory.Label("Cost", transform, "", 12, TextAnchor.UpperLeft, UITheme.RitualGold);
+            _costText = UIFactory.Label("Cost", transform, "", 12, TextAnchor.UpperLeft, UITheme.BoneDim);
             // The struck-through printed price on a discounted card is markup.
             _costText.supportRichText = true;
-            _activatesText = UIFactory.Label("Activates", transform, "", 12, TextAnchor.UpperLeft, new Color(0.67f, 0.58f, 0.82f));
-            _effectText = UIFactory.Label("Effect", transform, "", 12, TextAnchor.UpperLeft, UITheme.Parchment);
+            _activatesText = UIFactory.Label(
+                "Activates", transform, "", 12, TextAnchor.UpperLeft, UITheme.Signal);
+            _effectText = UIFactory.Label("Effect", transform, "", 12, TextAnchor.UpperLeft, UITheme.Bone);
 
             foreach (Transform child in transform)
             {
@@ -184,20 +185,20 @@ namespace Indoctrination.Net
             _tagText.gameObject.SetActive(!string.IsNullOrEmpty(tag));
             _background.color = UITheme.SurfaceRaised;
             _frame.effectColor = UITheme.Border;
-            _frame.effectDistance = new Vector2(1.15f, -1.15f);
+            _frame.effectDistance = new Vector2(1f, -1f);
 
             // The whole card takes the marker's colour, so a blocked or reserved
             // card is obvious from across the board rather than on inspection.
             if (!string.IsNullOrEmpty(tag))
             {
                 var marked = tag.StartsWith("BLOCKED")
-                    ? UITheme.Blood
+                    ? new Color(0.361f, 0.106f, 0.145f)
                     : tag.StartsWith("RESERVED")
-                        ? new Color(0.18f, 0.24f, 0.43f)
-                        : new Color(0.39f, 0.24f, 0.10f);
+                        ? new Color(0.129f, 0.192f, 0.290f)
+                        : new Color(0.290f, 0.196f, 0.098f);
 
                 _background.color = marked;
-                _tagText.color = UITheme.Parchment;
+                _tagText.color = UITheme.Bone;
             }
 
             try
@@ -216,14 +217,16 @@ namespace Indoctrination.Net
                 else
                 {
                     _headerText.text = definition.Title;
-                    _headerText.color = UITheme.Parchment;
+                    _headerText.color = UITheme.Bone;
                     _frame.effectColor = Color.Lerp(UITheme.Border, BoardArt.ColorOf(definition.Color), 0.52f);
                     _titleText.text = $"{definition.Color}  -  {definition.Type}";
                     _titleText.color = ColorFor(definition.Color);
                     _costText.text = CostLine(card, definition);
-                    _costText.color = card.isDiscounted
-                        ? new Color(0.56f, 0.78f, 0.53f)
-                        : UITheme.RitualGold;
+
+                    // The accent means "something is different about this" -
+                    // here, that the card is cheaper than it says it is. A full
+                    // price is ordinary, so it reads as ordinary text.
+                    _costText.color = card.isDiscounted ? UITheme.Signal : UITheme.BoneDim;
 
                     if (definition.Type == CardType.Unit && definition.ActivationNumbers.Count > 0)
                     {
@@ -303,19 +306,23 @@ namespace Indoctrination.Net
         /// </summary>
         public void SetAffordable(bool affordable)
         {
+            // Barely lifted off the resting surface, then edged in the accent.
+            // A playable card should look lit, not painted a different colour -
+            // the old green wash made half a hand look like a different game.
             _background.color = affordable
-                ? Color.Lerp(UITheme.SurfaceRaised, UITheme.Moss, 0.48f)
+                ? Color.Lerp(UITheme.SurfaceRaised, UITheme.Signal, 0.10f)
                 : UITheme.SurfaceRaised;
+
+            var edge = Edge();
 
             if (!affordable)
             {
-                _frame.effectColor = UITheme.Border;
-                _frame.effectDistance = new Vector2(1.15f, -1.15f);
+                edge.effectColor = UITheme.Border;
+                edge.effectDistance = new Vector2(1f, -1f);
                 return;
             }
 
-            var edge = gameObject.GetComponent<Outline>() ?? gameObject.AddComponent<Outline>();
-            edge.effectColor = new Color(0.4f, 0.85f, 0.45f, 0.9f);
+            edge.effectColor = new Color(UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.85f);
             edge.effectDistance = new Vector2(2f, -2f);
         }
 
@@ -326,11 +333,30 @@ namespace Indoctrination.Net
         /// </summary>
         public void SetDueToActivate(Color tint)
         {
-            _background.color = Color.Lerp(UITheme.SurfaceRaised, tint, 0.28f);
+            _background.color = Color.Lerp(UITheme.SurfaceRaised, tint, 0.22f);
 
-            var edge = gameObject.GetComponent<Outline>() ?? gameObject.AddComponent<Outline>();
+            var edge = Edge();
             edge.effectColor = new Color(tint.r, tint.g, tint.b, 0.9f);
-            edge.effectDistance = new Vector2(2.5f, -2.5f);
+            edge.effectDistance = new Vector2(2f, -2f);
+        }
+
+        /// <summary>
+        /// This card's outline, added if it is not already there.
+        ///
+        /// Deliberately not `GetComponent() ?? AddComponent()`: Unity's fake-null
+        /// for a missing component is not a C# null, so `??` never fires and the
+        /// component is never added. It only appeared to work here because
+        /// UITheme.Frame had already added one during Build.
+        /// </summary>
+        private Outline Edge()
+        {
+            var edge = gameObject.GetComponent<Outline>();
+            if (edge == null)
+            {
+                edge = gameObject.AddComponent<Outline>();
+            }
+
+            return edge;
         }
 
         /// <summary>
