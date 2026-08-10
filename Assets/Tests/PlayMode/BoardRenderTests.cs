@@ -976,6 +976,108 @@ namespace Indoctrination.Tests
                 .FirstOrDefault(t => t.name == "Timer")?.text ?? "";
         }
 
+        /// <summary>
+        /// The hand opens when the pointer reaches it, stays open while it is
+        /// there, and closes once - not repeatedly - when the pointer leaves.
+        ///
+        /// This exists because the tray shipped twice in a state where it
+        /// flickered open and shut every single frame. Both times the cause was
+        /// the same shape of mistake: opening the hand rebuilt the cards under
+        /// the pointer, the rebuild provoked a pointer event, and that event
+        /// closed the hand again. Asserting it is open is not enough - the bug
+        /// passes through "open" every other frame. The state has to be stable
+        /// across many frames, which is what this measures.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheHandOpensOnHoverAndStaysOpen()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Buy);
+
+            var handRow = (RectTransform)typeof(BoardUI)
+                .GetField("_handRow", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(_board);
+            Assert.IsNotNull(handRow, "the board should have a hand tray");
+            Assert.Greater(_manager.View.Viewer.hand.Length, 0, "and cards to put in it");
+
+            // The tray's pivot sits on its bottom edge, so this is a point just
+            // inside the sliver that peeks above the bottom of the screen.
+            var peek = RectTransformUtility.WorldToScreenPoint(null, handRow.position)
+                       + new Vector2(0f, 4f);
+
+            PointAt(peek);
+            yield return WaitForFrames(2);
+
+            Assert.IsTrue(HandIsExpanded(),
+                $"reaching the hand with the pointer has to open it. aimed at {peek}, "
+                + $"row rect {WorldRect(handRow)}, screen {Screen.width}x{Screen.height}");
+
+            // The heart of it: hold the pointer still and count. A tray fighting
+            // its own rebuild reads as open on some frames and shut on others,
+            // so merely being open once proves nothing.
+            const int framesHeld = 30;
+            var openFrames = 0;
+
+            for (var i = 0; i < framesHeld; i++)
+            {
+                PointAt(peek);
+                yield return null;
+
+                if (HandIsExpanded())
+                {
+                    openFrames++;
+                }
+            }
+
+            Assert.AreEqual(framesHeld, openFrames,
+                $"the hand has to stay open while the pointer rests on it - it was open on "
+                + $"only {openFrames} of {framesHeld} frames, so it is flickering");
+
+            // And it still closes when the pointer genuinely leaves.
+            var away = new Vector2(Screen.width / 2f, Screen.height * 0.8f);
+            PointAt(away);
+            yield return WaitForFrames(2);
+
+            Assert.IsFalse(HandIsExpanded(), "moving off the hand has to close it again");
+
+            var shutFrames = 0;
+            for (var i = 0; i < framesHeld; i++)
+            {
+                PointAt(away);
+                yield return null;
+
+                if (!HandIsExpanded())
+                {
+                    shutFrames++;
+                }
+            }
+
+            Assert.AreEqual(framesHeld, shutFrames,
+                $"and it has to stay shut - it was shut on only {shutFrames} of {framesHeld} frames");
+        }
+
+        /// <summary>
+        /// Feeds the board a pointer position, the same way its own Update does
+        /// from the real mouse.
+        ///
+        /// Driven directly rather than through a simulated input device: a
+        /// synthetic mouse never reported its position at all under batchmode,
+        /// and the device layer is not what this is testing. What matters is
+        /// the loop behind it - position in, rebuild out, and whether that
+        /// rebuild disturbs the next frame's answer.
+        /// </summary>
+        private void PointAt(Vector2 screenPoint)
+        {
+            typeof(BoardUI)
+                .GetMethod("PollHandHover", BindingFlags.NonPublic | BindingFlags.Instance)
+                .Invoke(_board, new object[] { screenPoint });
+        }
+
+        private bool HandIsExpanded() =>
+            (bool)typeof(BoardUI)
+                .GetField("_handExpanded", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(_board);
+
         private static int TotalResources(PlayerView player) =>
             player.red + player.green + player.blue + player.yellow;
 

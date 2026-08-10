@@ -7,6 +7,7 @@ using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 namespace Indoctrination.Net
@@ -253,6 +254,13 @@ namespace Indoctrination.Net
             SubscribeIfNeeded(manager);
             UpdateVisibility(network, manager);
             TickTimer(manager);
+
+            // No mouse at all - a gamepad-only machine, or a test running in
+            // batchmode. Whatever the hand is doing, leave it alone.
+            if (_gameRoot.gameObject.activeSelf && Mouse.current != null)
+            {
+                PollHandHover(Mouse.current.position.ReadValue());
+            }
         }
 
         private void OnDestroy()
@@ -768,24 +776,49 @@ namespace Indoctrination.Net
             _handRow.sizeDelta = new Vector2(-(BoardSafeInset * 2f), HandPeekHeight);
             _handRow.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
 
-            // The row carries its own Image, and that is load-bearing rather
-            // than decorative: a RectTransform with no Graphic receives no
-            // raycasts at all, so PointerEnter/Exit only ever fired for the
-            // child cards. Rebuilding the hand destroys those children, which
-            // fired PointerExit, which collapsed the hand, which rebuilt it -
-            // the tray flickered open and shut every frame. The row's own
-            // background is never destroyed, so the pointer stays "inside" it
-            // across a rebuild and the loop cannot start.
-            var handHover = _handRow.gameObject.AddComponent<EventTrigger>();
-            var handEnter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
-            handEnter.callback.AddListener(_ => SetHandExpanded(true));
-            handHover.triggers.Add(handEnter);
-            var handExit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
-            handExit.callback.AddListener(_ => SetHandExpanded(false));
-            handHover.triggers.Add(handExit);
-
             return root;
         }
+
+        /// <summary>
+        /// Opens and closes the hand from where the pointer actually is, tested
+        /// once a frame against the tray's own rectangle.
+        ///
+        /// Deliberately NOT PointerEnter/PointerExit. Those fire in response to
+        /// what is under the pointer, and opening the hand rebuilds the cards
+        /// that were under the pointer - so the exit that rebuild provoked
+        /// closed the hand, which rebuilt it, which opened it, every frame. The
+        /// pointer's position is an input from outside the game; rebuilding the
+        /// tray cannot change it, so polling it cannot feed back on itself.
+        ///
+        /// The hysteresis falls out for free: collapsed, the rect being tested
+        /// is only the peek strip, so the pointer has to come right down to the
+        /// bottom of the screen to open it; open, the rect is the whole tray,
+        /// so it stays open across all of it. Crossing either edge moves the
+        /// far edge away from the pointer, so it cannot oscillate.
+        /// </summary>
+        private void PollHandHover(Vector2 screenPoint)
+        {
+            if (_handRow == null || !_handRow.gameObject.activeInHierarchy)
+            {
+                return;
+            }
+
+            // A card being dragged out of the hand must not close it out from
+            // under the drag the moment the pointer leaves the tray.
+            if (_draggingFromHand)
+            {
+                return;
+            }
+
+            SetHandExpanded(
+                RectTransformUtility.RectangleContainsScreenPoint(_handRow, screenPoint, null));
+        }
+
+        /// <summary>
+        /// Set while a card is being dragged out of the hand, so the tray stays
+        /// open under the drag even once the pointer has left it.
+        /// </summary>
+        private bool _draggingFromHand;
 
         /// <summary>
         /// Expands or collapses the hand on hover. Only re-renders when the
@@ -1527,6 +1560,19 @@ namespace Indoctrination.Net
                 _viewerStatBar.Populate(you, isViewer: true);
             }
 
+            // Rebuilding the tray restarts every card's deal-in animation, so a
+            // hand that has not actually changed is left exactly as it is. The
+            // board refreshes on every message from the server, and rebuilding
+            // regardless made the hand flicker continuously while nothing about
+            // it was different.
+            var signature = HandSignature(view, you);
+            if (signature == _handSignature)
+            {
+                return;
+            }
+
+            _handSignature = signature;
+
             UIFactory.DestroyChildren(_handRow);
 
             if (you == null || count == 0)
@@ -1645,9 +1691,18 @@ namespace Indoctrination.Net
                     var ghostWidth = handCardWidth;
                     var handle = handCard.gameObject.AddComponent<DragHandle>();
                     handle.DragLayer = _dragLayer;
-                    handle.GhostFactory = () => DragHandle.CardGhost(card, ghostTag, ghostWidth);
+                    handle.GhostFactory = () =>
+                    {
+                        // Playing a card means dragging it out of the tray and
+                        // onto the board, so the tray has to stay open for the
+                        // whole gesture even though the pointer leaves it.
+                        _draggingFromHand = true;
+                        return DragHandle.CardGhost(card, ghostTag, ghostWidth);
+                    };
                     handle.OnDropped = eventData =>
                     {
+                        _draggingFromHand = false;
+
                         if (RectTransformUtility.RectangleContainsScreenPoint(
                                 _battlefieldViewport, eventData.position, eventData.pressEventCamera))
                         {
@@ -1705,6 +1760,29 @@ namespace Indoctrination.Net
         {
             _handRow.sizeDelta = new Vector2(-(BoardSafeInset * 2f), height);
         }
+
+        /// <summary>
+        /// Everything about the hand that would change what is drawn: which
+        /// cards are in it, whether each is affordable, whether it is open, and
+        /// whether it is offering its buttons. Anything not in here is a
+        /// difference the tray does not need rebuilding for.
+        /// </summary>
+        private string HandSignature(GameView view, PlayerView you)
+        {
+            if (you == null || you.hand.Length == 0)
+            {
+                return "empty";
+            }
+
+            var canBuy = view.phase == nameof(TurnPhase.Buy) && !view.hasPendingChoice;
+            var cards = string.Join(",", you.hand.Select(card => $"{card.instanceId}:{card.canAfford}"));
+
+            // The width matters because the cards are sized from it, so a
+            // resized window still rebuilds.
+            return $"{_handExpanded}|{canBuy}|{Mathf.RoundToInt(_gameRoot.rect.width)}|{cards}";
+        }
+
+        private string _handSignature;
 
         // ------------------------------------------------------- Action panel
 

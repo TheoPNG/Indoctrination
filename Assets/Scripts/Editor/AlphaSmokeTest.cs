@@ -368,10 +368,10 @@ namespace Indoctrination.EditorTools
                   && handRow.GetComponent<LayoutElement>().ignoreLayout,
                   handRow == null ? "hand row not found" : "hand row is still laid out in a row");
 
-            // The row's own Image is what makes hover survive a rebuild: with no
-            // graphic it receives no raycasts, and the tray flickers open and
-            // shut as its cards are destroyed underneath the pointer.
-            Check("the hand is its own raycast target, so hovering it cannot flicker",
+            // The tray floats over the board, so it needs a solid background of
+            // its own - both to read as a surface and to stop clicks meant for
+            // the hand falling through to whatever compound is behind it.
+            Check("the hand has a background of its own to sit on",
                   handRow != null
                   && handRow.GetComponent<Image>() != null
                   && handRow.GetComponent<Image>().raycastTarget,

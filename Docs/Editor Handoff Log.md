@@ -2,7 +2,63 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
-## 2026-08-09 — Claude (cold restyle, the hand flicker, and popups that do not block)
+## 2026-08-09 — Claude (the hand flicker, actually fixed)
+
+The tray was still flickering after the entry below, and never opened on hover.
+The `Image` fix there was real but treated the symptom.
+
+**The actual cause is architectural: hover was driven by `PointerEnter` /
+`PointerExit`, and those fire in response to what is under the pointer - which
+is exactly what opening the hand changes.** Open the tray, and `RefreshHand`
+destroys and rebuilds the cards the pointer was over; the rebuild provokes a
+pointer event; the event closes the tray; closing rebuilds it again. Every
+frame. Any fix that keeps that loop shape is a fix to how *loudly* it rings,
+not to whether it rings.
+
+So the loop is gone rather than damped. `BoardUI.PollHandHover(Vector2)` is
+called once a frame from `Update` with the mouse position and tests it against
+the tray's rectangle. **The pointer's position is an input from outside the
+game - rebuilding the tray cannot change it, so polling it cannot feed back on
+itself.** Do not put an `EventTrigger` back on this row.
+
+The hysteresis falls out for free, which is why there is no explicit slack or
+timer anywhere: collapsed, the rect being tested *is* the peek strip, so the
+pointer has to come right down to open it; open, the rect is the whole tray, so
+it stays open across all of it. Crossing either edge moves the far edge away
+from the pointer, so it cannot oscillate.
+
+Two supporting changes:
+
+- `RefreshHand` now early-returns when nothing about the hand has changed,
+  keyed on `HandSignature` (which cards, affordability, open/shut, whether
+  buttons show, board width). The board refreshes on every message from the
+  server and was rebuilding the tray each time, restarting every card's deal-in
+  fade - a second, independent source of visible flicker.
+- `_draggingFromHand` holds the tray open for the whole of a drag, so pulling a
+  card out onto the board does not close the tray out from under the gesture.
+  Deliberately a flag rather than "is anything in the drag layer", because the
+  drag layer is shared with flying resource pips.
+
+### Testing this properly
+
+`TheHandOpensOnHoverAndStaysOpen` holds the pointer on the tray and asserts it
+is open on **all 30** of the next 30 frames, then off it and asserts shut on
+all 30. Asserting "it is open" once is worthless here - the old bug passed
+through "open" every other frame; only stability over time distinguishes them.
+
+It drives `PollHandHover` directly rather than through a synthetic mouse. Both
+`InputSystem.QueueStateEvent` and `InputState.Change` were tried first and
+neither reported a position at all under batchmode (`mouse reads (0.00, 0.00)`,
+while the tray's own rect was correct) - the device layer is not what is worth
+testing here, and fighting it was costing more than it was proving.
+
+### Verification
+
+CompileCheck clean. PlayModeTests **32/32**, with the new hover test. SmokeTest
+passing; one of its checks was reworded, since the row's `Image` is now there
+to be a background and block click-through rather than to receive hover.
+
+## 2026-08-09 — Claude (cold restyle, and popups that do not block)
 
 ### The look
 
@@ -35,27 +91,19 @@ centre, corners falling away hard, fine grain to stop a flat dark field
 banding on a big display. Resource and category colours were re-picked to sit
 against near-black without glaring.
 
-### The hand flicker
+### The hand flicker (first attempt - see the newest entry, this did not fix it)
 
-Root cause, and worth remembering: **`_handRow` was a `UIFactory.Group`, which
-has no `Image`, and a RectTransform with no `Graphic` receives no raycasts at
-all.** So `PointerEnter`/`PointerExit` never fired for the row itself - only
-for its child cards, bubbling up. `RefreshHand` then destroyed those children,
-which fired `PointerExit`, which collapsed the hand, which rebuilt it, which
-put a card back under the pointer, which fired `PointerEnter`... every frame.
+The row was a `UIFactory.Group`, which has no `Image`, and a RectTransform with
+no `Graphic` receives no raycasts at all - so `PointerEnter`/`PointerExit` only
+ever fired for its child cards, which the rebuild then destroyed. Giving the row
+its own `Image` was **necessary but not sufficient**; the tray still flickered.
+What actually fixed it is in the entry above this one.
 
-Two changes, both needed:
-
-1. The row carries its own `Image` now. It is never destroyed (only children
-   are), so the pointer stays "inside" it across a rebuild and the loop cannot
-   start. This is load-bearing, not decoration - do not swap it back to a
-   `Group`.
-2. The hand no longer sits in the layout at all. It is anchored to the bottom
-   of `Game Root` with `ignoreLayout`, and grows upward. As a laid-out row,
-   expanding it resized the dock, which reflowed the board, which rebuilt every
-   card on it - so opening your hand made the whole screen jump even once the
-   raycast bug was fixed. `SetHandExpanded` now touches only the hand;
-   `RefreshBattlefield` is no longer called from it.
+The hand also stopped sitting in the layout. It is anchored to the bottom of
+`Game Root` with `ignoreLayout` and grows upward. As a laid-out row, expanding
+it resized the dock, which reflowed the board, which rebuilt every card on it -
+so opening your hand made the whole screen jump. `SetHandExpanded` now touches
+only the hand; `RefreshBattlefield` is no longer called from it.
 
 `CardWidthForBoard` reserves `HandPeekHeight` at the bottom so the resting
 hand never covers the bottom compound row. The *expanded* hand is not
