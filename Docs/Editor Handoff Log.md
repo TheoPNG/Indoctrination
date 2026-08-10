@@ -2,6 +2,11 @@
 
 Use this file as a running handoff between editors. Add a dated entry after each editing session, identify the editor, list the exact files and behavior changed, record verification performed, and note any incomplete work. Keep newest entries first.
 
+> Standing rules that do not change between sessions - which checks to run, the
+> architecture invariants, the Unity traps, and the UI shapes that look odd on
+> purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
+> first; this file is the chronological record, not the rulebook.
+
 ## 2026-08-09 — Claude (the hand flicker, actually fixed)
 
 The tray was still flickering after the entry below, and never opened on hover.
