@@ -114,6 +114,7 @@ namespace Indoctrination.Net
         private InputField _portField;
         private Text _lobbyPlayersText;
         private Button _startGameButton;
+        private Button _addBotButton;
         private Button _timerToggle;
         private bool _timersOn;
 
@@ -291,6 +292,7 @@ namespace Indoctrination.Net
 
             SubscribeIfNeeded(manager);
             UpdateVisibility(network, manager);
+            TickSoloStart();
             TickTimer(manager);
 
             // No mouse at all - a gamepad-only machine, or a test running in
@@ -470,7 +472,55 @@ namespace Indoctrination.Net
             UIFactory.ButtonWithLabel("Host Button", buttonRow, "Host", () => StartAs(host: true), width: 160, height: 36);
             UIFactory.ButtonWithLabel("Join Button", buttonRow, "Join", () => StartAs(host: false), width: 160, height: 36);
 
+            // One press to a playable game on your own. Hosting, seating a bot
+            // and starting are three steps that are always taken together when
+            // the point is to try something out rather than to play somebody.
+            UIFactory.ButtonWithLabel(
+                "Solo Button", box, "Solo Playtest", StartSolo, UITheme.Affirm, 200, 34);
+
             return panel;
+        }
+
+        /// <summary>
+        /// Hosts a game, seats a bot, and starts - all as one press.
+        ///
+        /// The seating and the start cannot happen here: the NetworkGameManager
+        /// only exists once the host is actually up, which is a frame or two
+        /// away. This arms the sequence and <see cref="TickSoloStart"/> finishes
+        /// it when the table is there to be sat at.
+        /// </summary>
+        private void StartSolo()
+        {
+            StartAs(host: true);
+            _soloStartPending = true;
+        }
+
+        private bool _soloStartPending;
+
+        private void TickSoloStart()
+        {
+            if (!_soloStartPending)
+            {
+                return;
+            }
+
+            var manager = NetworkGameManager.Instance;
+            if (manager == null || manager.Lobby == null)
+            {
+                return;
+            }
+
+            // Seat bots up to the minimum table, then begin. Waiting for the
+            // lobby to report the seats back means this works whatever the
+            // minimum happens to be rather than assuming it is two.
+            if (manager.Lobby.playerNames.Length < manager.Lobby.minPlayers)
+            {
+                manager.RequestAddBotRpc();
+                return;
+            }
+
+            _soloStartPending = false;
+            manager.RequestStartGameRpc();
         }
 
         private void StartAs(bool host)
@@ -542,6 +592,13 @@ namespace Indoctrination.Net
             // because a clock that takes your draft pick is worse than waiting.
             _timerToggle = UIFactory.ButtonWithLabel(
                 "Timers", box, "Timers: off", ToggleTimers, UITheme.ButtonQuiet, 240, 32);
+
+            // Bots fill out a table that is short of players, whether that is a
+            // solo playtest or three friends wanting a fourth.
+            _addBotButton = UIFactory.ButtonWithLabel(
+                "Add Bot", box, "Add Bot",
+                () => NetworkGameManager.Instance?.RequestAddBotRpc(),
+                UITheme.ButtonQuiet, 240, 32);
 
             _startGameButton = UIFactory.ButtonWithLabel(
                 "Start Button", box, "Start Game",
@@ -623,6 +680,8 @@ namespace Indoctrination.Net
             var isHost = network != null && network.IsHost;
             _startGameButton.gameObject.SetActive(isHost);
             _timerToggle.gameObject.SetActive(isHost);
+            _addBotButton.gameObject.SetActive(isHost);
+            _addBotButton.interactable = lobby.playerNames.Length < lobby.maxPlayers;
             _startGameButton.interactable = lobby.playerNames.Length >= lobby.minPlayers;
         }
 

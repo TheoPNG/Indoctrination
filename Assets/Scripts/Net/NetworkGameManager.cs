@@ -36,6 +36,14 @@ namespace Indoctrination.Net
 
             public string Name;
 
+            /// <summary>
+            /// A seat the server plays itself. Distinct from merely having no
+            /// connection: a player who drops also leaves `ClientId` null, and
+            /// their board must sit untouched waiting for them rather than being
+            /// played on by a bot.
+            /// </summary>
+            public bool IsBot;
+
             public bool IsOccupied => ClientId.HasValue;
         }
 
@@ -167,7 +175,9 @@ namespace Indoctrination.Net
                 return existing;
             }
 
-            var vacant = _seats.FindIndex(seat => !seat.IsOccupied);
+            // A bot's seat is not vacant - somebody is playing it. Only seats
+            // left empty by a real player who dropped are open to be claimed.
+            var vacant = _seats.FindIndex(seat => !seat.IsOccupied && !seat.IsBot);
             if (vacant >= 0)
             {
                 _seats[vacant].ClientId = clientId;
@@ -233,6 +243,254 @@ namespace Indoctrination.Net
 
         /// <summary>Longest name a stat bar can show without being crowded out.</summary>
         public const int MaxNameLength = 16;
+
+        /// <summary>
+        /// Seats a bot, so one person can play a whole game on their own.
+        ///
+        /// It is not clever and is not meant to be - it drafts the first legal
+        /// card, buys the first thing it can afford, takes its resources, and
+        /// answers questions with the same default the clock would have used. It
+        /// exists so the turn loop, activation order and board can be exercised
+        /// without a second machine.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void RequestAddBotRpc(RpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != NetworkManager.ServerClientId)
+            {
+                return;
+            }
+
+            if (_game != null || _seats.Count >= GameSettings.MaxPlayers)
+            {
+                return;
+            }
+
+            _seats.Add(new Seat
+            {
+                ClientId = null,
+                IsBot = true,
+                Name = $"Bot {_seats.Count(seat => seat.IsBot) + 1}"
+            });
+
+            BroadcastLobby();
+        }
+
+        private bool IsBotSeat(int playerId) =>
+            playerId >= 0 && playerId < _seats.Count && _seats[playerId].IsBot;
+
+        /// <summary>Time.time the bots may next act, so a solo game is watchable.</summary>
+        private float _nextBotActionAt;
+
+        /// <summary>
+        /// How long the bots pause between moves. Long enough to follow what
+        /// happened, short enough not to be a wait.
+        /// </summary>
+        private const float BotThinkSeconds = 0.65f;
+
+        /// <summary>
+        /// Plays every bot seat. Returns true when a bot did something, so the
+        /// rest of Update leaves the turn alone until the next beat.
+        ///
+        /// Deliberately one action per beat rather than draining a whole phase:
+        /// the point of a bot here is to watch a game unfold at a human pace,
+        /// and a bot that finished its entire turn in a single frame would make
+        /// the sequence it exists to exercise impossible to see.
+        /// </summary>
+        private bool TickBots()
+        {
+            if (_game.Phase == TurnPhase.GameOver
+                || !_seats.Any(seat => seat.IsBot)
+                || Time.time < _nextBotActionAt)
+            {
+                return false;
+            }
+
+            // Nothing may happen while a card is waiting on an answer. If it is
+            // waiting on a bot, answering it is the only move available.
+            if (_game.PendingChoice != null)
+            {
+                if (!IsBotSeat(_game.PendingChoice.AskedOfPlayerId))
+                {
+                    return false;
+                }
+
+                return DoBotAction(() => _game.AnswerPendingChoiceWithDefault());
+            }
+
+            // Activations resolve on their own clock; a bot must not cut in.
+            if (_game.Phase == TurnPhase.Activation || _game.HasEffectsPending)
+            {
+                return false;
+            }
+
+            return _game.Phase switch
+            {
+                TurnPhase.Draft => TickBotDraft(),
+                TurnPhase.Rolling => TickBotRolling(),
+                TurnPhase.Resource => TickBotResource(),
+                TurnPhase.Buy => TickBotBuy(),
+                _ => false
+            };
+        }
+
+        private bool TickBotDraft()
+        {
+            if (_game.CurrentDrafterId is not int drafter || !IsBotSeat(drafter))
+            {
+                return false;
+            }
+
+            // Whatever it is allowed to take. The rules decide what is legal, so
+            // a blocked or reserved card is never taken by mistake.
+            foreach (var card in _game.DraftZone.ToList())
+            {
+                if (TryBotAction(() => _game.DraftCard(drafter, card.InstanceId)))
+                {
+                    _phaseStartedAt = Time.time;
+                    BeatBotClock();
+                    BroadcastState();
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TickBotRolling()
+        {
+            foreach (var bot in LivingBots())
+            {
+                if (!_game.HasRolled(bot))
+                {
+                    return DoBotAction(() => _game.RollPrimaryDie(bot));
+                }
+            }
+
+            if (!_game.DiceRolled)
+            {
+                return false;
+            }
+
+            foreach (var bot in LivingBots())
+            {
+                if (IsOwedTheHighRollBonus(bot))
+                {
+                    return DoBotAction(() => _game.ClaimHighRollResource(bot, ResourceColor.Red));
+                }
+            }
+
+            return ReadyUpNextBot();
+        }
+
+        private bool TickBotResource()
+        {
+            foreach (var bot in LivingBots())
+            {
+                if (!_game.HasCollectedResources(bot))
+                {
+                    // A spread rather than a pile of one colour. Taking only red
+                    // meant the bot could almost never afford anything, so it
+                    // never built a compound and activation had nothing to show -
+                    // which defeats the point of having an opponent at all.
+                    var take = Enumerable
+                        .Range(_botColourCursor, _game.ResourcesPerTurnFor(bot))
+                        .Select(i => (ResourceColor)(i % 4))
+                        .ToList();
+
+                    _botColourCursor++;
+                    return DoBotAction(() => _game.CollectResources(bot, take));
+                }
+            }
+
+            return ReadyUpNextBot();
+        }
+
+        private bool TickBotBuy()
+        {
+            // One purchase per beat, so a bot actually builds a compound over a
+            // game rather than sitting on an empty board and making activation
+            // nothing to look at.
+            foreach (var bot in LivingBots())
+            {
+                if (_game.PlayersReady.Contains(bot))
+                {
+                    continue;
+                }
+
+                foreach (var card in _game.GetPlayer(bot).Hand.ToList())
+                {
+                    if (TryBotAction(() => _game.BuyCard(bot, card.InstanceId)))
+                    {
+                        BeatBotClock();
+                        BroadcastState();
+                        return true;
+                    }
+                }
+            }
+
+            return ReadyUpNextBot();
+        }
+
+        private bool ReadyUpNextBot()
+        {
+            foreach (var bot in LivingBots())
+            {
+                if (_game.PlayersReady.Contains(bot))
+                {
+                    continue;
+                }
+
+                return DoBotAction(() =>
+                {
+                    if (_game.SetReady(bot, true))
+                    {
+                        AdvancePhase();
+                    }
+                });
+            }
+
+            return false;
+        }
+
+        private IEnumerable<int> LivingBots() =>
+            _game.LivingPlayers.Select(player => player.PlayerId).Where(IsBotSeat).ToList();
+
+        /// <summary>
+        /// Runs one bot move and tells the table. The rules engine throws on an
+        /// illegal move, and a bot guesses - so a refusal is an ordinary outcome
+        /// here rather than an error, and simply means it tries something else
+        /// on the next beat.
+        /// </summary>
+        private bool DoBotAction(Action move)
+        {
+            if (!TryBotAction(move))
+            {
+                return false;
+            }
+
+            BeatBotClock();
+            BroadcastState();
+            return true;
+        }
+
+        private bool TryBotAction(Action move)
+        {
+            try
+            {
+                move();
+                return true;
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+            {
+                return false;
+            }
+        }
+
+        private void BeatBotClock() => _nextBotActionAt = Time.time + BotThinkSeconds;
+
+        /// <summary>Rotates which colours the bots take, so they build a usable spread.</summary>
+        private int _botColourCursor;
 
         /// <summary>Longest message the shout popup can show without running off the board.</summary>
         public const int MaxShoutLength = 80;
@@ -751,6 +1009,14 @@ namespace Indoctrination.Net
             }
 
             if (TickActivation())
+            {
+                return;
+            }
+
+            // Bots play before the clocks are considered. They are a stand-in for
+            // a player, so anything they do should look like that player acting,
+            // not like a phase timing out.
+            if (TickBots())
             {
                 return;
             }

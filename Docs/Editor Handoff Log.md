@@ -306,6 +306,69 @@ printed face or the visible code-built title fallback.
 - SmokeTest passing, including all Blue art/resource/aspect checks.
 - No fuzz run: no `GameState` or effect behavior changed.
 
+## 2026-08-09 — Claude (solo play against a bot)
+
+One person can now play a whole game alone. `Solo Playtest` on the connect
+screen hosts, seats bots up to the minimum table, and starts - all one press.
+`Add Bot` in the lobby does the same thing a seat at a time, so bots can also
+fill out a table that is short a player.
+
+The bot is deliberately witless: it drafts the first legal card, takes a
+rotating spread of resources, buys the first thing it can afford, readies up,
+and answers questions with the same default the clock would have used. It is
+not an opponent to beat, it is a second pair of hands so the turn loop,
+activation order and board can be exercised without a second machine.
+
+Three things about it are load-bearing rather than incidental:
+
+- **`Seat.IsBot` is explicit, not inferred from having no connection.** A
+  player who drops also leaves `ClientId` null, and their board has to sit
+  untouched waiting for them. `TakeSeat` also skips bot seats when looking for
+  a vacancy, or a joining player would be handed a bot's compound.
+- **One action per beat, not one phase.** The bot pauses `BotThinkSeconds`
+  between moves. A bot that finished its whole turn in a single frame would
+  make the activation sequence - the thing most worth watching - impossible to
+  see.
+- **A refused move is an ordinary outcome.** The bot guesses, the rules engine
+  throws on anything illegal, and that simply means it tries something else on
+  the next beat. Nothing it does can put the game in a state the rules did not
+  authorise.
+
+Bots are never sent views (`BroadcastState` only writes to occupied seats), so
+none of this touches the hidden-information path.
+
+### The resource spread is not cosmetic
+
+The bot originally took red every turn, which meant it could almost never
+afford anything, never built a compound, and left activation with nothing to
+show - which defeats the point of having an opponent. It now rotates colours.
+Caught by the test asserting the bot ends up holding cards *and* resources
+rather than merely that phases advanced.
+
+### Verification
+
+PlayModeTests 42/42 with `ABotPlaysAWholeTurnByItself`, which drives a solo
+game through Draft, Rolling, Activation, Resource and Buy with only the human
+seat scripted and everything else left to the bot. RulesCheck plus 600 fuzzed
+games, SmokeTest, CompileCheck.
+
+**Note for anyone writing tests against the bot or the activation sequence:**
+the server's pauses are wall-clock, and batchmode runs frames far faster than
+seconds, so a frame-counted loop starves them. `ClearPacingClocks` in the test
+file pushes them into the past each iteration. Setting them to zero is not
+enough - they are compared against `Time.time`, which is only a few seconds old
+during a run.
+
+### The art flake, now confirmed
+
+`ClickingACardOpensItsPreview` has now failed on two separate runs with "no card
+with imported art on the board" and passed on three others, with no relevant
+change between them. It is a real intermittent, not a one-off. It belongs to
+the in-progress card-art work and looks like art import ordering in batchmode
+rather than anything about the preview. Left alone deliberately - it is not
+mine to fix mid-flight - but it should not be dismissed as noise next time it
+appears.
+
 ## 2026-08-09 — Claude (seven more playtest reports, and shouting)
 
 **Hand clipping, third attempt - now measured.** The maths was adjusted twice by

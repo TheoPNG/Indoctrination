@@ -1366,6 +1366,122 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// A bot actually plays, so one person can run a whole game alone.
+        ///
+        /// Asserts the turn loop keeps moving rather than any particular
+        /// decision: the bot is deliberately witless, and the thing that would
+        /// make it useless is not a bad pick but a phase it never leaves. It
+        /// drafts, rolls, takes resources and readies up, and the game comes back
+        /// round to a second Rolling phase without a human touching it.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ABotPlaysAWholeTurnByItself()
+        {
+            _manager.RequestAddBotRpc();
+            _manager.RequestStartGameRpc();
+            yield return WaitForFrames(6);
+
+            Assert.IsNotNull(_manager.View, "a solo game should start");
+            Assert.AreEqual(nameof(TurnPhase.Draft), _manager.View.phase);
+
+            var game = ServerGame();
+            var seenPhases = new System.Collections.Generic.HashSet<string>();
+
+            // The human seat still has to be played, so this stands in for one:
+            // whenever the game is waiting on seat 0, do the minimum to move on.
+            var guard = 0;
+            while (guard++ < 3000 && game.Phase != TurnPhase.GameOver)
+            {
+                seenPhases.Add(game.Phase.ToString());
+
+                if (game.PendingChoice is { AskedOfPlayerId: 0 })
+                {
+                    ApplyAsHost(_ => game.AnswerPendingChoiceWithDefault());
+                }
+                else if (game.Phase == TurnPhase.Draft && game.CurrentDrafterId == 0)
+                {
+                    var card = game.DraftZone.FirstOrDefault();
+                    if (card != null)
+                    {
+                        ApplyAsHost(_ => game.DraftCard(0, card.InstanceId));
+                    }
+                }
+                else if (game.Phase == TurnPhase.Rolling && !game.HasRolled(0))
+                {
+                    ApplyAsHost(_ => game.RollPrimaryDie(0));
+                }
+                else if (game.Phase == TurnPhase.Resource && !game.HasCollectedResources(0))
+                {
+                    ApplyAsHost(_ => game.CollectResources(
+                        0, Enumerable.Repeat(ResourceColor.Blue, game.ResourcesPerTurnFor(0)).ToList()));
+                }
+                else if (game.Phase is TurnPhase.Rolling or TurnPhase.Resource or TurnPhase.Buy
+                         && !game.PlayersReady.Contains(0)
+                         && game.PendingChoice == null)
+                {
+                    ApplyAsHost(_ =>
+                    {
+                        if (game.SetReady(0, true))
+                        {
+                            game.AdvancePhase();
+                        }
+                    });
+                }
+
+                // Every pause here is presentation pacing measured in wall-clock
+                // seconds - the bot's think time, and the beat between
+                // activations. Batchmode runs frames far faster than it runs
+                // seconds, so they are cleared each iteration. This is testing
+                // that a solo game plays itself through, not how long it dwells.
+                ClearPacingClocks();
+
+                // Everything else is the bot's move, and it takes it on its own.
+                yield return null;
+
+                if (seenPhases.Contains(nameof(TurnPhase.Buy))
+                    && game.TurnInRound > 1)
+                {
+                    break;
+                }
+            }
+
+            Assert.IsNull(_manager.LastError, $"nothing should have been refused: {_manager.LastError}");
+
+            foreach (var phase in new[] { TurnPhase.Draft, TurnPhase.Rolling, TurnPhase.Resource, TurnPhase.Buy })
+            {
+                Assert.Contains(phase.ToString(), seenPhases.ToArray(),
+                    $"a solo game has to reach {phase} - the bot is stuck before it");
+            }
+
+            // And the bot genuinely acted rather than the human seat carrying it.
+            // Drafting is the clearest proof: the draft cannot advance until it
+            // takes its own picks, so cards in its hand or compound could only
+            // have got there by the bot playing.
+            var bot = game.Players[1];
+            Assert.Greater(bot.Hand.Count + bot.Compound.Count, 0,
+                           "the bot should have drafted cards of its own");
+            Assert.Greater(EffectContext.AllColors.Sum(c => bot.Resources[c]), 0,
+                           "and taken its resources");
+        }
+
+        /// <summary>
+        /// Zeroes the server's presentation pacing so a test can run a game at
+        /// frame speed instead of at the speed it is meant to be watched.
+        /// </summary>
+        private void ClearPacingClocks()
+        {
+            // Well into the past rather than zero: these are compared against
+            // Time.time, which is only a few seconds old during a test run, so
+            // zero is not necessarily long enough ago to satisfy a dwell.
+            foreach (var name in new[] { "_nextBotActionAt", "_nextActivationAt", "_activationEnteredAt" })
+            {
+                typeof(NetworkGameManager)
+                    .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)?
+                    .SetValue(_manager, -1000f);
+            }
+        }
+
+        /// <summary>
         /// Every card in the open hand is fully on screen, top edge included.
         ///
         /// Measured rather than eyeballed: the fan's height maths has been
