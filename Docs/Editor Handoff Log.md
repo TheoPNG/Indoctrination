@@ -306,6 +306,56 @@ printed face or the visible code-built title fallback.
 - SmokeTest passing, including all Blue art/resource/aspect checks.
 - No fuzz run: no `GameState` or effect behavior changed.
 
+## 2026-08-09 — Claude (choices that say what they do)
+
+**A card offering two different things now names both.** Pentagram asked
+"gain 1 follower? (No deals 1 damage)" as a yes/no; it offers `+1 follower` and
+`1 damage`. This is not only a wording fix - the activation stage deliberately
+shows a question as its options and nothing else, because the card is on screen
+at full size saying what it does. That only works while the options carry their
+own meaning, and "No" carries none.
+
+Two others had the same shape, where **"No" was a different move rather than a
+refusal**, and were converted the same way:
+
+- Close Enough: `Up to 4` / `Down to 2` (was "shift up? (No shifts it down)")
+- Cthulu's counter: `Add a counter` / `Remove a counter`
+
+The three remaining yes/nos are genuine opt-in offers - First Line of Defense,
+Is he on meth?, Soul Swapper - where declining really is declining. Those keep
+yes/no, and are the one case where the stage now *does* show the prompt, since
+"Yes" is meaningless without knowing what is being accepted. `_choicePrompt` on
+the stage is filled only for that kind.
+
+`CheckChoicesSpeakForThemselves` pins Pentagram's options by name and checks
+that picking the follower one actually gains a follower rather than the other
+branch.
+
+**The card no longer pops twice.** A card that asked a question was torn down
+and flown back in when its effect resolved, so answering looked like the card
+activating a second time. The stage remembers which card it is holding
+(`_heldCardInstanceId`) and, when that same card's activation completes,
+continues from where it already is. One continuous visit: appear, ask, act,
+leave.
+
+### The art flake, fixed rather than filed
+
+Last entry called this an import-timing race. That was wrong. The test picks a
+card *on the board* that has imported art, the draft zone is dealt from a
+shuffled deck seeded off the clock, and art covers only part of the set - so
+whether an arted card was dealt at all was a coin toss. It failed on three of
+seven runs for that reason alone. It now puts a known arted card on the board
+itself and clicks that. Nothing about what the test proves has changed; it just
+no longer depends on the shuffle.
+
+A test that fails a third of the time is worse than no test, because it teaches
+everyone to ignore a red suite.
+
+### Verification
+
+PlayModeTests 42/42, twice, including the previously flaky one. RulesCheck with
+the new choice check plus 900 fuzzed games. SmokeTest, CompileCheck.
+
 ## 2026-08-09 — Claude (solo play against a bot)
 
 One person can now play a whole game alone. `Solo Playtest` on the connect

@@ -68,9 +68,15 @@ namespace Indoctrination.Core.Effects
             var up = true;
             if (canRaise && canLower)
             {
-                var direction = c.AskYesNo($"Close Enough - shift the {player.PrimaryDie} up? (No shifts it down)");
+                // Named directions, not yes/no. "No" is not declining here, it is
+                // the opposite move, and a menu offering it as a refusal reads as
+                // though nothing will happen.
+                var raise = $"Up to {player.PrimaryDie + 1}";
+                var lower = $"Down to {player.PrimaryDie - 1}";
+
+                var direction = c.ChooseOption("Close Enough", new[] { raise, lower });
                 yield return direction;
-                up = direction.ChoseYes;
+                up = direction.ChosenOption == raise;
             }
             else
             {

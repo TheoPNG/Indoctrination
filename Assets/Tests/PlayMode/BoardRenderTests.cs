@@ -609,9 +609,21 @@ namespace Indoctrination.Tests
 
             Assert.IsFalse(CardPreview.IsOpen, "nothing should be previewed to begin with");
 
+            // A card with art is put on the board deliberately rather than hoped
+            // for. The draft zone is dealt from a shuffled deck with a clock
+            // seed, and art covers only part of the set, so whether an arted card
+            // happened to be dealt was a coin toss - this test failed on roughly
+            // a third of runs for that reason alone.
+            var arted = CardDatabase.Instance.All.FirstOrDefault(d => CardArt.FaceFor(d.Id) != null);
+            Assert.IsNotNull(arted, "at least one card needs imported art for this to mean anything");
+
+            var game = ServerGame();
+            ApplyAsHost(_ => game.Players[0].Compound.Add(new CardInstance(-777, arted)));
+            yield return WaitForFrames(4);
+
             var card = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None)
-                .FirstOrDefault(c => c.Definition != null && CardArt.FaceFor(c.Definition.Id) != null);
-            Assert.IsNotNull(card, "there should be a card with imported art on the board");
+                .FirstOrDefault(c => c.Card != null && c.Card.instanceId == -777);
+            Assert.IsNotNull(card, "the arted card should be rendered on the board");
 
             card.GetComponent<Button>().onClick.Invoke();
             yield return WaitForFrames(2);

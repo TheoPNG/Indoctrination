@@ -1180,7 +1180,7 @@ namespace Indoctrination.Net
             RefreshHand(view);
             _activationStage.Present(
                 view,
-                parent => BuildActivationChoice(parent, manager, view),
+                (parent, prompt) => BuildActivationChoice(parent, prompt, manager, view),
                 BoardCardPosition);
         }
 
@@ -2756,7 +2756,8 @@ namespace Indoctrination.Net
         /// exception is an amount, where the legal range is not visible anywhere
         /// else and the field is meaningless without it.
         /// </summary>
-        private void BuildActivationChoice(RectTransform parent, NetworkGameManager manager, GameView view)
+        private void BuildActivationChoice(
+            RectTransform parent, Text prompt, NetworkGameManager manager, GameView view)
         {
             if (!view.hasPendingChoice)
             {
@@ -2820,6 +2821,11 @@ namespace Indoctrination.Net
                     break;
 
                 case nameof(ChoiceKind.YesNo):
+                    // The one kind that cannot speak for itself. "Yes" is only
+                    // meaningful next to what is being offered, so this is the
+                    // "unless it's unclear" case and the prompt comes with it.
+                    prompt.text = choice.prompt;
+
                     UIFactory.ButtonWithLabel("Yes", parent, "Yes",
                         () => manager.RequestAnswerYesNoRpc(true), UITheme.Affirm, 130, 44);
                     UIFactory.ButtonWithLabel("No", parent, "No",

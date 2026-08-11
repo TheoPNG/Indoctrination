@@ -58,6 +58,7 @@ namespace Indoctrination.Net
         private RectTransform _cardRect;
         private RectTransform _chipRow;
         private RectTransform _choiceRow;
+        private Text _choicePrompt;
         private Text _ownerLabel;
         private Text _detailLabel;
         private CanvasGroup _group;
@@ -68,7 +69,7 @@ namespace Indoctrination.Net
         /// never during it - but not what answering it means, which stays with
         /// the board and its RPCs.
         /// </summary>
-        private Action<RectTransform> _choiceBuilder;
+        private Action<RectTransform, Text> _choiceBuilder;
 
         /// <summary>The activation currently waiting on an answer, or null.</summary>
         private ActivationView _choiceActivation;
@@ -146,6 +147,16 @@ namespace Indoctrination.Net
             var chipLayout = UIFactory.HorizontalLayout(_chipRow, 6, new RectOffset(0, 0, 0, 0));
             chipLayout.childAlignment = TextAnchor.MiddleCenter;
 
+            // Most questions need no prompt - the options say what they do and
+            // the card is on screen above them. A plain yes/no offer is the
+            // exception: "Yes" alone means nothing, so those fill this in.
+            _choicePrompt = UIFactory.Label(
+                "Choice Prompt", root, "", 17, TextAnchor.MiddleCenter, UITheme.Bone);
+            _choicePrompt.rectTransform.anchorMin = new Vector2(0.1f, 0.11f);
+            _choicePrompt.rectTransform.anchorMax = new Vector2(0.9f, 0.16f);
+            _choicePrompt.rectTransform.offsetMin = _choicePrompt.rectTransform.offsetMax = Vector2.zero;
+            _choicePrompt.gameObject.SetActive(false);
+
             // The question a card asks arrives here, directly under it, so the
             // decision is made looking at the card it belongs to.
             _choiceRow = UIFactory.Group("Choice", root);
@@ -162,7 +173,7 @@ namespace Indoctrination.Net
         /// <summary>Consumes newly completed entries from a server view.</summary>
         public void Present(
             GameView view,
-            Action<RectTransform> choiceBuilder = null,
+            Action<RectTransform, Text> choiceBuilder = null,
             Func<int, Vector3?> originResolver = null)
         {
             _choiceBuilder = choiceBuilder;
@@ -249,6 +260,7 @@ namespace Indoctrination.Net
             _seen = 0;
             _lastSnapshot = null;
             _choiceActivation = null;
+            _heldCardInstanceId = -1;
             _pending.Clear();
 
             if (!_playing && _root != null)
@@ -260,6 +272,7 @@ namespace Indoctrination.Net
                 {
                     UIFactory.DestroyChildren(_choiceRow);
                     _choiceRow.gameObject.SetActive(false);
+                    _choicePrompt.gameObject.SetActive(false);
                 }
 
                 _root.gameObject.SetActive(false);
@@ -321,52 +334,84 @@ namespace Indoctrination.Net
             BuildCard(_choiceActivation, _choiceSnapshot);
             _cardRect.localScale = Vector3.one * StageCardScale;
 
+            // Remembered so that when the answer comes back and this card's
+            // effect finally resolves, it animates from where it already is
+            // rather than being rebuilt and flown in again.
+            _heldCardInstanceId = _choiceActivation.cardInstanceId;
+
             UIFactory.DestroyChildren(_choiceRow);
             _choiceRow.gameObject.SetActive(true);
-            _choiceBuilder?.Invoke(_choiceRow);
+
+            _choicePrompt.text = "";
+            _choiceBuilder?.Invoke(_choiceRow, _choicePrompt);
+            _choicePrompt.gameObject.SetActive(!string.IsNullOrEmpty(_choicePrompt.text));
         }
+
+        /// <summary>
+        /// The card currently held on screen waiting for an answer, or -1. Its
+        /// activation animation continues from here instead of starting over.
+        /// </summary>
+        private int _heldCardInstanceId = -1;
 
         private IEnumerator Play(Playback playback, int repeats = 1)
         {
             _root.gameObject.SetActive(true);
             _root.SetAsLastSibling();
-            _group.alpha = 0f;
 
-            // Any question this card asked was answered before we got here, so
-            // the menu comes down and the animation has the stage to itself.
+            // This card may already be on screen, held up while it asked its
+            // question. If so it stays exactly where it is: it should appear,
+            // ask, act, and leave - one continuous visit. Tearing it down and
+            // flying it back in made answering look like the card activating
+            // twice.
+            var held = _heldCardInstanceId == playback.Activation.cardInstanceId && _cardRect != null;
+
+            // Either way the menu comes down; the animation has the stage to itself.
             _choiceRow.gameObject.SetActive(false);
+            _choicePrompt.gameObject.SetActive(false);
 
             BuildHud(playback.Before);
-            BuildCard(playback.Activation, playback.After);
 
-            if (repeats > 1)
-            {
-                _detailLabel.text += $"   ×{repeats}";
-            }
-
-            LayoutRebuilder.ForceRebuildLayoutImmediate(_root);
-
-            // Rises out of its own place on the table rather than fading in at
-            // the middle of the screen. Which compound it came from is the first
-            // thing you need to know about an activation, and watching it leave
-            // says it without a label.
             var home = _cardCell.position;
+
+            // Where this card lives on the board. It is both where it rises from
+            // and where it sinks back toward, so it is resolved once for both.
             var origin = _originResolver?.Invoke(playback.Activation.cardInstanceId) ?? home;
 
-            _cardRect.position = origin;
-            _cardRect.localScale = Vector3.one * (StageCardScale * 0.35f);
-
-            yield return Tween(0.55f, t =>
+            if (!held)
             {
-                var eased = Smooth(t);
-                _group.alpha = Mathf.Min(1f, eased * 1.6f);
-                _cardRect.position = Vector3.Lerp(origin, home, eased);
-                _cardRect.localScale = Vector3.one
-                                       * (StageCardScale * Mathf.Lerp(0.35f, 1f, eased));
-            });
+                _group.alpha = 0f;
+                BuildCard(playback.Activation, playback.After);
+                LayoutRebuilder.ForceRebuildLayoutImmediate(_root);
 
-            _cardRect.position = home;
-            _cardRect.anchoredPosition = Vector2.zero;
+                // Rises out of its own place on the table rather than fading in
+                // at the middle of the screen. Which compound it came from is
+                // the first thing you need to know about an activation, and
+                // watching it leave says it without a label.
+                _cardRect.position = origin;
+                _cardRect.localScale = Vector3.one * (StageCardScale * 0.35f);
+
+                yield return Tween(0.55f, t =>
+                {
+                    var eased = Smooth(t);
+                    _group.alpha = Mathf.Min(1f, eased * 1.6f);
+                    _cardRect.position = Vector3.Lerp(origin, home, eased);
+                    _cardRect.localScale = Vector3.one
+                                           * (StageCardScale * Mathf.Lerp(0.35f, 1f, eased));
+                });
+
+                _cardRect.position = home;
+                _cardRect.anchoredPosition = Vector2.zero;
+            }
+            else
+            {
+                _group.alpha = 1f;
+                LayoutRebuilder.ForceRebuildLayoutImmediate(_root);
+            }
+
+            _heldCardInstanceId = -1;
+
+            _detailLabel.text = $"Die {playback.Activation.dieValue}  •  {playback.Activation.category}"
+                                + (repeats > 1 ? $"   ×{repeats}" : "");
 
             Enum.TryParse(playback.Activation.category, out ActivationCategory category);
 

@@ -512,12 +512,24 @@ namespace Indoctrination.Core.Effects
             yield break;
         }
 
+        /// <summary>
+        /// Gain 1 follower, or deal 1 damage to any player.
+        ///
+        /// Deliberately a named pair rather than a yes/no. The card offers two
+        /// different things, and "yes" and "no" are only meaningful next to a
+        /// question - which the board no longer shows, because the card itself
+        /// is on screen saying what it does. The options have to carry their own
+        /// meaning.
+        /// </summary>
         internal static IEnumerator<ChoiceRequest> Pentagram(EffectContext c)
         {
-            var choice = c.AskYesNo("Pentagram - gain 1 follower? (No deals 1 damage to any player)");
+            const string follower = "+1 follower";
+            const string damage = "1 damage";
+
+            var choice = c.ChooseOption("Pentagram", new[] { follower, damage });
             yield return choice;
 
-            if (choice.ChoseYes)
+            if (choice.ChosenOption == follower)
             {
                 c.GainFollowers(1);
                 yield break;
@@ -831,17 +843,24 @@ namespace Indoctrination.Core.Effects
                 yield break;
             }
 
-            var adding = c.AskYesNo($"Add a counter to {target.Title}? (No removes one instead)");
+            // Named actions, not yes/no. "No" here is removing a counter, which
+            // is a move in its own right rather than a refusal to make one.
+            const string add = "Add a counter";
+            const string remove = "Remove a counter";
+
+            var adding = c.ChooseOption($"{target.Title}", new[] { add, remove });
             yield return adding;
+
+            var isAdding = adding.ChosenOption == add;
 
             // Adding may use any counter type loose in that compound; removing is
             // limited to what is actually sitting on the card.
-            var available = adding.ChoseYes
+            var available = isAdding
                 ? owner.Compound.SelectMany(card => card.CounterNames)
                 : target.CounterNames;
 
             var kind = c.ChooseOption(
-                adding.ChoseYes ? "Add which counter?" : "Remove which counter?", available);
+                isAdding ? "Add which counter?" : "Remove which counter?", available);
 
             if (kind == null)
             {
@@ -850,7 +869,7 @@ namespace Indoctrination.Core.Effects
 
             yield return kind;
 
-            if (adding.ChoseYes)
+            if (isAdding)
             {
                 c.AddCounterTo(target, kind.ChosenOption);
             }

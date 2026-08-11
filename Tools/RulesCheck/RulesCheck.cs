@@ -314,6 +314,7 @@ static class RulesCheck
         CheckSettledCards(cards);
         CheckActivationOrder(cards);
         CheckStandardizedUniforms(cards);
+        CheckChoicesSpeakForThemselves(cards);
         CheckConcessions(cards);
         CheckEndStates(cards);
         CheckPerPlayerViews(cards);
@@ -591,7 +592,10 @@ static class RulesCheck
         cosmic.ResolveEffects();
 
         cosmic.AnswerCardChoice(0, chef.InstanceId);      // target the Chef
-        cosmic.AnswerYesNo(0, true);                      // add rather than remove
+
+        // Named actions rather than yes/no: "no" here removes a counter, which
+        // is a move of its own and not a refusal to make one.
+        cosmic.AnswerOptionChoice(0, "Add a counter");
         Check("Cthulu can only offer counters that already exist",
               cosmic.PendingChoice == null || cosmic.PendingChoice.Options.All(o => o == Counters.Meal),
               string.Join(",", cosmic.PendingChoice?.Options ?? new List<string>()));
@@ -866,6 +870,45 @@ static class RulesCheck
         Check("and the owner's view carries it, or the card is invisible in play",
               seen != null && seen.Length == 1 && seen[0] == privateFace,
               seen == null ? "no privateDice field" : string.Join(",", seen));
+    }
+
+    /// <summary>
+    /// A card that offers two different things has to name both of them.
+    ///
+    /// The board shows a card's question as its options and nothing else - no
+    /// prompt, because the card is on screen at full size saying what it does.
+    /// That only works while the options carry their own meaning. "Yes" and
+    /// "No" carry none, and are only ever correct for an offer that can simply
+    /// be declined.
+    /// </summary>
+    static void CheckChoicesSpeakForThemselves(List<CardDefinition> cards)
+    {
+        Console.WriteLine("\nChoices that have to speak for themselves:");
+
+        var game = new GameState(new[] { "A", "B" }, cards, randomSeed: 52);
+        var pentagram = new CardInstance(-80, cards.First(c => c.id == CardIds.Pentagram));
+        game.Players[0].Compound.Add(pentagram);
+
+        game.EnqueueEffect(
+            pentagram, game.Players[0], CardEffects.For(CardIds.Pentagram, 4), "Pentagram");
+        game.ResolveEffects();
+
+        Check("Pentagram offers its two outcomes by name",
+              game.PendingChoice is { Kind: ChoiceKind.Option }
+              && game.PendingChoice.Options.Count == 2
+              && game.PendingChoice.Options.Any(o => o.Contains("follower"))
+              && game.PendingChoice.Options.Any(o => o.Contains("damage")),
+              game.PendingChoice == null
+                  ? "nothing was asked"
+                  : $"{game.PendingChoice.Kind}: {string.Join(" / ", game.PendingChoice.Options)}");
+
+        // And picking the follower option does that, rather than the other.
+        var followers = game.Players[0].Followers;
+        game.AnswerOptionChoice(0, game.PendingChoice.Options.First(o => o.Contains("follower")));
+
+        Check("and taking the follower option gains one",
+              game.Players[0].Followers == followers + 1,
+              $"{followers} -> {game.Players[0].Followers}");
     }
 
     static bool DoesNotThrow(Action action)
