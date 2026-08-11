@@ -156,6 +156,10 @@ namespace Indoctrination.Net
         private RectTransform _dragLayer;
         private StatBar _viewerStatBar;
         private ActivationStage _activationStage;
+        private ShoutBanner _shoutBanner;
+        private RectTransform _shoutRow;
+        private InputField _shoutField;
+        private Button _shoutButton;
 
         // ---------------------------------------------------------------- State
         private NetworkGameManager _subscribedManager;
@@ -179,6 +183,12 @@ namespace Indoctrination.Net
 
         /// <summary>Rituals seen resolve, so a new one can be told from a repeated view.</summary>
         private int _ritualsSeen = -1;
+
+        /// <summary>
+        /// Cards that have already been dealt onto the table, so a rebuild only
+        /// animates what is genuinely new rather than re-dealing the whole board.
+        /// </summary>
+        private readonly HashSet<int> _cardsDealtIn = new();
 
         private Button _discardButton;
         private PhaseBanner _phaseBanner;
@@ -246,6 +256,7 @@ namespace Indoctrination.Net
             _phaseBanner = PhaseBanner.CreateOn(canvas.transform);
             CardPreview.CreateOn(canvas.transform);
             _activationStage = ActivationStage.CreateOn(canvas.transform);
+            _shoutBanner = ShoutBanner.CreateOn(canvas.transform);
 
             ShowOnly(_connectPanel);
         }
@@ -295,6 +306,7 @@ namespace Indoctrination.Net
             if (_subscribedManager != null)
             {
                 _subscribedManager.Changed -= Refresh;
+                _subscribedManager.Shouted -= ShowShout;
             }
 
             // The effects driver outlives this board, so anything still animating
@@ -312,6 +324,7 @@ namespace Indoctrination.Net
             if (_subscribedManager != null)
             {
                 _subscribedManager.Changed -= Refresh;
+                _subscribedManager.Shouted -= ShowShout;
             }
 
             _subscribedManager = manager;
@@ -319,6 +332,7 @@ namespace Indoctrination.Net
             if (_subscribedManager != null)
             {
                 _subscribedManager.Changed += Refresh;
+                _subscribedManager.Shouted += ShowShout;
                 Refresh();
             }
         }
@@ -556,6 +570,32 @@ namespace Indoctrination.Net
             NetworkGameManager.Instance?.RequestSetTimersRpc(_timersOn);
         }
 
+        /// <summary>
+        /// Sends whatever is typed. Until the passcode has been given, every
+        /// entry is offered to the server as a passcode instead - so the same
+        /// one box unlocks shouting and then does the shouting, and a table that
+        /// does not know the word sees nothing but a box that ignores them.
+        /// </summary>
+        private void SubmitShout(string text)
+        {
+            var manager = NetworkGameManager.Instance;
+            if (manager == null || string.IsNullOrWhiteSpace(text))
+            {
+                return;
+            }
+
+            if (manager.CanShout)
+            {
+                manager.RequestShoutRpc(text);
+            }
+            else
+            {
+                manager.RequestUnlockShoutRpc(text);
+            }
+
+            _shoutField.text = "";
+        }
+
         private void SubmitName(string name)
         {
             if (!string.IsNullOrWhiteSpace(name))
@@ -718,6 +758,22 @@ namespace Indoctrination.Net
             _handCountLabel = UIFactory.Label("Hand Count", dockTop, "", 12, TextAnchor.MiddleRight,
                 UITheme.BoneDim);
             AddFixedWidth(_handCountLabel.rectTransform, 70);
+
+            // Shouting across the table. Locked until somebody types the word,
+            // so a table that does not know about it never sees a chat box.
+            _shoutRow = UIFactory.Group("Shout Row", dockTop);
+            var shoutPin = _shoutRow.gameObject.AddComponent<LayoutElement>();
+            shoutPin.minWidth = shoutPin.preferredWidth = 250;
+            UIFactory.HorizontalLayout(_shoutRow, 4, new RectOffset(0, 0, 0, 0));
+
+            _shoutField = UIFactory.TextInput("Shout Field", _shoutRow, "");
+            AddFixedWidthHeight(_shoutField.GetComponent<RectTransform>(), 170, 30);
+            _shoutField.characterLimit = NetworkGameManager.MaxShoutLength;
+            _shoutField.onEndEdit.AddListener(SubmitShout);
+
+            _shoutButton = UIFactory.ButtonWithLabel(
+                "Shout", _shoutRow, "Say", () => SubmitShout(_shoutField.text),
+                UITheme.ButtonQuiet, 70, 30);
 
             // The discard is public information and Rituals fly into it, so it is
             // a real place on the board rather than a number in the status line.
@@ -1023,10 +1079,11 @@ namespace Indoctrination.Net
 
             if (!string.Equals(_renderedPhase, view.phase, StringComparison.Ordinal))
             {
-                // A new phase collapses the hand back down. Otherwise a hand
-                // left open while reading a card would still be covering the
-                // board turns later, with nobody hovering it any more to close it.
-                _handExpanded = false;
+                // The hand is deliberately left as it is. It used to snap shut on
+                // every phase change, which fought the player whenever they were
+                // holding it open to read something across a phase boundary.
+                // Nothing needs to force it closed: the pointer decides, and if
+                // it is not on the tray the next poll closes it anyway.
                 _renderedPhase = view.phase;
             }
 
@@ -1042,6 +1099,7 @@ namespace Indoctrination.Net
             _somethingHitThisRefresh = false;
 
             RefreshTopBar(view);
+            RefreshShoutControls(manager);
             RefreshResourceHud(manager, view);
             RefreshBattlefield(manager, view);
             RefreshActionPanel(manager, view);
@@ -1242,6 +1300,16 @@ namespace Indoctrination.Net
             }
 
             _battlefieldSignature = signature;
+
+            // Anything no longer anywhere on the board is forgotten, so a card
+            // that genuinely leaves and comes back is dealt in again.
+            var present = view.players.SelectMany(player => player.compound)
+                .Concat(view.draftZone)
+                .Concat(view.discardPile)
+                .Select(card => card.instanceId)
+                .ToHashSet();
+            _cardsDealtIn.IntersectWith(present);
+
             UIFactory.DestroyChildren(_battlefield);
 
             var rows = new List<PlannedRow>();
@@ -1592,7 +1660,14 @@ namespace Indoctrination.Net
                 // Dealt out rather than appearing all at once. Alpha only, so the
                 // card is where the layout put it from the first frame and nothing
                 // measuring the board catches it part-way through moving.
-                BoardEffects.Instance.FadeIn(cell.gameObject, delay: dealt * 0.025f);
+                // Only cards the player has not seen on the table before are
+                // dealt in. A rebuild is triggered by any change to the board at
+                // all, and fading every card back in each time made one card
+                // arriving look like the whole table being re-dealt.
+                if (_cardsDealtIn.Add(card.instanceId))
+                {
+                    BoardEffects.Instance.FadeIn(cell.gameObject, delay: dealt * 0.025f);
+                }
                 dealt++;
             }
         }
@@ -1629,6 +1704,21 @@ namespace Indoctrination.Net
         /// the side panel. Standing highlight, not a pulse - it is a statement
         /// about what is queued, not an event.
         /// </summary>
+        private void ShowShout(string from, string message) => _shoutBanner.Show(from, message);
+
+        /// <summary>
+        /// The shout box says nothing about itself until it is unlocked. A table
+        /// that does not know the word gets a box that quietly ignores them
+        /// rather than a prompt advertising that a passcode exists.
+        /// </summary>
+        private void RefreshShoutControls(NetworkGameManager manager)
+        {
+            var unlocked = manager != null && manager.CanShout;
+
+            _shoutButton.GetComponentInChildren<Text>().text = unlocked ? "Say" : "•••";
+            _shoutButton.targetGraphic.color = unlocked ? UITheme.Button : UITheme.ButtonQuiet;
+        }
+
         /// <summary>
         /// Where a card is sitting on the board right now, so the activation
         /// stage can lift it out of its own compound rather than materialising it

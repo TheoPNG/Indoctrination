@@ -306,6 +306,71 @@ printed face or the visible code-built title fallback.
 - SmokeTest passing, including all Blue art/resource/aspect checks.
 - No fuzz run: no `GameState` or effect behavior changed.
 
+## 2026-08-09 — Claude (seven more playtest reports, and shouting)
+
+**Hand clipping, third attempt - now measured.** The maths was adjusted twice by
+reasoning about it and was wrong twice. `TheOpenHandIsFullyOnScreen` now asserts
+the thing that actually matters: no part of any hand card is off the top of the
+screen, and nothing masks it. That cannot be satisfied by arithmetic that merely
+looks correct, which is what the previous two attempts were.
+
+**Block reads as one bar now.** Two separate problems wearing the same
+description: on the stat bar it sat in the parent row and inherited that row's
+6px gap, so it looked like a detached box parked nearby - it lives in its own
+zero-spacing row with health now, welded to the end of the red. On the
+activation stage it was not a bar at all, just a line of text saying "+2 block";
+it is a green track appended to health there too, growing and shrinking with the
+number.
+
+**Resource payouts animate.** Snapshots carry resource counts, so the stage can
+diff them and throw coloured pips off the card. They fly toward where the
+resource HUD lives even though the HUD is not on screen during the sequence, so
+the direction still means something.
+
+**Repeat activations collapse into one pop-up.** Asked about this rather than
+guessing, because the two readings change balance: a unit woken by two matching
+dice really does fire twice, and that stays. What changed is that both firings
+are now taken together (`QueueActivations` dequeues a unit's whole run before
+passing on) and the stage merges consecutive same-card entries into a single
+presentation that strikes N times with a `×N` marker. The table still alternates
+- it is one *unit* each, not one activation each. Bars move once, at the end, to
+where every firing left them; animating per strike would mean easing toward
+numbers the server never reported.
+
+**Cards stopped re-dealing themselves.** The battlefield signature was already
+suppressing needless rebuilds, but a rebuild that did happen faded in every card
+on the board, so one card arriving looked like the whole table being re-dealt.
+`_cardsDealtIn` tracks what has already been seen; only genuinely new cards
+animate. Cards that leave the board entirely are forgotten, so one that comes
+back is dealt in again.
+
+**The hand no longer snaps shut on a phase change.** That reset was mine and it
+was wrong - it fought anyone holding the hand open to read across a phase
+boundary. Nothing needs to force it closed: the pointer decides, and the next
+poll closes it if nobody is hovering.
+
+**Shouting.** A message box in the dock that does nothing until somebody types
+the passcode, after which it broadcasts to the table as a large banner
+(`ShoutBanner`). The gate is **server-side** (`_shoutUnlocked` per seat) rather
+than in the interface, because a gate the client keeps is one anybody can walk
+through by editing their own copy. Capped at 80 characters and rate limited to
+one every 1.5s per seat. The banner never blocks raycasts - a message is not
+something to answer.
+
+### Verification
+
+PlayModeTests 41/41 (two new), RulesCheck plus 800 fuzzed games, SmokeTest,
+CompileCheck. Two rules-order assertions were updated to the new grouping rather
+than worked around.
+
+### Flake worth watching
+
+`ClickingACardOpensItsPreview` failed once ("no card with imported art on the
+board") and passed on the two runs either side of it, with no change in
+between. It belongs to the in-progress card-art work and looks like an
+import-timing race in batchmode rather than a board bug. Not chased; if it
+recurs, suspect art import order rather than the preview.
+
 ## 2026-08-09 — Claude (five playtest reports)
 
 **Resources could not be taken with the hand open.** The tray is opaque and

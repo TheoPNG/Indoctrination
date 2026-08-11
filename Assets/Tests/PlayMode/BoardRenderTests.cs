@@ -1028,9 +1028,14 @@ namespace Indoctrination.Tests
             Assert.AreEqual(0, _manager.View.activationCompletedCount,
                 "entering Activation must show the queue before resolving its first Unit");
             CollectionAssert.AreEqual(
-                new[] { p1Unit.InstanceId, p2Unit.InstanceId, p1Unit.InstanceId, p2Unit.InstanceId },
+                // Both dice show the same face, so each Unit fires twice - and
+                // takes both firings together. The table still alternates; it is
+                // one Unit each, not one activation each. A card that fires twice
+                // reads as one card doing its thing twice, rather than the same
+                // card reappearing after the opponent has had a turn.
+                new[] { p1Unit.InstanceId, p1Unit.InstanceId, p2Unit.InstanceId, p2Unit.InstanceId },
                 _manager.View.activations.Select(entry => entry.cardInstanceId).ToArray(),
-                "matching dice should repeat each Unit without disturbing round-robin order");
+                "a Unit woken twice should take both firings before the table moves on");
 
             var boardCards = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None)
                 .Where(card => card.Card != null).ToArray();
@@ -1357,6 +1362,49 @@ namespace Indoctrination.Tests
                     $"{slot.name}'s rotated bottom corner leaves the hand surface");
                 Assert.LessOrEqual(bounds.max.y, handRow.rect.yMax + 0.5f,
                     $"{slot.name}'s rotated top corner would be clipped");
+            }
+        }
+
+        /// <summary>
+        /// Every card in the open hand is fully on screen, top edge included.
+        ///
+        /// Measured rather than eyeballed: the fan's height maths has been
+        /// adjusted twice by reasoning about it and been wrong twice, because the
+        /// card's own outline and the rotation of the outermost slots both add
+        /// height that the arithmetic did not account for. This asserts the thing
+        /// that actually matters - no part of any card is off the top of the
+        /// screen - so it cannot be satisfied by maths that merely looks right.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheOpenHandIsFullyOnScreen()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Buy);
+            yield return ExpandHand();
+            Canvas.ForceUpdateCanvases();
+
+            var handRow = (RectTransform)typeof(BoardUI)
+                .GetField("_handRow", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(_board);
+
+            var cards = handRow.GetComponentsInChildren<BoardCardView>();
+            Assert.Greater(cards.Length, 0, "there should be cards in the open hand");
+
+            var screen = new Rect(0f, 0f, Screen.width, Screen.height);
+
+            foreach (var card in cards)
+            {
+                var rect = WorldRect((RectTransform)card.transform);
+
+                Assert.LessOrEqual(rect.yMax, screen.yMax,
+                    $"a hand card's top is off screen by {rect.yMax - screen.yMax:0.#}px "
+                    + $"(card {rect}, screen {screen})");
+                Assert.GreaterOrEqual(rect.yMin, screen.yMin,
+                    $"a hand card's bottom is off screen (card {rect})");
+
+                // And nothing above it clips it either.
+                Assert.IsTrue(IsFullyVisibleThroughEveryMask(card.GetComponent<Image>()),
+                    "a hand card is being clipped by a mask above it");
             }
         }
 

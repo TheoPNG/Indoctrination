@@ -234,6 +234,101 @@ namespace Indoctrination.Net
         /// <summary>Longest name a stat bar can show without being crowded out.</summary>
         public const int MaxNameLength = 16;
 
+        /// <summary>Longest message the shout popup can show without running off the board.</summary>
+        public const int MaxShoutLength = 80;
+
+        /// <summary>
+        /// The word that unlocks shouting. Checked on the server rather than in
+        /// the interface: a gate the client keeps is a gate anybody can walk
+        /// through by editing their own copy.
+        /// </summary>
+        private const string ShoutPasscode = "goated";
+
+        /// <summary>Seats that have said the word. Cleared with the seat, not the game.</summary>
+        private readonly HashSet<int> _shoutUnlocked = new();
+
+        /// <summary>Time.time each seat last shouted, so nobody can hold the board hostage.</summary>
+        private readonly Dictionary<int, float> _lastShoutAt = new();
+
+        /// <summary>The shortest gap between one seat's shouts.</summary>
+        private const float ShoutCooldownSeconds = 1.5f;
+
+        /// <summary>Whether this machine has unlocked shouting, for the interface to offer it.</summary>
+        public bool CanShout { get; private set; }
+
+        /// <summary>Raised on every client when somebody shouts.</summary>
+        public event Action<string, string> Shouted;
+
+        /// <summary>
+        /// Offers the passcode. Silent on a wrong answer - there is nothing to
+        /// gain from telling a guesser how close they were.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void RequestUnlockShoutRpc(string passcode, RpcParams rpcParams = default)
+        {
+            var seat = SeatIndexOf(rpcParams.Receive.SenderClientId);
+            if (seat < 0)
+            {
+                return;
+            }
+
+            if (!string.Equals((passcode ?? "").Trim(), ShoutPasscode, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _shoutUnlocked.Add(seat);
+            ConfirmShoutUnlockedRpc(RpcTarget.Single(rpcParams.Receive.SenderClientId, RpcTargetUse.Temp));
+        }
+
+        [Rpc(SendTo.SpecifiedInParams)]
+        private void ConfirmShoutUnlockedRpc(RpcParams rpcParams)
+        {
+            CanShout = true;
+            Changed?.Invoke();
+        }
+
+        /// <summary>
+        /// Sends a message to the whole table. Only from a seat that has given
+        /// the passcode, capped in length, and rate limited.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void RequestShoutRpc(string message, RpcParams rpcParams = default)
+        {
+            var seat = SeatIndexOf(rpcParams.Receive.SenderClientId);
+            if (seat < 0 || !_shoutUnlocked.Contains(seat))
+            {
+                return;
+            }
+
+            var trimmed = (message ?? "").Trim();
+            if (trimmed.Length == 0)
+            {
+                return;
+            }
+
+            if (_lastShoutAt.TryGetValue(seat, out var last)
+                && Time.time - last < ShoutCooldownSeconds)
+            {
+                return;
+            }
+
+            _lastShoutAt[seat] = Time.time;
+
+            if (trimmed.Length > MaxShoutLength)
+            {
+                trimmed = trimmed[..MaxShoutLength];
+            }
+
+            ShoutRpc(_seats[seat].Name, trimmed);
+        }
+
+        [Rpc(SendTo.ClientsAndHost)]
+        private void ShoutRpc(string from, string message)
+        {
+            Shouted?.Invoke(from, message);
+        }
+
         private void BroadcastLobby()
         {
             var lobby = new LobbyView

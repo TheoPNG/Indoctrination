@@ -1872,21 +1872,33 @@ namespace Indoctrination.Core
                 }
             }
 
-            // One each, round and round, skipping anybody who has run out.
+            // One unit each, round and round, skipping anybody who has run out.
+            //
+            // A unit woken by two dice showing the same number fires twice, and
+            // both firings are taken in the same turn rather than being split
+            // across two passes. The table still alternates - it is one unit
+            // each, not one activation each - and a unit that fires twice now
+            // reads as one card doing its thing twice instead of the same card
+            // reappearing later in the round.
             while (queues.Any(queue => queue.Count > 0))
             {
                 foreach (var queue in queues.Where(queue => queue.Count > 0))
                 {
-                    var (player, unit, dieValue) = queue.Dequeue();
+                    var unit = queue.Peek().Unit;
 
-                    player.UnitsTriggeredThisTurn++;
-                    var activation = new ActivationSequenceEntry(
-                        _activationSequence.Count, unit, player, dieValue,
-                        CardEffects.CategoryFor(unit.Definition.Id, dieValue));
-                    _activationSequence.Add(activation);
-                    EnqueueEffect(
-                        unit, player, CardEffects.For(unit.Definition.Id, dieValue),
-                        unit.Title, activation);
+                    while (queue.Count > 0 && ReferenceEquals(queue.Peek().Unit, unit))
+                    {
+                        var (player, firing, dieValue) = queue.Dequeue();
+
+                        player.UnitsTriggeredThisTurn++;
+                        var activation = new ActivationSequenceEntry(
+                            _activationSequence.Count, firing, player, dieValue,
+                            CardEffects.CategoryFor(firing.Definition.Id, dieValue));
+                        _activationSequence.Add(activation);
+                        EnqueueEffect(
+                            firing, player, CardEffects.For(firing.Definition.Id, dieValue),
+                            firing.Title, activation);
+                    }
                 }
             }
         }

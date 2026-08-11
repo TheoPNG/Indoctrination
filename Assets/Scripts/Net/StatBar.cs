@@ -101,11 +101,22 @@ namespace Indoctrination.Net
             // Health and Block share one visual run: Block is armour standing in
             // front of health rather than a separate pool, so it reads as the
             // health bar simply continuing on past its usual end.
+            // Health and Block share a row with no spacing between them, so the
+            // green butts directly onto the end of the red and reads as the same
+            // bar running further. Sitting in the parent row it inherited that
+            // row's gap and looked like a separate box parked nearby.
+            var healthRow = UIFactory.Group("Health Row", rect);
+            var healthLayout = UIFactory.HorizontalLayout(healthRow, 0, new RectOffset(0, 0, 0, 0));
+            healthLayout.childAlignment = TextAnchor.MiddleLeft;
+            UIFactory.FitToContent(healthRow);
+            var healthRowPin = healthRow.gameObject.AddComponent<LayoutElement>();
+            healthRowPin.minHeight = healthRowPin.preferredHeight = 18;
+
             (_healthFill, _healthText) = MakeBar(
-                "Health", new Color(0.800f, 0.247f, 0.318f), rect, HealthTrackWidth);
+                "Health", new Color(0.800f, 0.247f, 0.318f), healthRow, HealthTrackWidth);
             _pointWidth = HealthTrackWidth / GameSettings.MaxHealth;
 
-            _blockTrack = UIFactory.Panel("Block", rect, new Color(0.247f, 0.722f, 0.502f, 0.95f));
+            _blockTrack = UIFactory.Panel("Block", healthRow, new Color(0.247f, 0.722f, 0.502f, 0.95f));
             var blockPin = _blockTrack.gameObject.AddComponent<LayoutElement>();
             blockPin.minHeight = blockPin.preferredHeight = 18;
             blockPin.minWidth = blockPin.preferredWidth = 0;

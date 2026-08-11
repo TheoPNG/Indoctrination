@@ -726,8 +726,15 @@ static class RulesCheck
               order.Count > 0 && order[0].Card == CardIds.SolarPanels,
               order.Count == 0 ? "nothing activated" : order[0].Card);
 
+        // Both dice show 3, so each unit fires twice - and takes both firings
+        // together before the table moves on. One card doing its thing twice is
+        // one turn at the table, not two separated by an opponent.
+        Check("a unit woken twice takes both firings before passing on",
+              order.Count > 1 && order[1].Player == first && order[1].Card == order[0].Card,
+              string.Join(",", order.Select(e => $"{e.Player}:{e.Card}")));
+
         Check("then it passes to the next player",
-              order.Count > 1 && order[1].Player != first,
+              order.Count > 2 && order[2].Player != first,
               string.Join(",", order.Select(e => e.Player)));
 
         // Two units against one, both dice showing the same face: the player who
@@ -753,10 +760,15 @@ static class RulesCheck
         paced.SetPrimaryDie(paced.Players[1], 3);
         paced.AdvancePhase();
 
-        Check("paced play exposes duplicate dice as repeated Unit entries",
+        // Duplicate dice still fire the Unit twice - that is the rule - but both
+        // firings are taken together. The board shows one card striking twice
+        // rather than the same card coming back after the opponent's turn, which
+        // is what a player reads as "it activated twice" instead of "it appeared
+        // twice for no reason".
+        Check("a Unit woken twice takes both firings before the table moves on",
               paced.ActivationSequence.Count == 4
               && paced.ActivationSequence.Select(entry => entry.Controller.PlayerId)
-                  .SequenceEqual(new[] { 1, 0, 1, 0 }),
+                  .SequenceEqual(new[] { 1, 1, 0, 0 }),
               string.Join(",", paced.ActivationSequence.Select(entry => entry.Controller.PlayerId)));
         Check("paced play resolves nothing before its presentation beat",
               paced.ActivationCompletedCount == 0 && paced.HasEffectsPending);

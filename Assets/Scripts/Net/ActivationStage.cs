@@ -24,6 +24,9 @@ namespace Indoctrination.Net
             public int Followers;
             public int Block;
             public bool Alive;
+
+            /// <summary>Resource counts by colour, so a card that pays out can show what it paid.</summary>
+            public readonly Dictionary<ResourceColor, int> Resources = new();
         }
 
         private sealed class Snapshot
@@ -268,7 +271,24 @@ namespace Indoctrination.Net
             _playing = true;
             while (_pending.Count > 0)
             {
-                yield return Play(_pending.Dequeue());
+                // A unit woken by two matching dice fires twice. That is the
+                // rule and it stays, but it is one card doing its thing twice -
+                // so it comes up once and strikes twice, rather than the same
+                // card appearing again a moment later as though a second copy
+                // of it had gone off.
+                var first = _pending.Dequeue();
+                var repeats = 1;
+
+                while (_pending.Count > 0
+                       && _pending.Peek().Activation.cardInstanceId == first.Activation.cardInstanceId)
+                {
+                    // The last one's After carries the full result of every
+                    // firing, so the bars move once, to where they end up.
+                    first.After = _pending.Dequeue().After;
+                    repeats++;
+                }
+
+                yield return Play(first, repeats);
             }
 
             _playing = false;
@@ -306,7 +326,7 @@ namespace Indoctrination.Net
             _choiceBuilder?.Invoke(_choiceRow);
         }
 
-        private IEnumerator Play(Playback playback)
+        private IEnumerator Play(Playback playback, int repeats = 1)
         {
             _root.gameObject.SetActive(true);
             _root.SetAsLastSibling();
@@ -318,6 +338,12 @@ namespace Indoctrination.Net
 
             BuildHud(playback.Before);
             BuildCard(playback.Activation, playback.After);
+
+            if (repeats > 1)
+            {
+                _detailLabel.text += $"   ×{repeats}";
+            }
+
             LayoutRebuilder.ForceRebuildLayoutImmediate(_root);
 
             // Rises out of its own place on the table rather than fading in at
@@ -343,38 +369,59 @@ namespace Indoctrination.Net
             _cardRect.anchoredPosition = Vector2.zero;
 
             Enum.TryParse(playback.Activation.category, out ActivationCategory category);
+
+            // The strike happens once per firing; the bars move once, afterwards,
+            // to where every firing left them. Moving them per strike would mean
+            // animating to a number the server never actually reported.
+            for (var strike = 0; strike < repeats; strike++)
+            {
+                switch (category)
+                {
+                    case ActivationCategory.Damage:
+                        yield return Jolt(46f, 0.55f);
+                        break;
+
+                    case ActivationCategory.Followers:
+                        yield return Jolt(-22f, 0.60f);
+                        break;
+
+                    case ActivationCategory.Health:
+                        yield return ShakeCard(0.55f);
+                        break;
+
+                    case ActivationCategory.Block:
+                        yield return ShakeCard(0.50f);
+                        break;
+
+                    default:
+                        yield return GrowAndSettle();
+                        break;
+                }
+            }
+
             switch (category)
             {
-                // One hit per effect, then the bar takes as long as it needs.
-                // The strike is the punctuation; the number moving is the point,
-                // and it used to be over before it registered.
-                case ActivationCategory.Damage:
-                    yield return Jolt(46f, 0.55f);
-                    yield return AnimateStats(playback.Before, playback.After, 1.30f);
-                    break;
-
-                case ActivationCategory.Followers:
-                    yield return Jolt(-22f, 0.60f);
-                    yield return AnimateStats(playback.Before, playback.After, 1.20f);
-                    break;
-
                 case ActivationCategory.Health:
-                    yield return ShakeCard(0.55f);
                     FlyChangedGlyphs(playback, health: true);
-                    yield return AnimateStats(playback.Before, playback.After, 1.35f);
                     break;
 
                 case ActivationCategory.Block:
-                    yield return ShakeCard(0.50f);
                     FlyChangedGlyphs(playback, health: false);
-                    yield return AnimateStats(playback.Before, playback.After, 1.25f);
                     break;
 
                 default:
-                    yield return GrowAndSettle();
-                    yield return AnimateStats(playback.Before, playback.After, 1.00f);
+                    FlyChangedResources(playback);
                     break;
             }
+
+            yield return AnimateStats(playback.Before, playback.After, category switch
+            {
+                ActivationCategory.Damage => 1.30f,
+                ActivationCategory.Followers => 1.20f,
+                ActivationCategory.Health => 1.35f,
+                ActivationCategory.Block => 1.25f,
+                _ => 1.00f
+            });
 
             yield return new WaitForSeconds(0.40f);
             yield return Tween(0.35f, t =>
@@ -497,13 +544,35 @@ namespace Indoctrination.Net
                 name.fontStyle = FontStyle.Bold;
                 PinHeight(name.rectTransform, 22f);
 
-                var health = BuildBar(panel, "Health", new Color(0.88f, 0.16f, 0.27f),
+                // Block is green track welded onto the right-hand end of health,
+                // to the same scale, exactly as the board's own stat bars draw
+                // it - not a line of text saying how much there is.
+                var healthRow = UIFactory.Group("Health Row", panel);
+                var healthLayout = UIFactory.HorizontalLayout(
+                    healthRow, 0, new RectOffset(0, 0, 0, 0), controlWidth: true, controlHeight: true);
+                healthLayout.childAlignment = TextAnchor.MiddleLeft;
+                PinHeight(healthRow, 25f);
+
+                var health = BuildBar(healthRow, "Health", new Color(0.88f, 0.16f, 0.27f),
                     player.Health, GameSettings.MaxHealth, out var healthText);
+                health.rectTransform.parent.gameObject.GetComponent<LayoutElement>().flexibleWidth = 1f;
+
+                var blockTrack = UIFactory.Panel(
+                    "Block", healthRow, new Color(0.247f, 0.722f, 0.502f, 0.95f));
+                var blockPin = blockTrack.gameObject.AddComponent<LayoutElement>();
+                blockPin.minHeight = blockPin.preferredHeight = 25f;
+                blockPin.flexibleWidth = 0f;
+                blockPin.minWidth = blockPin.preferredWidth =
+                    Mathf.Clamp01(player.Block / (float)GameSettings.MaxHealth) * 150f;
+                blockTrack.gameObject.SetActive(player.Block > 0);
+
                 var followers = BuildBar(panel, "Followers", UITheme.Signal,
                     player.Followers, GameSettings.FollowersToWin, out var followerText);
-                var block = UIFactory.Label("Block", panel, $"+{player.Block} block", 13,
-                    TextAnchor.MiddleRight, new Color(0.31f, 0.92f, 0.55f));
-                PinHeight(block.rectTransform, 17f);
+
+                var block = UIFactory.Label("Block Value", blockTrack, "", 12,
+                    TextAnchor.MiddleCenter, UITheme.Void);
+                block.fontStyle = FontStyle.Bold;
+                UIFactory.Stretch(block.rectTransform);
 
                 _rows[player.Id] = new HudRow
                 {
@@ -551,7 +620,19 @@ namespace Indoctrination.Net
                     pair.Value.Followers.fillAmount = Mathf.Clamp01(followers / (float)GameSettings.FollowersToWin);
                     pair.Value.HealthText.text = $"Health  {health}/{GameSettings.MaxHealth}";
                     pair.Value.FollowersText.text = $"Followers  {followers}/{GameSettings.FollowersToWin}";
-                    pair.Value.BlockText.text = $"+{Mathf.RoundToInt(Mathf.Lerp(from.Block, to.Block, eased))} block";
+                    var block = Mathf.RoundToInt(Mathf.Lerp(from.Block, to.Block, eased));
+                    pair.Value.BlockText.text = block > 0 ? block.ToString() : "";
+
+                    // The green segment grows and shrinks with the number, so
+                    // Block reads as the health bar getting longer.
+                    var blockTrack = (RectTransform)pair.Value.BlockText.transform.parent;
+                    blockTrack.gameObject.SetActive(block > 0);
+                    var blockPin = blockTrack.GetComponent<LayoutElement>();
+                    if (blockPin != null)
+                    {
+                        blockPin.minWidth = blockPin.preferredWidth =
+                            Mathf.Clamp01(block / (float)GameSettings.MaxHealth) * 150f;
+                    }
                 }
             });
         }
@@ -625,6 +706,36 @@ namespace Indoctrination.Net
             }
         }
 
+        /// <summary>
+        /// Resources a card just paid out, thrown off it as coloured pips. The
+        /// board's own resource HUD is not on screen during the sequence, so
+        /// they fly down toward where it lives rather than at nothing.
+        /// </summary>
+        private void FlyChangedResources(Playback playback)
+        {
+            foreach (var pair in playback.After.Players)
+            {
+                if (!playback.Before.Players.TryGetValue(pair.Key, out var before))
+                {
+                    continue;
+                }
+
+                foreach (var color in BoardArt.Colors)
+                {
+                    var gained = pair.Value.Resources.GetValueOrDefault(color)
+                                 - before.Resources.GetValueOrDefault(color);
+
+                    for (var i = 0; i < Mathf.Min(gained, 5); i++)
+                    {
+                        var target = _root.TransformPoint(
+                            new Vector3(-_root.rect.width * 0.42f, -_root.rect.height * 0.34f, 0f));
+
+                        StartCoroutine(FlyGlyph("●", BoardArt.ColorOf(color), target, i * 0.07f));
+                    }
+                }
+            }
+        }
+
         private IEnumerator FlyGlyph(string glyph, Color color, Vector3 target, float delay)
         {
             if (delay > 0f)
@@ -663,7 +774,7 @@ namespace Indoctrination.Net
             var snapshot = new Snapshot();
             foreach (var player in view.players)
             {
-                snapshot.Players[player.playerId] = new PlayerSnapshot
+                var captured = new PlayerSnapshot
                 {
                     Id = player.playerId,
                     Name = player.name,
@@ -672,6 +783,13 @@ namespace Indoctrination.Net
                     Block = player.block,
                     Alive = player.isAlive
                 };
+
+                captured.Resources[ResourceColor.Red] = player.red;
+                captured.Resources[ResourceColor.Green] = player.green;
+                captured.Resources[ResourceColor.Blue] = player.blue;
+                captured.Resources[ResourceColor.Yellow] = player.yellow;
+
+                snapshot.Players[player.playerId] = captured;
 
                 foreach (var card in player.compound)
                 {
