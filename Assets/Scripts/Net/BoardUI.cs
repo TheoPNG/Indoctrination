@@ -158,6 +158,7 @@ namespace Indoctrination.Net
         private StatBar _viewerStatBar;
         private ActivationStage _activationStage;
         private ShoutBanner _shoutBanner;
+        private DieRoller _dieRoller;
         private RectTransform _shoutRow;
         private InputField _shoutField;
         private Button _shoutButton;
@@ -258,6 +259,7 @@ namespace Indoctrination.Net
             CardPreview.CreateOn(canvas.transform);
             _activationStage = ActivationStage.CreateOn(canvas.transform);
             _shoutBanner = ShoutBanner.CreateOn(canvas.transform);
+            _dieRoller = DieRoller.CreateOn(canvas.transform);
 
             ShowOnly(_connectPanel);
         }
@@ -1158,6 +1160,7 @@ namespace Indoctrination.Net
             _somethingHitThisRefresh = false;
 
             RefreshTopBar(view);
+            RefreshDie(view);
             RefreshShoutControls(manager);
             RefreshResourceHud(manager, view);
             RefreshBattlefield(manager, view);
@@ -1763,6 +1766,29 @@ namespace Indoctrination.Net
         /// about what is queued, not an event.
         /// </summary>
         private void ShowShout(string from, string message) => _shoutBanner.Show(from, message);
+
+        /// <summary>
+        /// Throws the die when the viewer's own roll comes back, and clears it
+        /// away once the turn has moved past Rolling.
+        ///
+        /// Driven off the authoritative number rather than off pressing the
+        /// button: the die that lands is showing what the server rolled, not
+        /// what this machine hoped for. Only the viewer's own die is thrown -
+        /// every roll at the table would be four dice landing at once, and the
+        /// opponents' faces are already on their stat bars.
+        /// </summary>
+        private void RefreshDie(GameView view)
+        {
+            var you = view.Viewer;
+
+            if (view.phase != nameof(TurnPhase.Rolling) || you is not { hasRolled: true })
+            {
+                _dieRoller.Dismiss();
+                return;
+            }
+
+            _dieRoller.Show(you.primaryDie);
+        }
 
         /// <summary>
         /// The shout box says nothing about itself until it is unlocked. A table

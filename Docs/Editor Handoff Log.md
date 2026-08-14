@@ -306,6 +306,56 @@ printed face or the visible code-built title fallback.
 - SmokeTest passing, including all Blue art/resource/aspect checks.
 - No fuzz run: no `GameState` or effect behavior changed.
 
+## 2026-08-13 — Claude (a die that actually gets thrown)
+
+`DieRoller` throws a real die when the viewer rolls, settles it on the number
+the server rolled, and leaves it lying there until it is clicked away.
+
+Three decisions worth knowing before touching it:
+
+**It is filmed, not placed on the board.** The board is a ScreenSpaceOverlay
+canvas over an opaque backdrop, so anything in the scene draws *behind* all of
+it and is simply invisible. The die lives on its own little stage 2000 units
+below the board, has its own camera and light, and appears on the board as the
+picture that camera takes into a RenderTexture. Nothing about the game's camera
+or canvas changed.
+
+**Isolated by distance, not by a layer.** Layers live in project settings and
+would have to be reserved and kept in step. The board's camera sits at y=12
+with the default 1000 of draw distance, so it cannot see a stage at y=-2000.
+There is a test assertion on exactly that gap, because it is the sort of thing
+that silently stops being true if either camera is retuned.
+
+**The tumble is animated, not simulated.** The number is decided by the server
+before the die is thrown. Real physics would settle on whatever face it liked
+and then have to be snapped round to agree - visible, and a lie about which one
+is authoritative. Animating it means the die cannot land on a number the game
+did not roll.
+
+### The one thing that may need a nudge
+
+`DieRoller.FaceUp` maps a number to the orientation that shows it. That depends
+on how the model was built - which face carries which number, and which way it
+points at rest - and assumes the usual arrangement (1 up at no rotation,
+opposite faces summing to seven). **If a roll shows the wrong number, that table
+is the only thing to change**, one line per face. Nothing else about the throw
+depends on it. I could not verify it without watching one land.
+
+### Batchmode
+
+A RenderTexture cannot be created without a graphics device, which is exactly
+the case in the PlayMode tests. The first version of this took the entire suite
+down with `RenderTexture.Create failed`. The die now sits the whole thing out
+when there is no device: the board builds and plays normally and simply never
+shows one. **A flourish is never allowed to be the reason something fails** -
+worth keeping in mind for anything else that reaches for the GPU.
+
+### Verification
+
+PlayModeTests 45/45 with a new test covering the model loading, the throw, the
+click-away, and the camera separation. SmokeTest, RulesCheck plus 500 fuzzed
+games, CompileCheck.
+
 ## 2026-08-11 — Claude (green card art, and costs priced in followers)
 
 ### Costs can now include followers

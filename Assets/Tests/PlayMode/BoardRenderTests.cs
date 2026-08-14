@@ -9,6 +9,7 @@ using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.Rendering;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
 
@@ -1474,6 +1475,69 @@ namespace Indoctrination.Tests
                            "the bot should have drafted cards of its own");
             Assert.Greater(EffectContext.AllColors.Sum(c => bot.Resources[c]), 0,
                            "and taken its resources");
+        }
+
+        /// <summary>
+        /// The die model loads, is thrown when the viewer rolls, and clears away
+        /// on a click without taking anything else with it.
+        ///
+        /// The board is a ScreenSpaceOverlay canvas over an opaque backdrop, so
+        /// a die in the scene is invisible behind it - it is filmed by its own
+        /// camera and shown as a picture. That indirection is easy to break
+        /// silently, so this checks the picture exists and has something in it
+        /// rather than merely that the component was constructed.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RollingThrowsADieThatCanBeClickedAway()
+        {
+            Assert.IsNotNull(Resources.Load<GameObject>("Models/Die"),
+                             "the die model should be importable from Resources");
+
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Rolling);
+
+            var roller = Object.FindAnyObjectByType<DieRoller>(FindObjectsInactive.Include);
+            Assert.IsNotNull(roller, "the board should build a die roller");
+
+            var view = roller.GetComponentInChildren<RawImage>(includeInactive: true);
+            Assert.IsNotNull(view, "the die is shown as a picture taken by its own camera");
+
+            var game = ServerGame();
+            ApplyAsHost(_ => game.RollPrimaryDie(0));
+            yield return WaitForFrames(4);
+
+            // These tests run in batchmode with no graphics device, where a
+            // render texture cannot exist at all. The die is a flourish and is
+            // built to sit the whole thing out rather than take the board down
+            // with it, so that is what is checked when there is nothing to
+            // render into - and the full behaviour when there is.
+            if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null)
+            {
+                Assert.IsFalse(roller.gameObject.activeSelf,
+                    "with no graphics device the die must stay out of the way entirely");
+                Assert.IsNull(_manager.LastError, "and must not disturb the game");
+                yield break;
+            }
+
+            Assert.IsTrue(roller.gameObject.activeSelf, "rolling should throw the die");
+            Assert.IsNotNull(view.texture, "with an actual render texture behind it");
+
+            // It must not sit over the board swallowing clicks once dismissed.
+            view.GetComponent<Button>().onClick.Invoke();
+            yield return WaitForFrames(2);
+
+            Assert.IsFalse(roller.gameObject.activeSelf, "clicking the die clears it away");
+            Assert.IsNull(_manager.LastError, "and none of this touches the game");
+
+            // The board's own camera must not be able to see the die's stage, or
+            // it would appear as a stray object floating over the felt.
+            var stage = GameObject.Find("Die Stage");
+            if (stage != null && Camera.main != null)
+            {
+                var distance = Mathf.Abs(stage.transform.position.y - Camera.main.transform.position.y);
+                Assert.Greater(distance, Camera.main.farClipPlane,
+                    "the die stage has to sit beyond the board camera's draw distance");
+            }
         }
 
         /// <summary>
