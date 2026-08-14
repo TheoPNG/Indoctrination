@@ -350,7 +350,7 @@ namespace Indoctrination.Net
             {
                 var counter = counters[i];
                 var chip = UIFactory.Panel(counter.name, _counterStack,
-                    Color.Lerp(UITheme.SurfaceRaised, UITheme.Signal, 0.34f));
+                    BoardArt.ColorOfCounter(counter.name));
                 chip.anchorMin = chip.anchorMax = new Vector2(1f, 1f);
                 chip.pivot = new Vector2(1f, 1f);
                 chip.anchoredPosition = new Vector2(-(i % 2) * 17f, -i * 20f);
@@ -360,11 +360,12 @@ namespace Indoctrination.Net
                 image.raycastTarget = false;
                 UITheme.Frame(image, 1.2f, UITheme.Bone);
 
-                var initial = string.IsNullOrEmpty(counter.name)
-                    ? "•"
-                    : counter.name.Substring(0, 1).ToUpperInvariant();
-                var label = UIFactory.Label("Count", chip, $"{initial}{counter.count}",
-                    12, TextAnchor.MiddleCenter, UITheme.Bone);
+                // The number alone. Prefixing the kind's initial made a single
+                // meal counter read as "M1" - which looks like a quantity of
+                // eleven, or a code, rather than one meal. The kind is carried
+                // by the chip's colour, and spelled out in the card's preview.
+                var label = UIFactory.Label("Count", chip, counter.count.ToString(),
+                    15, TextAnchor.MiddleCenter, UITheme.Void);
                 label.fontStyle = FontStyle.Bold;
                 label.raycastTarget = false;
                 UIFactory.Stretch(label.rectTransform);

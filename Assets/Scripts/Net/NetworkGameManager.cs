@@ -789,10 +789,17 @@ namespace Indoctrination.Net
                 case TurnPhase.Rolling when _game.DiceRolled:
                     foreach (var player in _game.LivingPlayers.ToList())
                     {
-                        if (!IsOwedTheHighRollBonus(player.PlayerId))
+                        // Anybody still owed something keeps the phase open.
+                        // Try again's reroll only becomes legal once every die
+                        // is down, which is the same instant this used to end
+                        // the phase - so the card was unusable by construction.
+                        if (IsOwedTheHighRollBonus(player.PlayerId)
+                            || _game.CanReroll(player.PlayerId))
                         {
-                            everyoneReady |= _game.SetReady(player.PlayerId, true);
+                            continue;
                         }
+
+                        everyoneReady |= _game.SetReady(player.PlayerId, true);
                     }
 
                     break;
@@ -895,7 +902,16 @@ namespace Indoctrination.Net
         [Rpc(SendTo.Server)]
         public void RequestRerollRpc(RpcParams rpcParams = default)
         {
-            Apply(rpcParams, playerId => _game.RerollPrimaryDie(playerId));
+            Apply(rpcParams, playerId =>
+            {
+                _game.RerollPrimaryDie(playerId);
+
+                // Spending the reroll is the last thing this player was owed, so
+                // the phase is free to close again. Without this the table sat
+                // waiting for Readies that it used to press for everybody the
+                // moment the dice were down.
+                FinishPhaseIfNothingLeftToDo(playerId);
+            });
         }
 
         [Rpc(SendTo.Server)]

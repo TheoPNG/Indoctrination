@@ -534,7 +534,8 @@ namespace Indoctrination.Net
 
             foreach (var counter in card.counters)
             {
-                var chip = UIFactory.Panel($"{counter.name} Chip", _chipRow, ChipColour(counter.name));
+                var chip = UIFactory.Panel(
+                    $"{counter.name} Chip", _chipRow, BoardArt.ColorOfCounter(counter.name));
                 UIFactory.SetSize(chip, ChipSize, ChipSize);
                 var pin = chip.gameObject.AddComponent<LayoutElement>();
                 pin.minWidth = pin.preferredWidth = ChipSize;
@@ -554,15 +555,6 @@ namespace Indoctrination.Net
             }
         }
 
-        /// <summary>
-        /// A stable colour per counter kind, so the same counter is the same chip
-        /// every time without needing a table of every counter in the game.
-        /// </summary>
-        private static Color ChipColour(string name)
-        {
-            var hue = Mathf.Abs((name ?? "").GetHashCode() % 360) / 360f;
-            return Color.HSVToRGB(hue, 0.55f, 0.85f);
-        }
 
         private void BuildHud(Snapshot snapshot)
         {

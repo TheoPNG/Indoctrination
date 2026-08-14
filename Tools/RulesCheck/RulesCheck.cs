@@ -315,6 +315,8 @@ static class RulesCheck
         CheckActivationOrder(cards);
         CheckStandardizedUniforms(cards);
         CheckChoicesSpeakForThemselves(cards);
+        CheckSuspiciousChefCount(cards);
+        CheckTryAgainHasAWindow(cards);
         CheckConcessions(cards);
         CheckEndStates(cards);
         CheckPerPlayerViews(cards);
@@ -909,6 +911,137 @@ static class RulesCheck
         Check("and taking the follower option gains one",
               game.Players[0].Followers == followers + 1,
               $"{followers} -> {game.Players[0].Followers}");
+    }
+
+    /// <summary>
+    /// Suspicious Chef: starts on one meal counter, deals damage equal to its
+    /// counters, and its counters may be bought up once a turn. Traced end to
+    /// end because "the count seems odd" could be the printed counter, the
+    /// purchase, the damage, or what the board is told - and they are four
+    /// different bugs.
+    /// </summary>
+    static void CheckSuspiciousChefCount(List<CardDefinition> cards)
+    {
+        Console.WriteLine("\nSuspicious Chef (meal counters):");
+
+        var game = new GameState(new[] { "A", "B" }, cards, randomSeed: 61);
+        var owner = game.Players[0];
+        var victim = game.Players[1];
+
+        var chef = new CardInstance(-90, cards.First(c => c.id == CardIds.SuspiciousChef));
+        owner.Compound.Add(chef);
+
+        // Entering play is what prints the first counter.
+        game.EnqueueEffect(
+            chef, owner, CardEffects.OnEnterPlay(CardIds.SuspiciousChef), "Chef enters play");
+        game.ResolveEffects();
+
+        Check("it comes into play carrying one meal counter",
+              chef.GetCounter(Counters.Meal) == 1, $"{chef.GetCounter(Counters.Meal)}");
+
+        // Activating deals damage equal to the counters - one, at this point.
+        var before = victim.Health;
+        game.EnqueueEffect(chef, owner, CardEffects.For(CardIds.SuspiciousChef, 5), "Chef");
+        game.ResolveEffects();
+
+        if (game.PendingChoice != null)
+        {
+            game.AnswerPlayerChoice(0, victim.PlayerId);
+        }
+
+        Check("and deals damage equal to that count",
+              victim.Health == before - 1, $"{before} -> {victim.Health}");
+
+        // Buying one takes it to two, and costs exactly what it says.
+        foreach (var color in EffectContext.AllColors)
+        {
+            owner.Resources.Add(color, 10);
+        }
+
+        var paid = owner.Resources.Total;
+        var payment = Enumerable.Repeat(ResourceColor.Yellow, GameSettings.MealCounterCost).ToList();
+        game.BuyMealCounter(0, chef.InstanceId, payment);
+
+        Check("buying a meal counter adds exactly one",
+              chef.GetCounter(Counters.Meal) == 2, $"{chef.GetCounter(Counters.Meal)}");
+        Check("and charges exactly its printed cost",
+              owner.Resources.Total == paid - GameSettings.MealCounterCost,
+              $"{paid} -> {owner.Resources.Total}");
+
+        Check("but only once a turn",
+              Throws(() => game.BuyMealCounter(0, chef.InstanceId, payment)));
+
+        // The bigger count has to reach the board, or a card that is working
+        // still looks broken.
+        var seen = GameViewBuilder.Build(game, 0)
+            .players.First(p => p.playerId == 0)
+            .compound.First(c => c.instanceId == chef.InstanceId);
+
+        var meal = seen.counters.FirstOrDefault(counter => counter.name == Counters.Meal);
+        Check("and the board is told the new count",
+              meal != null && meal.count == 2,
+              meal == null ? "no meal counter in the view" : $"{meal.count}");
+
+        // And the damage follows the counter up.
+        var second = victim.Health;
+        game.EnqueueEffect(chef, owner, CardEffects.For(CardIds.SuspiciousChef, 5), "Chef");
+        game.ResolveEffects();
+
+        if (game.PendingChoice != null)
+        {
+            game.AnswerPlayerChoice(0, victim.PlayerId);
+        }
+
+        Check("a second counter means two damage, not one",
+              victim.Health == second - 2, $"{second} -> {victim.Health}");
+    }
+
+    /// <summary>
+    /// Try again has to have a moment in which it can be used: after every die
+    /// is down, and before the units look at the results.
+    ///
+    /// That window is the whole card. The reroll only becomes legal once every
+    /// die has landed, and the Rolling phase used to close on exactly that
+    /// event - so the card was unusable by construction, and the rules alone
+    /// looked correct throughout. This checks the window is open, not merely
+    /// that the reroll works once you are in it.
+    /// </summary>
+    static void CheckTryAgainHasAWindow(List<CardDefinition> cards)
+    {
+        Console.WriteLine("\nTry again (the reroll window):");
+
+        var game = new GameState(new[] { "A", "B" }, cards, randomSeed: 64);
+        FinishDraft(game);
+
+        var owner = game.Players[0];
+        owner.Compound.Add(new CardInstance(-95, cards.First(c => c.id == CardIds.TryAgain)));
+
+        Check("no reroll is offered before the dice are down", !game.CanReroll(0));
+
+        foreach (var player in game.LivingPlayers.ToList())
+        {
+            game.RollPrimaryDie(player.PlayerId);
+        }
+
+        Check("once every die has landed, the reroll is open", game.CanReroll(0));
+        Check("but only to whoever actually holds the card", !game.CanReroll(1));
+
+        var before = owner.PrimaryDie;
+        game.RerollPrimaryDie(0);
+
+        Check("taking it closes the offer", !game.CanReroll(0));
+        Check("and it cannot be taken twice in a turn",
+              Throws(() => game.RerollPrimaryDie(0)));
+
+        // The die may legitimately land on the same face, so this checks the
+        // reroll happened rather than that the number changed.
+        Check("the die was rerolled",
+              owner.PrimaryDie >= 1 && owner.PrimaryDie <= GameSettings.DieSides,
+              $"{before} -> {owner.PrimaryDie}");
+
+        // And the phase is still Rolling, so there was somewhere to use it.
+        Check("the phase is still open at that point",
+              game.Phase == TurnPhase.Rolling, game.Phase.ToString());
     }
 
     static bool DoesNotThrow(Action action)

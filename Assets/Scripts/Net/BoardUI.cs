@@ -1749,8 +1749,7 @@ namespace Indoctrination.Net
             {
                 cardView.SetExtraContent(content => BuildBaalExtra(content, manager, view, cardView));
             }
-            else if (card.definitionId == CardIds.TryAgain
-                     && view.phase == nameof(TurnPhase.Rolling) && view.diceRolled)
+            else if (card.definitionId == CardIds.TryAgain && view.Viewer is { canReroll: true })
             {
                 cardView.SetExtraContent(content => BuildTryAgainExtra(content, manager));
             }
@@ -2538,6 +2537,13 @@ namespace Indoctrination.Net
             if (view.phase == nameof(TurnPhase.Rolling) && !you.hasRolled)
             {
                 return "Roll your die first";
+            }
+
+            // The phase deliberately waits rather than closing the instant the
+            // last die lands, or the reroll could never be reached.
+            if (you.canReroll)
+            {
+                return "Try again is open - reroll from the card, or ready up";
             }
 
             if (view.phase == nameof(TurnPhase.Resource) && !you.collectedResources)

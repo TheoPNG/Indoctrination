@@ -1453,6 +1453,28 @@ namespace Indoctrination.Core
         /// Try again's reroll. Only available in the Rolling phase, before any
         /// unit has looked at the result, and only once per turn.
         /// </summary>
+        /// <summary>
+        /// Whether this player still has Try again's reroll available.
+        ///
+        /// Non-consuming, unlike the reroll itself, because the phase has to ask
+        /// this before deciding whether it may end. Rolling used to close the
+        /// instant the last die landed, which is exactly the moment the reroll
+        /// becomes legal - so the card could never be used at all.
+        /// </summary>
+        public bool CanReroll(int playerId)
+        {
+            if (Phase != TurnPhase.Rolling || PendingChoice != null || !DiceRolled)
+            {
+                return false;
+            }
+
+            var player = _players.FirstOrDefault(p => p.PlayerId == playerId);
+
+            return player is { IsAlive: true }
+                   && player.HasInPlay(CardIds.TryAgain)
+                   && !_oncePerTurn.Contains($"reroll:{playerId}");
+        }
+
         public void RerollPrimaryDie(int playerId)
         {
             RequirePhase(TurnPhase.Rolling);

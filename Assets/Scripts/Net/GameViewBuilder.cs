@@ -80,6 +80,7 @@ namespace Indoctrination.Net
                     primaryDie = player.PrimaryDie,
                     privateDice = player.PrivateDice.ToArray(),
                     hasRolled = game.HasRolled(player.PlayerId),
+                    canReroll = game.CanReroll(player.PlayerId),
                     isAlive = player.IsAlive,
                     red = player.Resources[ResourceColor.Red],
                     green = player.Resources[ResourceColor.Green],

@@ -49,6 +49,21 @@ namespace Indoctrination.Net
             _ => new Color(0.741f, 0.776f, 0.831f)
         };
 
+        /// <summary>
+        /// A stable colour per counter kind, derived from its name so every
+        /// counter in the game has one without a table to maintain.
+        ///
+        /// The colour is how a kind is told apart, because the chip itself is
+        /// only big enough for a number. It used to carry the kind's initial as
+        /// well - a single meal counter rendered as "M1", which reads as eleven
+        /// rather than as one meal.
+        /// </summary>
+        public static Color ColorOfCounter(string name)
+        {
+            var hue = Mathf.Abs((name ?? "").GetHashCode() % 360) / 360f;
+            return Color.HSVToRGB(hue, 0.55f, 0.85f);
+        }
+
         public static IReadOnlyList<ResourceColor> Colors { get; } = new[]
         {
             ResourceColor.Red, ResourceColor.Green, ResourceColor.Blue, ResourceColor.Yellow

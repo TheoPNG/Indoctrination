@@ -1477,6 +1477,65 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// The Rolling phase waits for a player holding Try again.
+        ///
+        /// The rules were always right about the reroll; the server was not. It
+        /// readied everybody the instant the last die landed, and that is the
+        /// same instant the reroll becomes legal - so the phase was already over
+        /// before the card could be used, and nothing in the rules engine could
+        /// see anything wrong. The window has to be checked where it was closed.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TryAgainKeepsTheRollingPhaseOpen()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Rolling);
+
+            var game = ServerGame();
+            game.Players[0].Compound.Add(
+                new CardInstance(-950, CardDatabase.Instance.Get(CardIds.TryAgain)));
+
+            // Every die down - which is exactly when this used to end the phase.
+            ApplyAsHost(_ => game.RollPrimaryDice());
+            yield return WaitForFrames(6);
+
+            Assert.AreEqual(nameof(TurnPhase.Rolling), _manager.View.phase,
+                "the phase must wait for a player who can still reroll");
+            Assert.IsTrue(_manager.View.Viewer.canReroll,
+                "and the board has to be told the offer is open");
+
+            var before = _manager.View.Viewer.primaryDie;
+            _manager.RequestRerollRpc();
+            yield return WaitForFrames(6);
+
+            Assert.IsFalse(_manager.View.Viewer.canReroll,
+                "taking the reroll closes the offer");
+            Assert.Greater(_manager.View.Viewer.primaryDie, 0,
+                $"and leaves a legal die (was {before})");
+
+            // A unique high roller is still owed their bonus, and that also holds
+            // the phase open - correctly, and by a different mechanism than the
+            // one under test. Settle it so what is left is only the reroll.
+            var living = game.LivingPlayers.ToList();
+            var highest = living.Max(p => p.PrimaryDie);
+            var tiedAtTop = living.Where(p => p.PrimaryDie == highest).ToList();
+
+            if (!game.HighRollResourceClaimed && tiedAtTop.Count == 1)
+            {
+                ApplyAsHost(_ => game.ClaimHighRollResource(tiedAtTop[0].PlayerId, ResourceColor.Red));
+            }
+
+            // With nothing left owed it closes on its own, exactly as it did
+            // before the card existed. Spending the reroll has to hand the phase
+            // back, or holding Try again would mean the whole table pressing
+            // Ready by hand every turn.
+            yield return WaitForFrames(8);
+
+            Assert.AreNotEqual(nameof(TurnPhase.Rolling), _manager.View.phase,
+                "once nothing is owed the phase should close on its own again");
+        }
+
+        /// <summary>
         /// Zeroes the server's presentation pacing so a test can run a game at
         /// frame speed instead of at the speed it is meant to be watched.
         /// </summary>

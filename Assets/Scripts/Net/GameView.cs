@@ -195,6 +195,13 @@ namespace Indoctrination.Net
         public int[] privateDice = Array.Empty<int>();
 
         public bool hasRolled;
+
+        /// <summary>
+        /// Whether Try again's reroll is still available to this player. The
+        /// phase deliberately waits on anyone this is true for, so the board has
+        /// to be able to say the offer is open.
+        /// </summary>
+        public bool canReroll;
         public bool isAlive;
 
         public int red;
