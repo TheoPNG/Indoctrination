@@ -1148,6 +1148,7 @@ namespace Indoctrination.Net
 
             var phaseBefore = _game.Phase;
             var turnBefore = _game.TurnInRound;
+            var drafterBefore = _game.CurrentDrafterId;
             var hadPendingChoice = _game.PendingChoice != null;
             var completedActivationsBefore = _game.ActivationCompletedCount;
 
@@ -1165,7 +1166,16 @@ namespace Indoctrination.Net
             // advance, so the timer has to be restarted from whatever moved it. An
             // answered choice restarts it too - the player should not lose time to
             // a question a card interrupted them with.
+            //
+            // The drafter changing restarts it as well, and that one was missing.
+            // A draft is a run of individual picks inside one phase, so without
+            // it the whole draft shared a single phase's worth of time: the clock
+            // ran straight down across everybody's turn, sat on zero for the rest
+            // of the round, and the remaining picks were taken automatically the
+            // moment each player was asked for one. The clock belongs to the
+            // person being waited on, not to the phase.
             if (_game.Phase != phaseBefore || _game.TurnInRound != turnBefore
+                || _game.CurrentDrafterId != drafterBefore
                 || (hadPendingChoice && _game.PendingChoice == null))
             {
                 _phaseStartedAt = Time.time;
@@ -1265,7 +1275,13 @@ namespace Indoctrination.Net
         {
             // With the clocks off there is no countdown to report, and the board
             // shows nothing rather than a number that never moves.
-            var phaseRemaining = !_timersEnabled || _game.Phase is TurnPhase.Draft or TurnPhase.GameOver
+            //
+            // The draft used to be excluded here and reported a flat zero, which
+            // is why the board sat on "0s until a pick is made for you" for the
+            // whole draft. The server has always enforced a draft timeout - it
+            // takes the pick for an absent player - so there was a real clock
+            // running the entire time; it just was not being sent.
+            var phaseRemaining = !_timersEnabled || _game.Phase == TurnPhase.GameOver
                 ? 0f
                 : Mathf.Max(0f, GameSettings.PhaseTimeoutSeconds - (Time.time - _phaseStartedAt));
 

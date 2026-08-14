@@ -1220,7 +1220,7 @@
       "costRaw": "RRRRYG",
       "color": "Red",
       "effect": "When any player takes damage, add a violence counter to Asmodeus. Upon activation, deal violence/2 to all players.",
-      "count": 1,
+      "count": 0,
       "activationNumbers": [
         4
       ]

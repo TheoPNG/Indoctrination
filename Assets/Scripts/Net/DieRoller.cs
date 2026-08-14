@@ -134,6 +134,9 @@ namespace Indoctrination.Net
             public Rigidbody Body;
             public Text Label;
             public int Value;
+
+            /// <summary>Whose die it is, as it should read while it is still rolling.</summary>
+            public string Owner;
         }
 
         /// <summary>One die's throw, step by step, as the physics played it.</summary>
@@ -482,10 +485,13 @@ namespace Indoctrination.Net
 
                 thrown.Value = rolls[i].Value;
 
-                // The rolled number is written beside the name on purpose: it
-                // is what the game is actually using, so it is also the check
-                // that the die on the table agrees with it.
-                thrown.Label.text = $"{(rolls[i].IsViewer ? "YOU" : rolls[i].Name)}  ·  {rolls[i].Value}";
+                // Only the name while it is in the air. The number is written
+                // beside it once the die has stopped - it is what the game is
+                // actually using, so it is also the check that the die on the
+                // table agrees with it, but printing it during the throw
+                // announces the result before the die gets there.
+                thrown.Owner = rolls[i].IsViewer ? "YOU" : rolls[i].Name;
+                thrown.Label.text = thrown.Owner;
                 thrown.Label.color = rolls[i].IsViewer ? UITheme.Signal : UITheme.Bone;
             }
         }
@@ -660,6 +666,13 @@ namespace Indoctrination.Net
             }
 
             yield return Replay(live, recordings);
+
+            // Now, and not before: the dice have stopped, so the numbers can be
+            // read off them and are no longer a spoiler.
+            foreach (var thrown in live)
+            {
+                thrown.Label.text = $"{thrown.Owner}  ·  {thrown.Value}";
+            }
 
             PlaceLabels();
             PlaceDismissArea(live);

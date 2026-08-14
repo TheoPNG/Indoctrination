@@ -1579,6 +1579,83 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// The draft clock runs, and starts again for whoever is asked next.
+        ///
+        /// Two separate faults made it read "0s until a pick is made for you"
+        /// for the whole draft. The view forced the remaining time to zero
+        /// during Draft, even though the server has always enforced a draft
+        /// timeout - so a real clock was running and simply never sent. And the
+        /// clock was only restarted by a phase change, while a draft is a run of
+        /// individual picks inside one phase, so the whole table shared a single
+        /// phase's worth of time between them.
+        ///
+        /// This waits real seconds on purpose. The second fault is only visible
+        /// once enough time has passed to see it not being given back.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheDraftClockRestartsForEachPlayerAsked()
+        {
+            yield return StartGame();
+            yield return WaitForFrames(2);
+
+            var game = ServerGame();
+            Assert.AreEqual(TurnPhase.Draft, game.Phase);
+
+            // Tables start with the clocks off, and this is a test about the
+            // clock.
+            _manager.RequestSetTimersRpc(true);
+            yield return WaitForFrames(2);
+            Assert.IsTrue(_manager.View.timersEnabled);
+
+            Assert.Greater(_manager.View.phaseSecondsRemaining, 0f,
+                "the draft has a real time limit, so the board has to be told what it is");
+
+            var samples = 0;
+            while (game.Phase == TurnPhase.Draft && samples < 3)
+            {
+                // Long enough that a clock which was never restarted would be
+                // visibly short by the next pick.
+                yield return new WaitForSeconds(1.1f);
+
+                var drafter = game.CurrentDrafterId.Value;
+                var took = false;
+
+                // Whichever card is actually legal. Blocked by Games and a
+                // reserved pick both make the first card in the zone illegal for
+                // this player, and which cards are where depends on the shuffle
+                // - taking the first one regardless would fail on some seeds and
+                // not others.
+                foreach (var card in game.DraftZone.Select(c => c.InstanceId).ToList())
+                {
+                    ApplyAsHost(_ => game.DraftCard(drafter, card));
+                    yield return WaitForFrames(2);
+
+                    if (game.CurrentDrafterId != drafter || game.Phase != TurnPhase.Draft)
+                    {
+                        took = true;
+                        break;
+                    }
+                }
+
+                Assert.IsTrue(took, "the drafter should have been able to take something");
+
+                if (game.Phase != TurnPhase.Draft)
+                {
+                    break;
+                }
+
+                samples++;
+                Assert.Greater(
+                    _manager.View.phaseSecondsRemaining,
+                    GameSettings.PhaseTimeoutSeconds - 1f,
+                    "the player being waited on should get the whole clock, not "
+                    + "whatever the last player left of it");
+            }
+
+            Assert.Greater(samples, 0, "the draft should have run long enough to check");
+        }
+
+        /// <summary>
         /// The cards you are being asked to pick from are lit; nobody else's
         /// turn lights anything.
         ///
@@ -1683,6 +1760,62 @@ namespace Indoctrination.Tests
             peek.Hide();
             yield return WaitForFrames(1);
             Assert.AreEqual(-1, peek.ShowingFor, "and it goes away again");
+        }
+
+        /// <summary>
+        /// The number is not printed beside a player's name while their die is
+        /// still in the air.
+        ///
+        /// The whole point of throwing a die is that the number arrives when it
+        /// stops. Writing it into the strips the instant the server says so
+        /// answers the question before the throw does, and makes the roll
+        /// decorative.
+        ///
+        /// Checked through StatBar directly, because whether the dice are still
+        /// rolling depends on an animation that never runs in batchmode - where
+        /// the board correctly shows the numbers at once, there being nothing to
+        /// wait for.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ARolledNumberIsHiddenWhileTheDieIsStillRolling()
+        {
+            yield return StartGame();
+            yield return WaitForFrames(2);
+
+            var bar = StatBar.Create(_board.transform);
+            var player = _manager.View.players.First();
+            player.hasRolled = true;
+            player.primaryDie = 5;
+            player.privateDice = new[] { 3 };
+
+            bar.Populate(player, isViewer: false, revealDice: false);
+            yield return WaitForFrames(1);
+
+            var faces = bar.GetComponentsInChildren<Text>(true)
+                .Where(t => t.name is "Die Face" or "Face")
+                .Select(t => t.text)
+                .ToList();
+
+            Assert.IsNotEmpty(faces, "the die box should be showing while a player is rolling");
+            CollectionAssert.DoesNotContain(faces, "5",
+                "the rolled number must not be readable before the die lands");
+            CollectionAssert.DoesNotContain(faces, "3",
+                "and neither must a private die");
+            CollectionAssert.AreEquivalent(new[] { "?", "?" }, faces,
+                "a player who is rolling should read as rolling, not as not having rolled");
+
+            bar.Populate(player, isViewer: false, revealDice: true);
+            yield return WaitForFrames(1);
+
+            faces = bar.GetComponentsInChildren<Text>(true)
+                .Where(t => t.name is "Die Face" or "Face")
+                .Select(t => t.text)
+                .ToList();
+
+            CollectionAssert.Contains(faces, "5", "and once it lands, the number is shown");
+            CollectionAssert.Contains(faces, "3");
+
+            Object.Destroy(bar.gameObject);
         }
 
         /// <summary>

@@ -373,6 +373,15 @@ static class RulesCheck
             .Select(c => c.id).ToList();
         Check("every Unit has at least one activation number",
               everyUnitActivates.Count == 0, string.Join(", ", everyUnitActivates));
+
+        // Cards with no copies are still fully defined and fully implemented -
+        // they simply never reach the deck. That is how a card is taken out
+        // without deleting the work, and it is completely invisible in play, so
+        // it is reported every run rather than left to be rediscovered.
+        var benched = cards.Where(c => c.Count <= 0).Select(c => c.title).ToList();
+        Console.WriteLine(benched.Count == 0
+            ? "  ----  every card is in the deck"
+            : $"  ----  BENCHED, not in the deck: {string.Join(", ", benched)}");
     }
 
     /// <summary>

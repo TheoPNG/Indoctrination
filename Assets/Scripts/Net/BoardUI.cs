@@ -1288,9 +1288,19 @@ namespace Indoctrination.Net
 
             foreach (var player in opponents)
             {
-                _statBars[player.playerId].Populate(player, isViewer: false);
+                _statBars[player.playerId].Populate(player, isViewer: false, DiceRevealed);
             }
         }
+
+        /// <summary>
+        /// Whether the numbers rolled may be shown yet.
+        ///
+        /// False while the dice are in the air. The whole point of throwing them
+        /// is that the number arrives when a die stops, so printing it next to
+        /// everybody's name the instant the server says so answers the question
+        /// before the throw does.
+        /// </summary>
+        private bool DiceRevealed => _dieRoller == null || _dieRoller.Settled;
 
         /// <summary>
         /// Shows an opponent's whole position while the pointer is on their
@@ -2104,7 +2114,7 @@ namespace Indoctrination.Net
             _viewerStatBar.gameObject.SetActive(you != null);
             if (you != null)
             {
-                _viewerStatBar.Populate(you, isViewer: true);
+                _viewerStatBar.Populate(you, isViewer: true, DiceRevealed);
             }
 
             // Rebuilding the tray restarts every card's deal-in animation, so a

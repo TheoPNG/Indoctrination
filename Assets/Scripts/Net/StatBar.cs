@@ -167,7 +167,13 @@ namespace Indoctrination.Net
         /// <summary>The health bar, so a wound landing can knock it.</summary>
         public RectTransform HealthBar => _healthFill == null ? null : _healthFill.rectTransform;
 
-        public void Populate(PlayerView player, bool isViewer)
+        /// <summary>
+        /// Fills the strip in. <paramref name="revealDice"/> is false while the
+        /// dice are still rolling: the number is the answer to the throw, and
+        /// printing it beside a player's name while their die is still in the
+        /// air gives it away before the die does.
+        /// </summary>
+        public void Populate(PlayerView player, bool isViewer, bool revealDice = true)
         {
             _nameText.text = player.isAlive
                 ? $"{player.name}{(isViewer ? " (you)" : "")}{(player.offeringDraw ? "  ✋" : "")}"
@@ -175,11 +181,15 @@ namespace Indoctrination.Net
             _nameText.color = player.isAlive ? UITheme.Bone : UITheme.BoneDim;
 
             // Blank until they have actually rolled, so an old face never lingers
-            // as though this turn's roll had already happened.
+            // as though this turn's roll had already happened. Once they have,
+            // the box appears straight away but holds a question mark until the
+            // dice have finished rolling - "rolling" and "has not rolled" are
+            // different things, and the strip should say which.
             _dieBox.gameObject.SetActive(player.hasRolled && player.primaryDie > 0);
-            _dieText.text = player.primaryDie.ToString();
+            _dieText.text = revealDice ? player.primaryDie.ToString() : "?";
+            _dieText.color = revealDice ? UITheme.Void : new Color(0.35f, 0.35f, 0.38f);
 
-            BuildPrivateDice(player);
+            BuildPrivateDice(player, revealDice);
 
             _healthText.text = $"{player.health}/{GameSettings.MaxHealth}";
             BoardEffects.Instance.FillTo(_healthFill, (float)player.health / GameSettings.MaxHealth);
@@ -206,7 +216,7 @@ namespace Indoctrination.Net
         /// the difference is visible at a glance: these numbers wake only their
         /// units, and reading the board depends on knowing that.
         /// </summary>
-        private void BuildPrivateDice(PlayerView player)
+        private void BuildPrivateDice(PlayerView player, bool revealDice)
         {
             var dice = player.privateDice ?? System.Array.Empty<int>();
             var show = player.hasRolled && dice.Length > 0;
@@ -228,7 +238,8 @@ namespace Indoctrination.Net
                 pin.minHeight = pin.preferredHeight = DieSize;
 
                 var text = UIFactory.Label(
-                    "Face", box, face.ToString(), 14, TextAnchor.MiddleCenter, UITheme.Void);
+                    "Face", box, revealDice ? face.ToString() : "?", 14,
+                    TextAnchor.MiddleCenter, UITheme.Void);
                 text.fontStyle = FontStyle.Bold;
                 UIFactory.Stretch(text.rectTransform);
             }

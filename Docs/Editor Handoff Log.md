@@ -7,6 +7,90 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-14 — Claude (the draft clock, hidden roll numbers, Asmodeus benched)
+
+Also: the three tests left unverified in the previous entry now run and pass.
+Full suite is 51 tests, all green.
+
+### The draft clock was never sent, and never restarted
+
+Two separate faults, both needed fixing.
+
+`BuildViewFor` forced `phaseSecondsRemaining` to `0f` during `TurnPhase.Draft`:
+
+    !_timersEnabled || _game.Phase is TurnPhase.Draft or TurnPhase.GameOver ? 0f : ...
+
+So the board sat on **"0s until a pick is made for you"** for the whole draft.
+The server has always enforced a draft timeout - `TakeDraftPickForAbsentPlayer`
+takes the pick for whoever is not there - so a real clock was running the entire
+time and simply was not being reported. Draft removed from that condition;
+GameOver stays.
+
+`Apply` only restarted `_phaseStartedAt` on a phase change, a turn change or an
+answered choice. **A draft is a run of individual picks inside one phase**, so
+the whole table shared one phase's worth of time between them: the clock ran
+straight down across everybody's turn and then sat on zero for the rest of the
+round. `_game.CurrentDrafterId != drafterBefore` added. The clock belongs to the
+person being waited on, not to the phase.
+
+The bot and timeout paths already restarted it; only the human path did not.
+
+### The rolled number is hidden until the dice stop
+
+The number was written beside every player's name the instant the server said
+so, which answers the question before the throw does and makes the roll
+decorative.
+
+- `StatBar.Populate` takes `revealDice`. While the dice are up, the die box shows
+  `?` rather than being blank - "rolling" and "has not rolled" are different
+  things and the strip should say which. Private dice are covered too.
+- `DieRoller` labels read just the owner's name while the dice are in the air,
+  and gain `· 4` when they stop.
+- `BoardUI.DiceRevealed` is `_dieRoller == null || _dieRoller.Settled`, so a
+  board with no dice to show reveals immediately - the same rule as everything
+  else that waits on this animation.
+
+### Asmodeus benched
+
+`count: 0` in `Cards.json`. The definition, the effect, the counter modifier and
+the CardIds constant are all untouched - it is simply not dealt into the deck, so
+putting it back is a one-character change.
+
+Because that is completely invisible in play, **RulesCheck now prints the benched
+list every run**:
+
+    ----  BENCHED, not in the deck: Asmodeus
+
+Take Asmodeus off the bench by setting `count` back to `1`.
+
+### Files
+
+- Updated `Assets/Scripts/Net/NetworkGameManager.cs` (both clock fixes),
+  `StatBar.cs`, `DieRoller.cs`, `BoardUI.cs`.
+- Updated `Assets/Resources/Data/Cards.json` (Asmodeus count).
+- Updated `Tools/RulesCheck/RulesCheck.cs` (benched-card report).
+- Added `TheDraftClockRestartsForEachPlayerAsked` and
+  `ARolledNumberIsHiddenWhileTheDieIsStillRolling` to
+  `Assets/Tests/PlayMode/BoardRenderTests.cs`.
+
+The clock test waits real seconds on purpose - the restart is only visible once
+enough time has passed to see it not being given back - and takes whichever card
+in the draft zone is actually legal rather than the first one, because Blocked by
+Games and reserved picks make that seed-dependent. **Confirmed it bites**: with
+the `CurrentDrafterId` condition removed it fails at 23.899 against a 24.0 floor.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 51 passed, including the three from the previous entry.
+- RulesCheck all green; SmokeTest passed.
+
+### Follow-up status
+
+- Bloodstone is still unreproduced - see the previous entry. All eight stones
+  pass their RulesCheck.
+- Asmodeus is out of the deck until somebody puts it back.
+
 ## 2026-08-14 — Claude (roll timing, opponent peek, draft lighting; Bloodstone not reproduced)
 
 Five requests. Four done; the fifth could not be reproduced and is reported
