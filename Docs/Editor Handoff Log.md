@@ -306,6 +306,55 @@ printed face or the visible code-built title fallback.
 - SmokeTest passing, including all Blue art/resource/aspect checks.
 - No fuzz run: no `GameState` or effect behavior changed.
 
+## 2026-08-13 — Claude (the die, drawn where it can actually be seen)
+
+Third attempt, and the first one that can work. The two before it were built on
+a false premise.
+
+**A ScreenSpaceOverlay canvas is composited after every camera in the game.**
+Nothing in the 3D scene can be drawn over it - not with a second camera, not
+with camera depth, not with layers or clip planes. The board is such a canvas
+with an opaque backdrop, so a 3D die was invisible *by construction*, and no
+amount of aiming the camera differently was ever going to change that.
+
+The RenderTexture version worked around it by filming the die and showing the
+picture in a 230px box in the corner - which is not a die rolling across the
+table, and was still fragile for its own reasons.
+
+**The die is now part of the interface.** `BoardArt.DieFace` draws the six faces
+at runtime - a pale rounded tile with pips punched out, in the same generated
+style as the resource discs - and `DieRoller` tumbles one across the board as a
+UI image: in from the left, bouncing, slowing, the face flickering while it
+turns over and settling onto the number the server rolled. It cannot be hidden
+by the board because it is drawn as part of it.
+
+`Assets/Resources/Models/Die.fbx` was removed. It cannot be shown over this
+board, and leaving it in Resources would ship a megabyte of unused model in
+every build. The source file in Downloads is untouched. **If a 3D die is ever
+wanted, the canvas has to move to ScreenSpace-Camera or World Space first** -
+that is the real prerequisite, and it is a significant change to a UI that has
+been tuned over many sessions.
+
+### What the test asserts now, and why
+
+The previous tests asserted things that were true of an invisible die: the
+component existed, the texture existed, the camera was aimed correctly. All
+passed while nothing was on screen.
+
+It now asserts the die is **on screen**: a real size, inside the window's
+bounds, not clipped by any mask above it, and that its position actually
+changes over twenty frames so it is crossing the table rather than sitting
+still. It also checks that clicking it away survives the next refresh.
+
+That is checkable headlessly and is the thing that kept being wrong. A UI image
+with a sprite, at a valid on-screen rect and unclipped, *will* be drawn - which
+is not something that could be said of the 3D versions.
+
+### Still unverified
+
+Nothing about which face lands - that is now chosen directly by index into
+generated art, so the die shows the number it was given by construction.
+
 ## 2026-08-13 — Claude (the die was never actually thrown)
 
 The die from the entry below never appeared. The rendering was fine; it was

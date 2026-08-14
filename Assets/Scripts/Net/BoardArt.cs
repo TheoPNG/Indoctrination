@@ -126,6 +126,110 @@ namespace Indoctrination.Net
             return Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f));
         }
 
+        private static readonly Dictionary<int, Sprite> _dieFaces = new();
+
+        /// <summary>
+        /// One face of a die, drawn at runtime: a pale rounded tile with the
+        /// pips punched out of it.
+        ///
+        /// Generated rather than modelled because the board is a ScreenSpace
+        /// overlay - anything in the 3D scene is composited underneath it and
+        /// cannot be seen at all. A die that has to be visible therefore has to
+        /// be part of the interface, and the interface draws sprites.
+        /// </summary>
+        public static Sprite DieFace(int value)
+        {
+            value = Mathf.Clamp(value, 1, 6);
+
+            if (_dieFaces.TryGetValue(value, out var cached))
+            {
+                return cached;
+            }
+
+            const int size = 128;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            var face = new Color32(232, 236, 242, 255);
+            var edge = new Color32(196, 202, 212, 255);
+            var pip = new Color32(14, 16, 20, 255);
+            var clear = new Color32(0, 0, 0, 0);
+
+            var pixels = new Color32[size * size];
+            const float corner = 26f;
+
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    // Rounded square: only the corners are measured as circles.
+                    var dx = Mathf.Max(corner - x, x - (size - 1 - corner), 0f);
+                    var dy = Mathf.Max(corner - y, y - (size - 1 - corner), 0f);
+                    var distance = Mathf.Sqrt((dx * dx) + (dy * dy));
+
+                    if (distance > corner)
+                    {
+                        pixels[(y * size) + x] = clear;
+                        continue;
+                    }
+
+                    pixels[(y * size) + x] = distance > corner - 3f ? edge : face;
+                }
+            }
+
+            // Pips on a three-by-three grid, the same arrangement as a real die.
+            const float step = size / 4f;
+            foreach (var spot in PipLayout(value))
+            {
+                var cx = step * (spot.x + 1);
+                var cy = step * (spot.y + 1);
+
+                for (var y = 0; y < size; y++)
+                {
+                    for (var x = 0; x < size; x++)
+                    {
+                        var d = Mathf.Sqrt(((x - cx) * (x - cx)) + ((y - cy) * (y - cy)));
+                        if (d <= 11f)
+                        {
+                            pixels[(y * size) + x] = pip;
+                        }
+                    }
+                }
+            }
+
+            texture.SetPixels32(pixels);
+            texture.Apply();
+
+            var sprite = Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+            _dieFaces[value] = sprite;
+            return sprite;
+        }
+
+        /// <summary>Which cells of the three-by-three grid carry a pip, per value.</summary>
+        private static IEnumerable<Vector2Int> PipLayout(int value)
+        {
+            var topLeft = new Vector2Int(0, 2);
+            var topRight = new Vector2Int(2, 2);
+            var midLeft = new Vector2Int(0, 1);
+            var centre = new Vector2Int(1, 1);
+            var midRight = new Vector2Int(2, 1);
+            var bottomLeft = new Vector2Int(0, 0);
+            var bottomRight = new Vector2Int(2, 0);
+
+            return value switch
+            {
+                1 => new[] { centre },
+                2 => new[] { topLeft, bottomRight },
+                3 => new[] { topLeft, centre, bottomRight },
+                4 => new[] { topLeft, topRight, bottomLeft, bottomRight },
+                5 => new[] { topLeft, topRight, centre, bottomLeft, bottomRight },
+                _ => new[] { topLeft, topRight, midLeft, midRight, bottomLeft, bottomRight }
+            };
+        }
+
         private static Sprite _solid;
 
         /// <summary>
