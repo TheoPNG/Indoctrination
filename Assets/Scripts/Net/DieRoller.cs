@@ -148,6 +148,27 @@ namespace Indoctrination.Net
         /// <summary>The whole table's roll, so a repeated view does not re-throw it.</summary>
         private string _showing = "";
 
+        /// <summary>False while dice are in the air.</summary>
+        private bool _settled = true;
+
+        /// <summary>
+        /// Whether this board can show dice at all. False outside play mode and
+        /// on a machine with no graphics device, where the roller sits the whole
+        /// thing out.
+        /// </summary>
+        private bool _canShowDice;
+
+        /// <summary>
+        /// Whether the dice have finished rolling and are showing their numbers.
+        ///
+        /// The board waits on this before handing the high roller their
+        /// resource: being told you won before the dice have stopped gives the
+        /// answer away and makes the roll decorative. A board that cannot show
+        /// dice reports settled always - a flourish that is not running must
+        /// never be something the game waits on.
+        /// </summary>
+        public bool Settled => !_canShowDice || _settled;
+
         public static DieRoller CreateOn(Transform canvas)
         {
             var go = new GameObject("Die Roller", typeof(RectTransform));
@@ -189,6 +210,7 @@ namespace Indoctrination.Net
             }
 
             BuildTable();
+            _canShowDice = _stage != null;
             root.gameObject.SetActive(false);
         }
 
@@ -300,6 +322,7 @@ namespace Indoctrination.Net
             }
 
             _showing = signature;
+            _settled = false;
             gameObject.SetActive(true);
             _stage.gameObject.SetActive(true);
             transform.SetAsLastSibling();
@@ -485,6 +508,9 @@ namespace Indoctrination.Net
                 _stage.gameObject.SetActive(false);
             }
 
+            // Clicking the dice away finishes the roll. Anything waiting on the
+            // animation must not be left waiting on one that is no longer there.
+            _settled = true;
             gameObject.SetActive(false);
         }
 
@@ -503,6 +529,7 @@ namespace Indoctrination.Net
             }
 
             _showing = "";
+            _settled = true;
             Dismiss();
         }
 
@@ -636,6 +663,7 @@ namespace Indoctrination.Net
 
             PlaceLabels();
             PlaceDismissArea(live);
+            _settled = true;
             _rolling = null;
         }
 

@@ -261,6 +261,8 @@ namespace Indoctrination.Net
             _shoutBanner = ShoutBanner.CreateOn(canvas.transform);
             _dieRoller = DieRoller.CreateOn(canvas.transform);
 
+            _playerPeek = PlayerPeek.CreateOn(canvas.transform);
+
             // Above everything, including the dice and the activation stage.
             // Nothing should be able to cover the way out.
             _quitPrompt = QuitPrompt.CreateOn(canvas.transform);
@@ -305,9 +307,43 @@ namespace Indoctrination.Net
             // batchmode. Whatever the hand is doing, leave it alone.
             if (_gameRoot.gameObject.activeSelf && Mouse.current != null)
             {
-                PollHandHover(Mouse.current.position.ReadValue());
+                var pointer = Mouse.current.position.ReadValue();
+                PollHandHover(pointer);
+                PollOpponentPeek(pointer);
+            }
+
+            PollDiceSettling();
+        }
+
+        /// <summary>
+        /// Redraws once, when the dice stop.
+        ///
+        /// Nothing arrives from the server at that moment - the roll finished on
+        /// this machine, in an animation - so without this the high roller's
+        /// choice would not appear until the next message happened to come in.
+        /// </summary>
+        private void PollDiceSettling()
+        {
+            if (_dieRoller == null)
+            {
+                return;
+            }
+
+            var settled = _dieRoller.Settled;
+            if (settled == _diceWereSettled)
+            {
+                return;
+            }
+
+            _diceWereSettled = settled;
+
+            if (settled && _gameRoot.gameObject.activeSelf)
+            {
+                Refresh();
             }
         }
+
+        private bool _diceWereSettled = true;
 
         private void OnDestroy()
         {
@@ -507,6 +543,7 @@ namespace Indoctrination.Net
         }
 
         private QuitPrompt _quitPrompt;
+        private PlayerPeek _playerPeek;
 
         private bool _soloStartPending;
 
@@ -1256,6 +1293,59 @@ namespace Indoctrination.Net
         }
 
         /// <summary>
+        /// Shows an opponent's whole position while the pointer is on their
+        /// strip at the top of the board.
+        ///
+        /// Polled once a frame rather than driven by pointer-enter events, for
+        /// the same reason the hand is: a rebuild underneath the pointer sends a
+        /// spurious exit, and the hand spent a whole session flickering because
+        /// of it. The pointer's position is an external fact that no rebuild can
+        /// perturb, so reading it directly cannot flicker.
+        /// </summary>
+        private void PollOpponentPeek(Vector2 pointer)
+        {
+            if (_playerPeek == null)
+            {
+                return;
+            }
+
+            var view = NetworkGameManager.Instance?.View;
+            if (view == null || !_gameRoot.gameObject.activeSelf)
+            {
+                _playerPeek.Hide();
+                return;
+            }
+
+            var camera = UIFactory.UiCamera;
+
+            foreach (var (playerId, bar) in _statBars)
+            {
+                if (bar == null)
+                {
+                    continue;
+                }
+
+                // The whole strip, not only the name text. It is a single line
+                // that reads as one label, and a 90-pixel target inside a
+                // 380-pixel row is a target players miss.
+                var rect = (RectTransform)bar.transform;
+                if (!RectTransformUtility.RectangleContainsScreenPoint(rect, pointer, camera))
+                {
+                    continue;
+                }
+
+                var player = view.players.FirstOrDefault(p => p.playerId == playerId);
+                if (player != null)
+                {
+                    _playerPeek.Show(player, rect);
+                    return;
+                }
+            }
+
+            _playerPeek.Hide();
+        }
+
+        /// <summary>
         /// Updates the permanent resource HUD: the running counts always show,
         /// and the circles only answer clicks - and only light up - while there
         /// are resources actually waiting to be taken this turn.
@@ -1420,7 +1510,8 @@ namespace Indoctrination.Net
                         IsClickable = card => options.Contains(card.instanceId),
                         OnClick = card => manager.RequestAnswerCardRpc(card.instanceId),
                         TagFor = card => DraftMarkTag(view, card),
-                        ActionLabel = "Choose this card"
+                        ActionLabel = "Choose this card",
+                        IsAwaitingYourPick = card => options.Contains(card.instanceId)
                     }
                     : new PlannedRow
                     {
@@ -1430,6 +1521,7 @@ namespace Indoctrination.Net
                         OnDragMoved = eventData => SetHandDropZoneHot(
                             RectTransformUtility.RectangleContainsScreenPoint(
                                 _handRow, eventData.position, eventData.pressEventCamera)),
+                        IsAwaitingYourPick = card => isMyPick && IsDraftable(view, card),
                         OnDragFinished = () => SetHandDropZoneHot(false),
                         OnDropped = (card, eventData) =>
                         {
@@ -1548,6 +1640,13 @@ namespace Indoctrination.Net
             public Action<CardView, PointerEventData> OnDropped;
             public Func<CardView, string> TagFor;
             public string ActionLabel;
+
+            /// <summary>
+            /// Cards this row is waiting for the viewer to choose between. They
+            /// are lit and left gently breathing, so whose turn it is to pick is
+            /// something the board says rather than something you work out.
+            /// </summary>
+            public Func<CardView, bool> IsAwaitingYourPick;
 
             /// <summary>
             /// Whether this is the viewer's own compound - the only row where
@@ -1696,6 +1795,11 @@ namespace Indoctrination.Net
 
                 MarkIfDueToActivate(cardView, view);
 
+                if (plan.IsAwaitingYourPick != null && plan.IsAwaitingYourPick(card))
+                {
+                    cardView.SetAwaitingYourPick(true);
+                }
+
                 var draggable = plan.IsDraggable != null && plan.IsDraggable(card);
                 if (draggable && plan.OnDropped != null)
                 {
@@ -1805,15 +1909,20 @@ namespace Indoctrination.Net
                 return;
             }
 
-            // Deliberately not gated on the Rolling phase. Rolling the last die
-            // readies the table and advances the phase inside the same server
-            // call, so the view that carries the result usually already says
-            // Activation - gating on the phase meant the die was thrown almost
-            // never, and dismissed a frame later when it was.
-            if (!you.hasRolled)
+            // Waits for the whole table, not just you. The dice are thrown
+            // together, so a player who rolled early would otherwise watch their
+            // own die land and then sit next to it while everyone else's arrived
+            // one at a time.
+            //
+            // Deliberately `diceRolled` rather than the Rolling phase. Rolling
+            // the last die readies the table and advances the phase inside the
+            // same server call, so the view that carries the result usually
+            // already says Activation - gating on the phase meant the dice were
+            // thrown almost never, and dismissed a frame later when they were.
+            if (!view.diceRolled)
             {
-                // A new turn's roll is still to come. Clear last turn's die and
-                // arm the next throw.
+                // Still waiting on somebody. Clear last turn's dice and arm the
+                // next throw.
                 _dieRoller.Rearm();
                 return;
             }
@@ -2502,6 +2611,14 @@ namespace Indoctrination.Net
             }
 
             if (!view.diceRolled || view.highRollResourceClaimed)
+            {
+                return false;
+            }
+
+            // Not until the dice have actually stopped. Being handed the prize
+            // while they are still in the air says who won before the roll does,
+            // which makes the whole throw decorative.
+            if (!_dieRoller.Settled)
             {
                 return false;
             }

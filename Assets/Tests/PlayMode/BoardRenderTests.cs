@@ -1579,6 +1579,153 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// The cards you are being asked to pick from are lit; nobody else's
+        /// turn lights anything.
+        ///
+        /// The draft row used to look identical whether it was your pick or
+        /// somebody else's - the only difference was whether dragging happened
+        /// to work, which is something you find out by trying it.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheDraftLightsUpOnlyOnYourOwnPick()
+        {
+            yield return StartGame();
+
+            var game = ServerGame();
+            Assert.AreEqual(TurnPhase.Draft, game.Phase, "the game opens on the draft");
+
+            // Walk the whole draft, reading the board at every pick. Nothing may
+            // ever be lit on somebody else's turn, and something has to be lit
+            // on at least one of yours.
+            var litOnYourTurn = false;
+            var sawSomebodyElse = false;
+
+            while (game.Phase == TurnPhase.Draft)
+            {
+                yield return WaitForFrames(2);
+                Canvas.ForceUpdateCanvases();
+
+                var mine = _manager.View.currentDrafterId == _manager.View.viewerPlayerId;
+                var lit = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None)
+                    .Count(card => card.AwaitingYourPick);
+
+                if (mine)
+                {
+                    litOnYourTurn |= lit > 0;
+                }
+                else
+                {
+                    sawSomebodyElse = true;
+                    Assert.AreEqual(0, lit,
+                        "nothing should be lit while somebody else is picking");
+                }
+
+                var drafter = game.CurrentDrafterId.Value;
+                var card = game.DraftZone[0].InstanceId;
+                ApplyAsHost(_ => game.DraftCard(drafter, card));
+            }
+
+            Assert.IsTrue(litOnYourTurn,
+                "the cards you can take should be lit while the table waits on you");
+            Assert.IsTrue(sawSomebodyElse, "and somebody else should have picked too");
+        }
+
+        /// <summary>
+        /// Hovering an opponent shows what they have: their resources, which are
+        /// public and were shown nowhere, and their compound, which is on the
+        /// battlefield but scrolls off it on a full table.
+        ///
+        /// Driven directly rather than by moving a mouse, because batchmode has
+        /// no pointer at all.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator HoveringAnOpponentShowsTheirResourcesAndCompound()
+        {
+            yield return StartGame();
+            yield return WaitForFrames(2);
+
+            var game = ServerGame();
+            var opponentId = _manager.View.players
+                .First(p => p.playerId != _manager.View.viewerPlayerId).playerId;
+
+            // Something to look at: resources they own and a card in play.
+            ApplyAsHost(_ =>
+            {
+                var seat = game.Players.First(p => p.PlayerId == opponentId);
+                seat.Resources.Add(ResourceColor.Red);
+                seat.Resources.Add(ResourceColor.Red);
+                seat.Resources.Add(ResourceColor.Blue);
+                seat.Compound.Add(new CardInstance(
+                    -900, CardDatabase.Instance.Get(CardIds.Mindstone)));
+            });
+
+            yield return WaitForFrames(2);
+            Canvas.ForceUpdateCanvases();
+
+            var peek = Object.FindAnyObjectByType<PlayerPeek>(FindObjectsInactive.Include);
+            Assert.IsNotNull(peek, "the board should carry an opponent peek");
+
+            var them = _manager.View.players.First(p => p.playerId == opponentId);
+            peek.Show(them, (RectTransform)peek.transform);
+            yield return WaitForFrames(2);
+
+            Assert.AreEqual(opponentId, peek.ShowingFor);
+
+            var counts = GameObject.Find("Peek Resources").GetComponentsInChildren<Text>()
+                .Select(t => t.text).ToList();
+            CollectionAssert.Contains(counts, "2", "their two Red should be shown");
+            CollectionAssert.Contains(counts, "1", "and their one Blue");
+
+            var shown = GameObject.Find("Peek Cards").GetComponentsInChildren<BoardCardView>();
+            Assert.AreEqual(them.compound.Length, shown.Length,
+                "every card they have in play should be in the strip");
+
+            peek.Hide();
+            yield return WaitForFrames(1);
+            Assert.AreEqual(-1, peek.ShowingFor, "and it goes away again");
+        }
+
+        /// <summary>
+        /// The board never waits on a die animation that is not running.
+        ///
+        /// The high roller's resource is deliberately held back until the dice
+        /// stop, so that being handed the prize does not give the roll away. On
+        /// a machine that cannot show dice - batchmode, and anything without a
+        /// graphics device - there is no animation to wait for, and a flourish
+        /// that is not running must never be the reason a game cannot continue.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ADieAnimationThatCannotRunNeverHoldsTheGameUp()
+        {
+            yield return StartGame();
+
+            var roller = Object.FindAnyObjectByType<DieRoller>(FindObjectsInactive.Include);
+            Assert.IsNotNull(roller);
+
+            var game = ServerGame();
+            while (game.Phase == TurnPhase.Draft)
+            {
+                var drafter = game.CurrentDrafterId.Value;
+                ApplyAsHost(_ => game.DraftCard(drafter, game.DraftZone[0].InstanceId));
+                yield return WaitForFrames(2);
+            }
+
+            foreach (var player in game.LivingPlayers.ToList())
+            {
+                if (!game.HasRolled(player.PlayerId))
+                {
+                    ApplyAsHost(_ => game.RollPrimaryDie(player.PlayerId));
+                }
+            }
+
+            yield return WaitForFrames(4);
+
+            Assert.IsTrue(roller.Settled,
+                "with no dice to show, the roll has to count as finished");
+            Assert.IsNull(_manager.LastError);
+        }
+
+        /// <summary>
         /// Quitting warns before it does anything.
         ///
         /// Leaving a game in progress is a resignation - there is no rejoining -

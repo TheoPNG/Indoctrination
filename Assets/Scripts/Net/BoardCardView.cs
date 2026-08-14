@@ -533,6 +533,35 @@ namespace Indoctrination.Net
         /// promised to wake. Coloured by what the card will do, so the board says
         /// what is coming without needing a list beside it.
         /// </summary>
+        /// <summary>
+        /// Lights the card while it is one of the ones you are being asked to
+        /// take, and lets it breathe so the row reads as waiting on you.
+        ///
+        /// The draft row otherwise looks the same whether it is your pick or
+        /// somebody else's - the only difference was whether dragging happened
+        /// to work, which is a thing you find out by trying it.
+        /// </summary>
+        public void SetAwaitingYourPick(bool waiting)
+        {
+            AwaitingYourPick = waiting;
+
+            // The tint goes on first, so the pulse takes it as its resting
+            // colour and returns to it rather than to the plain background.
+            if (waiting)
+            {
+                _background.color = Color.Lerp(UITheme.SurfaceRaised, UITheme.Signal, 0.20f);
+
+                var edge = Edge();
+                edge.effectColor = new Color(UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.85f);
+                edge.effectDistance = new Vector2(2f, -2f);
+            }
+
+            BoardEffects.Instance.SetPulsing(_background, waiting);
+        }
+
+        /// <summary>Whether this card is lit as one of yours to pick.</summary>
+        public bool AwaitingYourPick { get; private set; }
+
         public void SetDueToActivate(Color tint)
         {
             _background.color = Color.Lerp(UITheme.SurfaceRaised, tint, 0.22f);

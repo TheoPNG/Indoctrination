@@ -7,6 +7,98 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-14 — Claude (roll timing, opponent peek, draft lighting; Bloodstone not reproduced)
+
+Five requests. Four done; the fifth could not be reproduced and is reported
+below rather than guessed at.
+
+### The dice wait for the whole table
+
+`RefreshDie` gated on `you.hasRolled`, so a player who rolled early watched
+their own die land and then sat beside it while everyone else's arrived one at a
+time. Now gated on `view.diceRolled`, which is "every living player has rolled".
+
+Still deliberately not gated on the Rolling *phase* - that was the original bug,
+and the comment explaining why is kept.
+
+### The high roller is not paid until the dice stop
+
+Being handed the prize while the dice are still in the air says who won before
+the roll does, which makes the whole throw decorative. `DieRoller.Settled` is new
+and the reward waits on it.
+
+**`Settled` reports true when the board cannot show dice at all** - outside play
+mode, and on any machine with no graphics device, which includes every test run.
+A flourish that is not running must never be something the game waits on, or
+batchmode would deadlock on an animation that does not exist.
+
+Nothing arrives from the server when the dice stop - the roll finishes locally,
+in an animation - so `PollDiceSettling` redraws once on the transition. Polled
+rather than evented, same as the hand.
+
+### Hovering an opponent shows what they have
+
+New `Assets/Scripts/Net/PlayerPeek.cs`: resources, health, block, followers, hand
+count, and their compound, hung under the strip that was hovered and clamped
+inside the screen.
+
+Their resources were shown nowhere despite being public information the server
+already sends. Their compound is on the battlefield, but it scrolls and a full
+table pushes rows off the bottom.
+
+Hover is **polled once a frame against the pointer**, not driven by pointer-enter
+events, for the same reason the hand is: a rebuild under the pointer sends a
+spurious exit, and the hand spent a whole session flickering because of it.
+The whole strip is the target, not just the name - a 90px name inside a 380px
+row is a target players miss.
+
+The card strip is a `GridLayoutGroup`, because `BoardCardView` lays out at full
+size and then scales; a layout group would still reserve the unscaled width.
+
+### The draft says whose pick it is
+
+`BoardCardView.SetAwaitingYourPick` tints the card toward Signal and leaves it
+breathing. Applied to the draft zone when the pick is yours, and to card-question
+options. The row used to look identical either way - the only difference was
+whether dragging happened to work, which you found out by trying it.
+
+### Bloodstone: could not reproduce
+
+The rules are right, everywhere I can see:
+
+- `Cards.json` has it reducing R, cost `GBY`, Blessing, count 1.
+- `GameState.CostFor` reduces Red for `Bloodstone` and `CursedBloodstone`.
+- `CardCost.Reduced` handles Red like any other colour.
+- `BuyCard` puts a bought Blessing in `Compound`, which is what `HasInPlay` reads.
+- `GameViewBuilder.ToPricedCardView` sends the discounted cost and the
+  affordability flag, and `BoardCardView` renders both.
+
+RulesCheck's stone coverage was asymmetric - it only tested Mindstone and
+Wealthstone - so it now tests **all eight stones**, each against a card that
+actually carries its colour. All eight pass, Bloodstone included.
+
+Left alone rather than guessed at. Ask what was actually seen: a Red cost that
+did not drop, a card that stayed unaffordable, or Bloodstone never appearing.
+
+### Files
+
+- Updated `Assets/Scripts/Net/BoardUI.cs`, `DieRoller.cs`, `BoardCardView.cs`.
+- Added `Assets/Scripts/Net/PlayerPeek.cs`.
+- Extended the stone checks in `Tools/RulesCheck/RulesCheck.cs`.
+- Added `TheDraftLightsUpOnlyOnYourOwnPick`,
+  `HoveringAnOpponentShowsTheirResourcesAndCompound` and
+  `ADieAnimationThatCannotRunNeverHoldsTheGameUp` to
+  `Assets/Tests/PlayMode/BoardRenderTests.cs`.
+
+### Verification
+
+- CompileCheck clean.
+- RulesCheck all green, including eight new stone checks.
+- **PlayModeTests and SmokeTest were NOT run**: the Unity Editor had the project
+  open (`Temp/UnityLockfile`) from this point in the session onward. CompileCheck
+  does not cover `Assets/Tests`, so the three new tests are **unverified, including
+  whether they compile**. Run both before trusting this entry.
+
 ## 2026-08-14 — Claude (quit button, with the resignation said out loud)
 
 Quitting mid-game is a resignation whether or not the player meant it that way -

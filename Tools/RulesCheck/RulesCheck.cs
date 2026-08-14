@@ -453,15 +453,45 @@ static class RulesCheck
               walls.Players[1].Health == GameSettings.StartingHealth - 1 && walls.Players[1].Block == 0,
               $"{walls.Players[1].Health} health, {walls.Players[1].Block} block");
 
-        // The stones make cards cheaper.
-        var stones = new GameState(new[] { "A", "B" }, cards, randomSeed: 28);
-        var pricey = new CardInstance(-5, cards.First(c => c.id == CardIds.Ritualist));   // BBRR
-        var before = stones.CostFor(stones.Players[0], pricey).Total;
-        stones.Players[0].Compound.Add(
-            new CardInstance(-6, cards.First(c => c.id == CardIds.Mindstone)));
-        Check("Mindstone knocks a Blue off the price",
-              stones.CostFor(stones.Players[0], pricey).Total == before - 1,
-              $"{before} -> {stones.CostFor(stones.Players[0], pricey).Total}");
+        // The stones make cards cheaper. All eight of them, each on its own
+        // colour, and each checked against a card that actually carries that
+        // colour - a stone that discounts nothing is indistinguishable from a
+        // stone that is not wired up at all.
+        var stoneColours = new (string Stone, ResourceColor Colour)[]
+        {
+            (CardIds.Mindstone, ResourceColor.Blue),
+            (CardIds.CursedMindstone, ResourceColor.Blue),
+            (CardIds.Shieldstone, ResourceColor.Green),
+            (CardIds.CursedShieldstone, ResourceColor.Green),
+            (CardIds.Bloodstone, ResourceColor.Red),
+            (CardIds.CursedBloodstone, ResourceColor.Red),
+            (CardIds.Wealthstone, ResourceColor.Yellow),
+            (CardIds.CursedWealthstone, ResourceColor.Yellow)
+        };
+
+        var stoneId = -5;
+        foreach (var (stone, colour) in stoneColours)
+        {
+            var table = new GameState(new[] { "A", "B" }, cards, randomSeed: 28);
+            var priced = cards.FirstOrDefault(c =>
+                c.Cost is { IsSpecial: false } cost && cost.Amounts.GetValueOrDefault(colour) > 0);
+
+            if (priced == null)
+            {
+                Check($"{stone} has something to discount", false, $"no card costs {colour}");
+                continue;
+            }
+
+            var card = new CardInstance(stoneId--, priced);
+            var full = table.CostFor(table.Players[0], card).Total;
+            table.Players[0].Compound.Add(
+                new CardInstance(stoneId--, cards.First(c => c.id == stone)));
+
+            var discounted = table.CostFor(table.Players[0], card).Total;
+            Check($"{stone} knocks a {colour} off the price",
+                  discounted == full - 1,
+                  $"{priced.title} {full} -> {discounted}");
+        }
 
         // A runaway effect must stop rather than hang the server.
         var loop = new GameState(new[] { "A", "B" }, cards, randomSeed: 29);
