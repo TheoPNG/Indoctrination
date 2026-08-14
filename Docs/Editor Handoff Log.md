@@ -306,6 +306,56 @@ printed face or the visible code-built title fallback.
 - SmokeTest passing, including all Blue art/resource/aspect checks.
 - No fuzz run: no `GameState` or effect behavior changed.
 
+## 2026-08-13 — Claude (the die was never actually thrown)
+
+The die from the entry below never appeared. The rendering was fine; it was
+simply almost never asked to throw.
+
+**`RefreshDie` gated on `phase == Rolling`.** Rolling the last die readies the
+table and advances the phase *inside the same server call*, before the state is
+broadcast - so the view carrying the result already says Activation, and the
+condition was false. On the rare ordering where it was true, the next message
+arrived a frame later and dismissed it. It now triggers on `hasRolled` and the
+die value alone, which stays on the record until the turn ends.
+
+That also restores what was asked for originally: it lingers until **clicked**,
+not until the phase moves on.
+
+**Clicking it away did not stick.** `Dismiss` forgot the rolled number, and the
+board refreshes on every message from the server, so the next one threw the same
+die again. The number is now remembered through a dismissal and only forgotten
+by `Rearm`, when a turn comes round to a roll that has not happened yet.
+
+Also normalised the die's scale on its largest axis rather than the bounding
+diagonal - the model is 0.02 units across, and scaling by the diagonal left it
+noticeably smaller than intended in a tightly framed shot.
+
+### Two dead ends, recorded so nobody repeats them
+
+**`Camera.Render()` does nothing under URP.** A probe using it reported zero
+pixels for a scene that was fine. It is a built-in-pipeline API.
+
+**Unity renders nothing at all in `-batchmode`.** A second probe, and then a
+real assertion inside the PlayMode test, both read an empty texture *with a
+Metal device present* - because batchmode runs no render loop, not because the
+camera was broken. **Any test that reads back rendered pixels will fail here for
+reasons that have nothing to do with the code under test.**
+
+What the test asserts instead is the setup that decides whether anything would
+be drawn: the camera is switched on, it is drawing into the texture the board is
+showing, and the die is inside its frustum (`GeometryUtility.TestPlanesAABB`).
+That catches the realistic failure - a mis-aimed or mis-clipped camera - and
+runs headlessly.
+
+One more trap in passing: the stage is built with `HideFlags.DontSave`, which
+keeps it out of `FindObjectsByType`. The test reaches the camera through the
+component's own field instead.
+
+### Still unverified
+
+`DieRoller.FaceUp` - whether the number shown matches the number rolled. That
+needs a human to watch one land.
+
 ## 2026-08-13 — Claude (a die that actually gets thrown)
 
 `DieRoller` throws a real die when the viewer rolls, settles it on the number

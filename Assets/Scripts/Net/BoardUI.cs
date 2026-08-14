@@ -1781,9 +1781,22 @@ namespace Indoctrination.Net
         {
             var you = view.Viewer;
 
-            if (view.phase != nameof(TurnPhase.Rolling) || you is not { hasRolled: true })
+            if (you == null || view.isGameOver)
             {
-                _dieRoller.Dismiss();
+                _dieRoller.Rearm();
+                return;
+            }
+
+            // Deliberately not gated on the Rolling phase. Rolling the last die
+            // readies the table and advances the phase inside the same server
+            // call, so the view that carries the result usually already says
+            // Activation - gating on the phase meant the die was thrown almost
+            // never, and dismissed a frame later when it was.
+            if (!you.hasRolled)
+            {
+                // A new turn's roll is still to come. Clear last turn's die and
+                // arm the next throw.
+                _dieRoller.Rearm();
                 return;
             }
 

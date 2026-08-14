@@ -160,7 +160,11 @@ namespace Indoctrination.Net
             {
                 if (filter.sharedMesh != null)
                 {
-                    largest = Mathf.Max(largest, filter.sharedMesh.bounds.size.magnitude);
+                    // Largest single axis, not the diagonal: a cube normalised
+                    // by its diagonal comes out noticeably smaller than asked
+                    // for, and this is framed tightly enough to notice.
+                    var size = filter.sharedMesh.bounds.size;
+                    largest = Mathf.Max(largest, Mathf.Max(size.x, Mathf.Max(size.y, size.z)));
                 }
             }
 
@@ -197,11 +201,16 @@ namespace Indoctrination.Net
             _rolling = StartCoroutine(Throw(value));
         }
 
-        /// <summary>Clears the die away. Called by clicking it, and when a turn moves on.</summary>
+        /// <summary>
+        /// Clears the die away, which is what clicking it does.
+        ///
+        /// The rolled number is deliberately remembered. The board refreshes on
+        /// every message from the server and the roll stays on the record until
+        /// the turn ends, so forgetting it here would have the die thrown again
+        /// the instant anything else happened - clicking it away would not stick.
+        /// </summary>
         public void Dismiss()
         {
-            _showing = -1;
-
             if (_rolling != null)
             {
                 StopCoroutine(_rolling);
@@ -214,6 +223,23 @@ namespace Indoctrination.Net
             }
 
             gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Clears the die and forgets the roll, so the next one is thrown afresh.
+        /// Called when a turn comes round to a roll that has not happened yet.
+        /// </summary>
+        public void Rearm()
+        {
+            // Called from every board refresh, so it does nothing when there is
+            // nothing to undo.
+            if (_showing == -1 && !gameObject.activeSelf)
+            {
+                return;
+            }
+
+            _showing = -1;
+            Dismiss();
         }
 
         private IEnumerator Throw(int value)

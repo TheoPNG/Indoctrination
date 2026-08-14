@@ -1522,6 +1522,36 @@ namespace Indoctrination.Tests
             Assert.IsTrue(roller.gameObject.activeSelf, "rolling should throw the die");
             Assert.IsNotNull(view.texture, "with an actual render texture behind it");
 
+            yield return WaitForFrames(4);
+
+            // Reading the rendered pixels back would be the ideal check and is
+            // deliberately not done: Unity runs no render loop in batchmode, so
+            // every camera draws nothing here and the picture would be empty for
+            // a die that is perfectly fine in the Editor. What *can* be checked
+            // headlessly is the setup that decides whether anything would be
+            // drawn - the camera is on, pointed at its own texture, and the die
+            // is inside its frustum. A mis-aimed or mis-clipped camera is the
+            // failure this is really guarding against.
+            // Asked of the component rather than searched for in the scene: the
+            // stage is built with HideFlags.DontSave, which keeps it out of
+            // FindObjectsByType entirely.
+            var camera = (Camera)typeof(DieRoller)
+                .GetField("_camera", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(roller);
+            Assert.IsNotNull(camera, "the die should be filmed by its own camera");
+            Assert.IsTrue(camera.enabled, "which has to be switched on while a die is showing");
+            Assert.AreSame(view.texture, camera.targetTexture,
+                           "and drawing into the picture the board is showing");
+
+            var dieRenderer = camera.transform.parent.GetComponentInChildren<Renderer>();
+            Assert.IsNotNull(dieRenderer, "the die model should be on the stage");
+
+            var frustum = GeometryUtility.CalculateFrustumPlanes(camera);
+            Assert.IsTrue(GeometryUtility.TestPlanesAABB(frustum, dieRenderer.bounds),
+                $"the die is outside its own camera's view - it would film an empty stage. "
+                + $"die at {dieRenderer.bounds.center} size {dieRenderer.bounds.size}, "
+                + $"camera at {camera.transform.position} near {camera.nearClipPlane} far {camera.farClipPlane}");
+
             // It must not sit over the board swallowing clicks once dismissed.
             view.GetComponent<Button>().onClick.Invoke();
             yield return WaitForFrames(2);
