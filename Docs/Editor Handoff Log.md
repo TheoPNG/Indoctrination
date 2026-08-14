@@ -7,6 +7,56 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-14 — Claude (the die model was importing its own camera)
+
+**"All I see is the sky spinning around behind the red die."** The camera was
+never moving. `Die.fbx` contains a camera and a light sitting next to the cube -
+the way a modelling file normally does, because it is a scene, not a shape - and
+the importer was set to `importCameras: 1` / `importLights: 1`. So every die
+instantiated a real `UnityEngine.Camera` **as a child of itself**, which then
+tumbled with the physics and rendered the world, skybox included, from inside a
+spinning die, over the top of the entire board.
+
+This is why it read as "the camera is moving with it". There genuinely was a
+camera moving with it. It just was not the board's.
+
+### Fix
+
+- `Assets/Resources/Models/Die.fbx.meta`: `importCameras`, `importLights` and
+  `importPhysicalCameras` set to `0`. This is the real fix.
+- `DieRoller.StripSceneFurniture` destroys any `Camera`, `Light` or
+  `AudioListener` on a freshly instantiated die. Redundant with the importer
+  setting, deliberately: the symptom replaces the whole screen and reads like
+  nothing to do with the die model, and a re-import or a re-exported model could
+  quietly turn it back on.
+
+The board camera is, and always was, static: `BoardUI.SetUpOverheadCamera` puts
+it at `(0, 12, 0)` looking straight down, orthographic, `SolidColor` clear. The
+scene asset's own camera is set to Skybox, which is where the sky came from once
+a second camera started drawing.
+
+### Files
+
+- Updated `Assets/Scripts/Net/DieRoller.cs`,
+  `Assets/Resources/Models/Die.fbx.meta`.
+- Added `TheDieModelCarriesNoCameraOrLightOfItsOwn` to
+  `Assets/Tests/PlayMode/BoardRenderTests.cs`. It inspects the imported asset
+  rather than a thrown die, so it runs in batchmode where no dice are ever
+  built. Confirmed it fails (`But was: <Camera (UnityEngine.Camera)>`) with
+  `importCameras` put back to `1`.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 46 passed.
+- RulesCheck all green; SmokeTest passed.
+
+### Follow-up status
+
+- `FaceMap` in `DieRoller.cs` is still a guess at which number is on which side
+  of the model, awaiting a look at a die that has landed - which should now be
+  possible for the first time.
+
 ## 2026-08-13 — Claude (die size measured from the camera, with a hard ceiling)
 
 The die was still enormous. The size is now derived from what the camera can

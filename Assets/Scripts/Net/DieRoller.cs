@@ -284,6 +284,8 @@ namespace Indoctrination.Net
                 die.name = $"Die {_dice.Count}";
                 die.hideFlags = HideFlags.DontSave;
 
+                StripSceneFurniture(die);
+
                 // Normalised on its largest axis, so the throw reads the same
                 // whatever scale the model was exported at.
                 die.transform.localScale = Vector3.one;
@@ -441,6 +443,40 @@ namespace Indoctrination.Net
 
             _showing = "";
             Dismiss();
+        }
+
+        /// <summary>
+        /// Throws away anything in the model that is scenery rather than a die.
+        ///
+        /// A modelling file is a whole little scene, not just a shape: this one
+        /// ships with a camera and a light next to the cube, and Unity imports
+        /// them unless told not to. An imported camera is catastrophic here -
+        /// it is a child of the die, so it tumbles with the physics and renders
+        /// the world, skybox and all, from inside a spinning die, on top of the
+        /// board. That is exactly what "the sky spinning around behind the die"
+        /// was.
+        ///
+        /// The importer is now set to leave both behind (see `Die.fbx.meta`),
+        /// which is the real fix. This stays as well because the symptom is so
+        /// destructive and so hard to read back to its cause: a re-import, a
+        /// swapped model or a fresh export could quietly turn it back on.
+        /// </summary>
+        private static void StripSceneFurniture(GameObject die)
+        {
+            foreach (var camera in die.GetComponentsInChildren<Camera>(true))
+            {
+                Destroy(camera);
+            }
+
+            foreach (var listener in die.GetComponentsInChildren<AudioListener>(true))
+            {
+                Destroy(listener);
+            }
+
+            foreach (var light in die.GetComponentsInChildren<Light>(true))
+            {
+                Destroy(light);
+            }
         }
 
         /// <summary>

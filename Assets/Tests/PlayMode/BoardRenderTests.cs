@@ -1550,6 +1550,35 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// The die model is a die, and nothing else.
+        ///
+        /// The modelling file has a camera and a light sitting next to the cube,
+        /// the way a modelling file usually does, and Unity will import them as
+        /// real components unless the importer is told not to. That is not a
+        /// cosmetic problem: the camera comes in as part of the die, so it
+        /// tumbles with the physics and renders the world - skybox included -
+        /// from inside a spinning die, over the top of the entire board. The
+        /// board disappears and all you see is sky going round.
+        ///
+        /// This reads the imported asset rather than a thrown die, so it holds
+        /// in batchmode where there is no graphics device and no dice are ever
+        /// built. It fails if the importer settings are ever reverted.
+        /// </summary>
+        [Test]
+        public void TheDieModelCarriesNoCameraOrLightOfItsOwn()
+        {
+            var model = Resources.Load<GameObject>("Models/Die");
+            Assert.IsNotNull(model, "the die model should be loadable from Resources");
+
+            Assert.IsEmpty(model.GetComponentsInChildren<Camera>(true),
+                "an imported camera rides the die through its own physics and renders the "
+                + "skybox over the whole board - turn off Import Cameras on Die.fbx");
+            Assert.IsEmpty(model.GetComponentsInChildren<Light>(true),
+                "the table lights the dice itself; a light imported from the model "
+                + "relights the whole scene from wherever the die happens to land");
+        }
+
+        /// <summary>
         /// The Rolling phase waits for a player holding Try again.
         ///
         /// The rules were always right about the reroll; the server was not. It
