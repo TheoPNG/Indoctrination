@@ -7,6 +7,55 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-14 — Claude (quit button, with the resignation said out loud)
+
+Quitting mid-game is a resignation whether or not the player meant it that way -
+there is no rejoining a game in progress - so it now warns first.
+
+`Assets/Scripts/Net/QuitPrompt.cs` is a new overlay built alongside the other
+`CreateOn` components, added last so nothing can cover the way out. Pressing
+Quit only opens it; nothing happens until the second press.
+
+The warning is composed from the live situation rather than being one fixed
+string, because the wrong warning is worse than none:
+
+- Mid-game and alive: says it resigns, and that the table plays on without you.
+- Anywhere else: says it closes the application, and nothing about resigning.
+- Hosting with others connected: adds that their game ends too, singular or
+  plural.
+
+Confirming resigns, **waits ~0.4s for the RPC to land**, then shuts the
+connection down and quits. The order is the point: shutting down first would
+drop the connection with the resignation still in hand, and the table would see
+a player who vanished rather than one who conceded.
+
+This is the one popup that blocks what is behind it. The others deliberately do
+not, so a player can read their hand while answering - but there is nothing to
+read here, and a confirmation you can click past is not a confirmation.
+
+Two entry points: beside Resign in the status row, and on the title screen. The
+status-row one stays visible after you are out, unlike Resign, because somebody
+who has lost still needs to be able to close the game.
+
+`Application.Quit` does nothing in the editor, so the coroutine also clears
+`EditorApplication.isPlaying` under `#if UNITY_EDITOR`.
+
+### Files
+
+- Added `Assets/Scripts/Net/QuitPrompt.cs`.
+- Updated `Assets/Scripts/Net/BoardUI.cs` (two Quit buttons, `OpenQuitPrompt`).
+- Added `QuittingWarnsThatItResignsYourGame` to
+  `Assets/Tests/PlayMode/BoardRenderTests.cs`. It stops short of the confirm
+  button on purpose - that one closes the application, which in a test run would
+  take the run with it - and instead checks the warning appears, names the
+  resignation, changes nothing on its own, and can be backed out of.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 48 passed.
+- RulesCheck all green; SmokeTest passed.
+
 ## 2026-08-14 — Claude (dice thrown for real, and the face map measured)
 
 Two things: the dice now genuinely roll, and the numbers on them are right.

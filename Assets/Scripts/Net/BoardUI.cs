@@ -261,6 +261,10 @@ namespace Indoctrination.Net
             _shoutBanner = ShoutBanner.CreateOn(canvas.transform);
             _dieRoller = DieRoller.CreateOn(canvas.transform);
 
+            // Above everything, including the dice and the activation stage.
+            // Nothing should be able to cover the way out.
+            _quitPrompt = QuitPrompt.CreateOn(canvas.transform);
+
             ShowOnly(_connectPanel);
         }
 
@@ -480,6 +484,11 @@ namespace Indoctrination.Net
             UIFactory.ButtonWithLabel(
                 "Solo Button", box, "Solo Playtest", StartSolo, UITheme.Affirm, 200, 34);
 
+            // The title screen is the only screen with no other way out of the
+            // application, so the way out lives here too.
+            UIFactory.ButtonWithLabel(
+                "Quit Button", box, "Quit", OpenQuitPrompt, UITheme.ButtonQuiet, 200, 30);
+
             return panel;
         }
 
@@ -496,6 +505,8 @@ namespace Indoctrination.Net
             StartAs(host: true);
             _soloStartPending = true;
         }
+
+        private QuitPrompt _quitPrompt;
 
         private bool _soloStartPending;
 
@@ -724,6 +735,13 @@ namespace Indoctrination.Net
                 "Resign", status, "Resign", PressResign,
                 UITheme.Blood, 90, StatusRowHeight);
             _resignLabel = _resignButton.GetComponentInChildren<Text>();
+
+            // Beside Resign, because it is the same decision wearing a different
+            // hat - and unlike Resign it stays put once you are out, since
+            // somebody who has lost still needs to be able to close the game.
+            UIFactory.ButtonWithLabel(
+                "Quit", status, "Quit", OpenQuitPrompt,
+                UITheme.ButtonQuiet, 70, StatusRowHeight);
             _timerText = UIFactory.Label("Timer", status, "", 13, TextAnchor.MiddleRight, UITheme.Signal);
             AddResponsiveWidth(_timerText.rectTransform, 150, 230, 0);
 
@@ -2643,6 +2661,16 @@ namespace Indoctrination.Net
 
             _resignArmed = false;
             NetworkGameManager.Instance?.RequestResignRpc();
+        }
+
+        /// <summary>
+        /// Opens the quit warning. Never quits on the press itself: leaving is
+        /// a resignation once a game is on, and that is not something a stray
+        /// click gets to do.
+        /// </summary>
+        private void OpenQuitPrompt()
+        {
+            _quitPrompt?.Open();
         }
 
         private void ToggleDrawOffer()

@@ -1579,6 +1579,61 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// Quitting warns before it does anything.
+        ///
+        /// Leaving a game in progress is a resignation - there is no rejoining -
+        /// so the press that opens the way out must not be the press that takes
+        /// it. This checks the warning appears, says what it costs, changes
+        /// nothing on its own, and can be backed out of.
+        ///
+        /// It deliberately stops short of the confirm button: that one closes
+        /// the application, which in here would take the test run with it.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator QuittingWarnsThatItResignsYourGame()
+        {
+            yield return StartGame();
+            yield return WaitForFrames(2);
+            Canvas.ForceUpdateCanvases();
+
+            var quit = FindButtonNamed("Quit");
+            Assert.IsNotNull(quit, WhyUnusable("Quit"));
+
+            var box = GameObject.Find("Quit Box");
+            Assert.IsTrue(box == null || !box.activeInHierarchy,
+                "the warning should stay out of the way until it is asked for");
+
+            quit.onClick.Invoke();
+            yield return WaitForFrames(2);
+
+            box = GameObject.Find("Quit Box");
+            Assert.IsNotNull(box, "pressing Quit should raise the warning");
+            Assert.IsTrue(box.activeInHierarchy);
+
+            var warning = GameObject.Find("Quit Warning")?.GetComponent<Text>();
+            Assert.IsNotNull(warning, "the warning needs to say something");
+            StringAssert.Contains("resigns", warning.text,
+                "a player mid-game has to be told that leaving concedes it");
+
+            // The press that opens the warning must not be the press that acts
+            // on it.
+            Assert.IsTrue(_manager.View.Viewer.isAlive,
+                "opening the warning must not resign anybody");
+            Assert.IsFalse(_manager.View.Viewer.hasResigned);
+            Assert.IsNull(_manager.LastError);
+
+            var keepPlaying = FindButtonNamed("Quit Cancel");
+            Assert.IsNotNull(keepPlaying, WhyUnusable("Quit Cancel"));
+            keepPlaying.onClick.Invoke();
+            yield return WaitForFrames(2);
+
+            // GameObject.Find only sees active objects, so gone means closed.
+            Assert.IsNull(GameObject.Find("Quit Box"),
+                "backing out should put the board back exactly as it was");
+            Assert.IsTrue(_manager.View.Viewer.isAlive);
+        }
+
+        /// <summary>
         /// However a die lands, it shows the number the game rolled.
         ///
         /// The dice are thrown for real, so where they stop is not decided in
