@@ -269,24 +269,49 @@ namespace Indoctrination.Net
                 die.hideFlags = HideFlags.DontSave;
 
                 // Normalised on its largest axis, so the throw reads the same
-                // whatever scale the model happens to have been exported at.
-                var widest = 0f;
-                foreach (var filter in die.GetComponentsInChildren<MeshFilter>())
+                // whatever scale the model was exported at.
+                //
+                // Measured from what is actually rendered, not from the raw
+                // mesh. The mesh in this model is 0.02 units across but its own
+                // transforms scale it up, so sizing from the mesh alone asked
+                // for a 75x multiplier on top of a die that was already the
+                // right size - which is how it ended up enormous.
+                die.transform.localScale = Vector3.one;
+                die.transform.localRotation = Quaternion.identity;
+                die.transform.localPosition = Vector3.zero;
+
+                var measured = new Bounds();
+                var found = false;
+
+                foreach (var meshRenderer in die.GetComponentsInChildren<Renderer>())
                 {
-                    if (filter.sharedMesh != null)
+                    if (!found)
                     {
-                        var size = filter.sharedMesh.bounds.size;
-                        widest = Mathf.Max(widest, Mathf.Max(size.x, Mathf.Max(size.y, size.z)));
+                        measured = meshRenderer.bounds;
+                        found = true;
+                        continue;
                     }
+
+                    measured.Encapsulate(meshRenderer.bounds);
                 }
 
-                if (widest > 0f)
+                var widest = found
+                    ? Mathf.Max(measured.size.x, Mathf.Max(measured.size.y, measured.size.z))
+                    : 0f;
+
+                if (widest > 0.0001f)
                 {
                     die.transform.localScale = Vector3.one * (DieSize / widest);
                 }
 
+                // The collider is sized and placed from the same measurement, in
+                // the root's own space, so it wraps the die wherever the model
+                // happens to sit relative to its own origin.
                 var collider = die.AddComponent<BoxCollider>();
-                collider.size = Vector3.one * (widest > 0f ? widest : 1f);
+                collider.size = Vector3.one * (widest > 0.0001f ? widest : 1f);
+                collider.center = found
+                    ? measured.center - die.transform.position
+                    : Vector3.zero;
                 collider.material = _contact;
 
                 var body = die.AddComponent<Rigidbody>();
