@@ -226,6 +226,29 @@ namespace Indoctrination.Core
         }
 
         /// <summary>
+        /// Whether this player can pay a card's whole price - resources and, for
+        /// a card priced partly in followers, those too.
+        ///
+        /// Followers are checked with the game's floor in mind rather than
+        /// against the bare number: losing followers clamps at
+        /// <see cref="GameSettings.MinFollowers"/>, so a player allowed to buy
+        /// with exactly the printed number would be clamped part-way through
+        /// paying and get the card for less than it costs. Requiring the
+        /// headroom is what makes the number on the card the number actually
+        /// handed over.
+        /// </summary>
+        public bool CanAfford(CardCost cost)
+        {
+            if (!Resources.CanAfford(cost))
+            {
+                return false;
+            }
+
+            return cost.Followers <= 0
+                   || Followers - cost.Followers >= GameSettings.MinFollowers;
+        }
+
+        /// <summary>
         /// Units in the compound that activate on the given die value. Blessings
         /// never activate this way, which <see cref="CardInstance.ActivatesOn"/>
         /// already enforces.

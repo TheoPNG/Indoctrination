@@ -306,6 +306,79 @@ printed face or the visible code-built title fallback.
 - SmokeTest passing, including all Blue art/resource/aspect checks.
 - No fuzz run: no `GameState` or effect behavior changed.
 
+## 2026-08-11 — Claude (green card art, and costs priced in followers)
+
+### Costs can now include followers
+
+`CardCost` grew a follower component, written as `"+7F"` on the end of the
+resource letters - so Jormugandr's Fan Club is `G+7F`. Every cost already
+written parses unchanged, and `ToString` round-trips back through `Parse` so a
+priced view can be read back as a cost.
+
+Two decisions worth knowing:
+
+- **The stones do not discount followers.** They reduce resources, and a
+  follower price is a different kind of payment - spending progress toward the
+  win rather than materials. `Reduced` carries followers through untouched.
+- **Affording a follower cost needs headroom above the floor.**
+  `LoseFollowers` clamps at `GameSettings.MinFollowers`, so a player allowed to
+  buy with exactly the printed number would be clamped part-way through paying
+  and get the card for less than it says. `PlayerState.CanAfford` therefore
+  requires `Followers - cost >= MinFollowers`. With the floor at 1, a 7-follower
+  card needs 8 followers to buy. **This is a balance decision as much as a
+  technical one** - if the intent is that 7 followers should mean exactly 7 and
+  the floor should not apply to purchases, that is a one-line change in
+  `CanAfford`, but it needs saying out loud rather than being discovered.
+
+Affordability moved from `player.Resources.CanAfford` to `player.CanAfford`,
+which knows about both halves. `BuyCard` checks the whole price before taking
+anything, so a player is never charged resources for a card they cannot
+complete the purchase of.
+
+### Cards
+
+- **Jormugandr's Fan Club** - new Blessing, `G+7F`. Hooked into
+  `EffectModifiers.AfterDamage`, applying the follower loss directly rather
+  than queueing it, so it lands with the wound that caused it. Only opponents
+  of its owner, and never the owner themselves.
+- **Professional Breeder** - retitle of Solar Panels. Id kept as `Solar_Panels`.
+- **Higher Plane** - retitle of Boon of ____. Id kept as `Boon_of`.
+- **Mass Manipulator** - retitle of Manipulator of the Masses. Id kept.
+
+**Ids were deliberately not renamed.** Effect switches, `CardIds` constants and
+the art filenames all key off them, so a printed title changing is a data edit
+and nothing more. The import script's `ALIASES` map is where a filename that no
+longer matches its title gets reconciled.
+
+### Art
+
+33 green faces imported. Two changes to `Tools/import_card_art.py`:
+
+- **A `sips` fallback.** The script required `pdftoppm` from poppler, which is
+  not on a stock macOS and was not installed here. `sips` is, and renders these
+  at an identical fixed size, so the import now works on a clean machine
+  without installing anything first. pdftoppm is still preferred when present.
+- **`--allow-missing`.** The exact-set check is what surfaced every rename and
+  misspelling in this batch, so it stays strict by default. A PDF matching no
+  card remains fatal outright. A card with no PDF is now opt-in and announced.
+
+`Jorm, Trust Eater` and `Master Marketer` have **no art** - there was no PDF
+for either. Both are still live cards.
+
+Four printed files are misspelled against the database and are handled by
+alias rather than by renaming cards: `Celebtrity`, `Stay Eyed`, `Suffering from
+sucess`, `CHurch of Walls`. Worth fixing at the source when convenient.
+
+### Verification
+
+PlayModeTests 44/44, RulesCheck with a new follower-cost block plus 1200 fuzzed
+games, SmokeTest, CompileCheck. One PlayMode test needed its tail rewritten:
+`TryAgainKeepsTheRollingPhaseOpen` settled the high-roll bonus by reaching into
+the game directly, which never re-examines whether the phase can close, and it
+only passed before because the shuffle happened to leave a tie. Adding a card
+changed the shuffle and exposed it. It now pins the dice and claims through the
+real request.
+
 ## 2026-08-09 — Claude (choices that say what they do)
 
 **A card offering two different things now names both.** Pentagram asked

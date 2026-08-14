@@ -652,7 +652,22 @@ namespace Indoctrination.Core
                 return;
             }
 
-            player.Resources.Pay(CostFor(player, card));
+            // Checked as a whole before anything is taken. Paying the resources
+            // first and then discovering the followers are short would leave the
+            // player charged for a card they did not get.
+            var cost = CostFor(player, card);
+            if (!player.CanAfford(cost))
+            {
+                throw new InvalidOperationException($"Cannot afford {card.Title} ({cost}).");
+            }
+
+            player.Resources.Pay(cost);
+
+            if (cost.Followers > 0)
+            {
+                player.LoseFollowers(cost.Followers);
+            }
+
             player.Hand.Remove(card);
 
             if (card.Type == CardType.Ritual)

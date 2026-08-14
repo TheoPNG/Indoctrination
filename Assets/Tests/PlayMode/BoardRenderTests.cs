@@ -1513,17 +1513,21 @@ namespace Indoctrination.Tests
             Assert.Greater(_manager.View.Viewer.primaryDie, 0,
                 $"and leaves a legal die (was {before})");
 
-            // A unique high roller is still owed their bonus, and that also holds
+            // A unique high roller is still owed their bonus, which also holds
             // the phase open - correctly, and by a different mechanism than the
-            // one under test. Settle it so what is left is only the reroll.
-            var living = game.LivingPlayers.ToList();
-            var highest = living.Max(p => p.PrimaryDie);
-            var tiedAtTop = living.Where(p => p.PrimaryDie == highest).ToList();
-
-            if (!game.HighRollResourceClaimed && tiedAtTop.Count == 1)
+            // one under test. Pinned to the viewer rather than left to the dice,
+            // so this does not depend on what the shuffle happened to deal.
+            ApplyAsHost(_ =>
             {
-                ApplyAsHost(_ => game.ClaimHighRollResource(tiedAtTop[0].PlayerId, ResourceColor.Red));
-            }
+                game.SetPrimaryDie(game.Players[0], GameSettings.DieSides);
+                game.SetPrimaryDie(game.Players[1], 1);
+            });
+            yield return WaitForFrames(2);
+
+            // Claimed through the real request, because that is what re-examines
+            // whether the phase still has anything to wait for. Reaching into
+            // the game directly settles the bonus without ever asking.
+            _manager.RequestClaimHighRollResourceRpc((int)ResourceColor.Red);
 
             // With nothing left owed it closes on its own, exactly as it did
             // before the card existed. Spending the reroll has to hand the phase

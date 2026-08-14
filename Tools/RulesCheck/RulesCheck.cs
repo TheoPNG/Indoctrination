@@ -317,6 +317,7 @@ static class RulesCheck
         CheckChoicesSpeakForThemselves(cards);
         CheckSuspiciousChefCount(cards);
         CheckTryAgainHasAWindow(cards);
+        CheckFollowerCosts(cards);
         CheckConcessions(cards);
         CheckEndStates(cards);
         CheckPerPlayerViews(cards);
@@ -1042,6 +1043,85 @@ static class RulesCheck
         // And the phase is still Rolling, so there was somewhere to use it.
         Check("the phase is still open at that point",
               game.Phase == TurnPhase.Rolling, game.Phase.ToString());
+    }
+
+    /// <summary>
+    /// Costs priced partly in followers, and the card that introduced them.
+    ///
+    /// Followers are the win condition, so spending them is spending progress -
+    /// which makes "can I afford this" a different question from the resource
+    /// one, and worth checking as its own thing rather than trusting the
+    /// resource path to have covered it.
+    /// </summary>
+    static void CheckFollowerCosts(List<CardDefinition> cards)
+    {
+        Console.WriteLine("\nFollower costs, and Jormugandr's Fan Club:");
+
+        // --- Parsing round-trips.
+        var mixed = CardCost.Parse("G+7F");
+        Check("a mixed cost parses both halves",
+              mixed.Followers == 7 && mixed.Amounts[ResourceColor.Green] == 1 && mixed.Total == 1,
+              $"{mixed.Total} resources, {mixed.Followers} followers");
+        Check("and prints back to something Parse accepts",
+              CardCost.Parse(mixed.ToString()).Followers == 7, mixed.ToString());
+        Check("plain resource costs are untouched by the new syntax",
+              CardCost.Parse("YYG").Followers == 0 && CardCost.Parse("YYG").Total == 3);
+        Check("a malformed follower cost is refused rather than silently ignored",
+              Throws(() => CardCost.Parse("G+F")) && Throws(() => CardCost.Parse("G+xF")));
+
+        // Discounting is a resource mechanic and must leave followers alone.
+        Check("the stones discount resources without touching followers",
+              mixed.Reduced(ResourceColor.Green, 1).Followers == 7);
+
+        // --- Affording it.
+        var game = new GameState(new[] { "A", "B" }, cards, randomSeed: 77);
+        AdvanceToBuy(game);
+
+        var buyer = game.Players[0];
+        var fanClub = new CardInstance(-96, cards.First(c => c.id == CardIds.JormugandrsFanClub));
+        buyer.Hand.Add(fanClub);
+        buyer.Resources.Add(ResourceColor.Green, 5);
+
+        Check("a card priced in followers is unaffordable without them",
+              !buyer.CanAfford(fanClub.Cost), $"{buyer.Followers} followers");
+
+        // Enough to pay seven and still sit on the game's floor afterwards.
+        buyer.GainFollowers(7 + GameSettings.MinFollowers);
+        Check("and affordable once they are there", buyer.CanAfford(fanClub.Cost),
+              $"{buyer.Followers} followers");
+
+        var followersBefore = buyer.Followers;
+        var greenBefore = buyer.Resources[ResourceColor.Green];
+        game.BuyCard(0, fanClub.InstanceId);
+
+        Check("buying it charges the followers as well as the resources",
+              buyer.Followers == followersBefore - 7
+              && buyer.Resources[ResourceColor.Green] == greenBefore - 1,
+              $"{followersBefore} -> {buyer.Followers} followers, "
+              + $"{greenBefore} -> {buyer.Resources[ResourceColor.Green]} green");
+
+        Check("and it is in play", buyer.HasInPlay(CardIds.JormugandrsFanClub));
+
+        // --- What it does.
+        var victim = game.Players[1];
+        victim.GainFollowers(10);
+        var victimFollowers = victim.Followers;
+        var victimHealth = victim.Health;
+
+        game.DealDamage(buyer, victim, 3);
+
+        Check("an opponent taking damage loses that many followers",
+              victim.Followers == victimFollowers - (victimHealth - victim.Health),
+              $"{victimHealth - victim.Health} damage, "
+              + $"{victimFollowers} -> {victim.Followers} followers");
+
+        // Its owner is not caught by their own card.
+        var ownFollowers = buyer.Followers;
+        game.DealDamage(victim, buyer, 2);
+
+        Check("but its owner does not lose followers to their own card",
+              buyer.Followers == ownFollowers,
+              $"{ownFollowers} -> {buyer.Followers}");
     }
 
     static bool DoesNotThrow(Action action)

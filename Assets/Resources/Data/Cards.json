@@ -394,11 +394,21 @@
     },
     {
       "id": "Boon_of",
-      "title": "Boon of ____",
+      "title": "Higher Plane",
       "type": "Blessing",
       "costRaw": "GGGB",
       "color": "Green",
       "effect": "If a card you've activated would create Block, it instead creates that many Block plus one.",
+      "count": 1,
+      "activationNumbers": []
+    },
+    {
+      "id": "Jormugandrs_Fan_Club",
+      "title": "Jormugandr's Fan Club",
+      "type": "Blessing",
+      "costRaw": "G+7F",
+      "color": "Green",
+      "effect": "When an opponent takes damage they also lose that many followers.",
       "count": 1,
       "activationNumbers": []
     },
@@ -496,7 +506,7 @@
     },
     {
       "id": "Manipulator_of_the_Masses",
-      "title": "Manipulator of the Masses",
+      "title": "Mass Manipulator",
       "type": "Unit",
       "costRaw": "GGG",
       "color": "Green",
@@ -648,7 +658,7 @@
     },
     {
       "id": "Solar_Panels",
-      "title": "Solar Panels",
+      "title": "Professional Breeder",
       "type": "Unit",
       "costRaw": "YY",
       "color": "Green",

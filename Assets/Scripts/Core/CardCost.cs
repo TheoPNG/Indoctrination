@@ -14,12 +14,25 @@ namespace Indoctrination.Core
     {
         public bool IsSpecial { get; }
         public IReadOnlyDictionary<ResourceColor, int> Amounts { get; }
+
+        /// <summary>
+        /// Followers this card also costs, written as "+7F" on the end of the
+        /// resource letters. Followers are a currency the player is otherwise
+        /// trying to accumulate to win, so a card priced in them is spending
+        /// progress rather than materials - kept separate from
+        /// <see cref="Amounts"/> for that reason, and never discounted by the
+        /// stones, which reduce resources.
+        /// </summary>
+        public int Followers { get; }
+
+        /// <summary>Resource total only. Followers are not resources and do not count here.</summary>
         public int Total => Amounts.Values.Sum();
 
-        private CardCost(bool isSpecial, IReadOnlyDictionary<ResourceColor, int> amounts)
+        private CardCost(bool isSpecial, IReadOnlyDictionary<ResourceColor, int> amounts, int followers = 0)
         {
             IsSpecial = isSpecial;
             Amounts = amounts;
+            Followers = followers;
         }
 
         public static CardCost Parse(string raw)
@@ -41,6 +54,28 @@ namespace Indoctrination.Core
                 return new CardCost(false, new Dictionary<ResourceColor, int>());
             }
 
+            // A follower price is appended as "+<n>F", so "G+7F" is one Green
+            // and seven followers. Resource letters keep their existing meaning,
+            // which leaves every card already written still parsing the same way.
+            var followers = 0;
+            var plus = raw.IndexOf('+');
+
+            if (plus >= 0)
+            {
+                var tail = raw[(plus + 1)..].Trim();
+
+                if (tail.Length < 2
+                    || char.ToUpperInvariant(tail[^1]) != 'F'
+                    || !int.TryParse(tail[..^1], out followers)
+                    || followers <= 0)
+                {
+                    throw new ArgumentException(
+                        $"Unrecognized follower cost '{raw}'. Expected something like \"G+7F\".");
+                }
+
+                raw = raw[..plus].Trim();
+            }
+
             var amounts = new Dictionary<ResourceColor, int>();
             foreach (var c in raw)
             {
@@ -48,7 +83,7 @@ namespace Indoctrination.Core
                 amounts[color] = amounts.GetValueOrDefault(color) + 1;
             }
 
-            return new CardCost(false, amounts);
+            return new CardCost(false, amounts, followers);
         }
 
         private static ResourceColor CharToColor(char c)
@@ -84,14 +119,29 @@ namespace Indoctrination.Core
                 reduced.Remove(color);
             }
 
-            return new CardCost(false, reduced);
+            // Followers ride through untouched: the stones discount resources,
+            // and a follower price is a different kind of payment entirely.
+            return new CardCost(false, reduced, Followers);
         }
 
         public override string ToString()
         {
-            return IsSpecial
-                ? "*"
-                : string.Concat(Amounts.SelectMany(kv => Enumerable.Repeat(kv.Key.ToString()[0], kv.Value)));
+            if (IsSpecial)
+            {
+                return "*";
+            }
+
+            var resources = string.Concat(
+                Amounts.SelectMany(kv => Enumerable.Repeat(kv.Key.ToString()[0], kv.Value)));
+
+            if (Followers <= 0)
+            {
+                return resources;
+            }
+
+            // Round-trips through Parse, so a priced view of a card can be read
+            // back as a cost without a second format to keep in step.
+            return resources.Length == 0 ? $"{Followers}F" : $"{resources}+{Followers}F";
         }
     }
 }

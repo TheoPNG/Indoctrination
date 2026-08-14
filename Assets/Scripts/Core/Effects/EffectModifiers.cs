@@ -76,6 +76,21 @@ namespace Indoctrination.Core.Effects
                     CommonEffects.DrawCards(1), "Pain Lovers");
             }
 
+            // Jormugandr's Fan Club: an opponent who is hurt loses that much
+            // faith as well. Only opponents of its owner, and never on damage
+            // its owner took themselves - the follower loss is applied directly
+            // rather than queued, so it lands with the wound that caused it and
+            // cannot be read as a separate event by anything counting effects.
+            foreach (var player in game.Players)
+            {
+                if (player == target || !player.HasInPlay(CardIds.JormugandrsFanClub))
+                {
+                    continue;
+                }
+
+                target.LoseFollowers(healthLost);
+            }
+
             // Blood Collector fills up on its owner's misfortune.
             foreach (var collector in target.Compound
                          .Where(c => c.Definition.Id == CardIds.BloodCollector).ToList())

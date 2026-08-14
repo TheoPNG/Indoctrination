@@ -21,6 +21,12 @@ ALIASES = {
     "brainwasher": "Hydro_Plant",
     "doubleagent": "Double_Agent_Japanese_Art",
     "worshipperofthebonegod": "Worshiper_of_the_Bone_God",
+
+    # Green. Spelling on the printed files, against the database's titles.
+    "celebtrity": "Celebrity",
+    "stayeyed": "Star_Eyed",
+    "sufferingfromsucess": "Suffering_from_Success",
+    "churchofwalls": "Titanstopper_Church_of_Walls",
 }
 
 
@@ -74,11 +80,22 @@ def main() -> None:
     parser.add_argument("source", type=Path, help="Folder containing one PDF per card")
     parser.add_argument("--color", default="Blue", help="Card color to require and import")
     parser.add_argument("--width", type=int, default=700, help="Rendered PNG width")
+    parser.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help="Import anyway when some cards of this colour have no PDF yet",
+    )
     args = parser.parse_args()
 
+    # pdftoppm gives the better result and is preferred, but it comes from
+    # poppler and is not on a stock macOS. sips is, and renders these cards
+    # identically at a fixed size, so the import works on a clean machine
+    # without asking anyone to install anything first.
     renderer = shutil.which("pdftoppm")
-    if renderer is None:
-        raise SystemExit("pdftoppm is required to render card PDFs")
+    fallback = shutil.which("sips")
+
+    if renderer is None and fallback is None:
+        raise SystemExit("Either pdftoppm (poppler) or sips is required to render card PDFs")
 
     with CARD_DATA.open(encoding="utf-8") as stream:
         definitions = json.load(stream)["cards"]
@@ -99,16 +116,33 @@ def main() -> None:
 
     missing = sorted(expected - matched.keys())
     extra = sorted(matched.keys() - expected)
-    if missing or extra:
-        raise SystemExit(f"PDF set mismatch; missing={missing}, extra={extra}")
+
+    # A PDF that matches no card is always an error - it means a card was
+    # renamed, or the file belongs to another colour, and importing it would
+    # write art under an id nothing reads.
+    if extra:
+        raise SystemExit(f"PDFs match no card definition: {extra}")
+
+    # A card with no PDF is only an error unless it is expected. Art arrives a
+    # colour at a time and sometimes a card is still being drawn, so this is
+    # opt-in rather than simply tolerated - the gap has to be stated out loud.
+    if missing and not args.allow_missing:
+        raise SystemExit(
+            f"No PDF for: {missing}\n"
+            "Pass --allow-missing to import the rest and leave these without art."
+        )
+
+    if missing:
+        print(f"WARNING: importing without art for {len(missing)} card(s): {missing}")
 
     OUTPUT.mkdir(parents=True, exist_ok=True)
     height = round(args.width * 7 / 5)
 
     for card_id, source in sorted(matched.items()):
         destination = OUTPUT / f"{card_id}.png"
-        subprocess.run(
-            [
+
+        if renderer is not None:
+            command = [
                 renderer,
                 "-f", "1",
                 "-l", "1",
@@ -118,9 +152,17 @@ def main() -> None:
                 "-scale-to-y", str(height),
                 str(source),
                 str(destination.with_suffix("")),
-            ],
-            check=True,
-        )
+            ]
+        else:
+            command = [
+                fallback,
+                "-s", "format", "png",
+                "--resampleHeightWidth", str(height), str(args.width),
+                str(source),
+                "--out", str(destination),
+            ]
+
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
         destination.with_suffix(".png.meta").write_text(meta_for(card_id), encoding="utf-8")
         print(f"{source.name} -> {destination.relative_to(REPO)}")
 

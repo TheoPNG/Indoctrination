@@ -115,6 +115,7 @@ namespace Indoctrination.Core
         public const string IsHeOnMeth = "Is_he_on_meth";
         public const string ItWhoConsumes = "It_Who_Consumes";
         public const string JormTrustEater = "Jorm_Trust_Eater";
+        public const string JormugandrsFanClub = "Jormugandrs_Fan_Club";
         public const string KoolAid = "Kool_Aid";
         public const string ManipulatorOfTheMasses = "Manipulator_of_the_Masses";
         public const string Masochist = "Masochist";

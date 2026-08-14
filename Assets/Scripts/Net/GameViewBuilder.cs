@@ -120,7 +120,7 @@ namespace Indoctrination.Net
 
             view.costForYou = cost.ToString();
             view.isDiscounted = !cost.IsSpecial && cost.Total < card.Cost.Total;
-            view.canAfford = player.Resources.CanAfford(cost);
+            view.canAfford = player.CanAfford(cost);
             return view;
         }
 
