@@ -1499,45 +1499,106 @@ namespace Indoctrination.Tests
             var game = ServerGame();
             ApplyAsHost(_ => game.RollPrimaryDie(0));
             yield return WaitForFrames(4);
-            Canvas.ForceUpdateCanvases();
+
+            // These tests run in batchmode with no graphics device, where a
+            // render texture cannot exist. The die is a flourish and is built to
+            // sit the whole thing out rather than take the board down with it,
+            // so that is what is checked when there is nothing to render into.
+            if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null)
+            {
+                Assert.IsFalse(roller.gameObject.activeSelf,
+                    "with no graphics device the die must stay out of the way entirely");
+                Assert.IsNull(_manager.LastError, "and must not disturb the game");
+                yield break;
+            }
 
             Assert.IsTrue(roller.gameObject.activeSelf, "rolling should throw the die");
 
-            var face = roller.GetComponentInChildren<Image>(includeInactive: true);
-            Assert.IsNotNull(face, "the die should be drawn as part of the board");
-            Assert.IsNotNull(face.sprite, "with a face on it");
-
-            // The point of the whole exercise. The die spent several attempts
-            // being technically present and completely invisible, so what is
-            // asserted is that it is actually on screen: real size, inside the
-            // window, and not clipped away by anything above it.
-            var rect = WorldRect(face.rectTransform);
-            Assert.Greater(rect.width, 20f, $"the die is drawn too small to see ({rect})");
-
-            var screen = new Rect(0f, 0f, Screen.width, Screen.height);
-            Assert.IsTrue(screen.Overlaps(rect),
-                $"the die is off screen entirely - it is at {rect}, the screen is {screen}");
-            Assert.IsTrue(IsFullyVisibleThroughEveryMask(face),
-                "the die is being clipped away by something above it");
-
-            // It has to cross the table rather than sit in one spot.
-            var startedAt = face.rectTransform.position;
-            yield return WaitForFrames(20);
-            Assert.AreNotEqual(startedAt, face.rectTransform.position,
-                               "the die should be rolling across the board, not sitting still");
-
-            // And clicking it clears it away for good, rather than the next
-            // message from the server throwing the same roll again.
-            face.GetComponent<Button>().onClick.Invoke();
-            yield return WaitForFrames(2);
-            Assert.IsFalse(roller.gameObject.activeSelf, "clicking the die clears it away");
-
-            ApplyAsHost(_ => { });
-            yield return WaitForFrames(4);
-            Assert.IsFalse(roller.gameObject.activeSelf,
-                           "and it stays away when the board next refreshes");
+            var picture = roller.GetComponent<RawImage>();
+            Assert.IsNotNull(picture, "the die is composited over the board as a picture");
+            Assert.IsNotNull(picture.texture, "with a render texture behind it");
+            Assert.IsFalse(picture.raycastTarget,
+                "the picture covers the whole board, so it must never take a click");
 
             Assert.IsNull(_manager.LastError, "and none of this touches the game");
+        }
+
+        /// <summary>
+        /// The die shows the number it was told to.
+        ///
+        /// Proved from the geometry rather than by looking, which matters
+        /// because nothing renders in batchmode and this is the one thing about
+        /// a die that is actually wrong if it is wrong. For each value it turns
+        /// the mesh the way the roller would, finds which face ends up pointing
+        /// upward, and reads that face's texture coordinates back to a number.
+        /// A mis-built mesh, a mis-laid atlas or a wrong rotation all fail here.
+        /// </summary>
+        [Test]
+        public void EveryDieFaceLandsShowingItsOwnNumber()
+        {
+            var mesh = (Mesh)typeof(DieRoller)
+                .GetMethod("BuildDieMesh", BindingFlags.NonPublic | BindingFlags.Static)
+                .Invoke(null, null);
+
+            var faceUp = typeof(DieRoller).GetMethod("FaceUp", BindingFlags.NonPublic | BindingFlags.Static);
+
+            var normals = mesh.normals;
+            var uvs = mesh.uv;
+
+            for (var value = 1; value <= 6; value++)
+            {
+                var rotation = (Quaternion)faceUp.Invoke(null, new object[] { value });
+
+                // The face whose normal ends up pointing most nearly straight up.
+                var bestFace = -1;
+                var bestUpness = -2f;
+
+                for (var face = 0; face < 6; face++)
+                {
+                    var upness = (rotation * normals[face * 4]).y;
+                    if (upness > bestUpness)
+                    {
+                        bestUpness = upness;
+                        bestFace = face;
+                    }
+                }
+
+                Assert.Greater(bestUpness, 0.99f,
+                    $"turning the die to {value} should leave a face squarely up, not at an angle");
+
+                // Read that face's atlas cell back to the number printed on it.
+                var centre = (uvs[bestFace * 4] + uvs[(bestFace * 4) + 2]) * 0.5f;
+                var shown = -1;
+
+                for (var candidate = 1; candidate <= 6; candidate++)
+                {
+                    if (BoardArt.DieAtlasCell(candidate).Contains(centre))
+                    {
+                        shown = candidate;
+                    }
+                }
+
+                Assert.AreEqual(value, shown,
+                    $"rolling a {value} would show a {shown} - the face that ends up on top "
+                    + $"carries the wrong number (uv {centre})");
+            }
+
+            // And the die is a real die: opposite faces add to seven.
+            for (var face = 0; face < 6; face += 2)
+            {
+                var centre = (uvs[face * 4] + uvs[(face * 4) + 2]) * 0.5f;
+                var opposite = (uvs[(face + 1) * 4] + uvs[((face + 1) * 4) + 2]) * 0.5f;
+
+                var a = 0;
+                var b = 0;
+                for (var candidate = 1; candidate <= 6; candidate++)
+                {
+                    if (BoardArt.DieAtlasCell(candidate).Contains(centre)) a = candidate;
+                    if (BoardArt.DieAtlasCell(candidate).Contains(opposite)) b = candidate;
+                }
+
+                Assert.AreEqual(7, a + b, $"opposite faces should add to seven, but {a} is opposite {b}");
+            }
         }
 
         /// <summary>

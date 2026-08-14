@@ -126,6 +126,51 @@ namespace Indoctrination.Net
             return Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f));
         }
 
+        private static Texture2D _dieAtlas;
+
+        /// <summary>
+        /// All six die faces on one texture, three across and two down, so a
+        /// cube can carry the whole die in a single material. Cell n-1 holds
+        /// face n.
+        /// </summary>
+        public static Texture2D DieAtlas
+        {
+            get
+            {
+                if (_dieAtlas != null)
+                {
+                    return _dieAtlas;
+                }
+
+                const int cell = 128;
+                _dieAtlas = new Texture2D(cell * 3, cell * 2, TextureFormat.RGBA32, mipChain: true)
+                {
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp
+                };
+
+                for (var value = 1; value <= 6; value++)
+                {
+                    var face = (Texture2D)DieFace(value).texture;
+                    var column = (value - 1) % 3;
+                    var row = 1 - ((value - 1) / 3);
+
+                    _dieAtlas.SetPixels(column * cell, row * cell, cell, cell, face.GetPixels());
+                }
+
+                _dieAtlas.Apply();
+                return _dieAtlas;
+            }
+        }
+
+        /// <summary>The atlas cell holding a given face, in UV space.</summary>
+        public static Rect DieAtlasCell(int value)
+        {
+            var column = (value - 1) % 3;
+            var row = 1 - ((value - 1) / 3);
+            return new Rect(column / 3f, row / 2f, 1f / 3f, 1f / 2f);
+        }
+
         private static readonly Dictionary<int, Sprite> _dieFaces = new();
 
         /// <summary>
