@@ -399,7 +399,7 @@ namespace Indoctrination.Tests
 
             var drop = new PointerEventData(EventSystem.current)
             {
-                position = RectTransformUtility.WorldToScreenPoint(null, bin.position)
+                position = RectTransformUtility.WorldToScreenPoint(UIFactory.UiCamera, bin.position)
             };
 
             handle.OnBeginDrag(drop);
@@ -453,7 +453,7 @@ namespace Indoctrination.Tests
 
             var drop = new PointerEventData(EventSystem.current)
             {
-                position = RectTransformUtility.WorldToScreenPoint(null, battlefieldViewport.position)
+                position = RectTransformUtility.WorldToScreenPoint(UIFactory.UiCamera, battlefieldViewport.position)
             };
 
             handle.OnBeginDrag(drop);
@@ -783,7 +783,7 @@ namespace Indoctrination.Tests
 
             var drop = new PointerEventData(EventSystem.current)
             {
-                position = RectTransformUtility.WorldToScreenPoint(null, firstCardView.transform.position)
+                position = RectTransformUtility.WorldToScreenPoint(UIFactory.UiCamera, firstCardView.transform.position)
             };
 
             secondHandle.OnBeginDrag(drop);
@@ -1276,7 +1276,7 @@ namespace Indoctrination.Tests
 
             // The tray's pivot sits on its bottom edge, so this is a point just
             // inside the sliver that peeks above the bottom of the screen.
-            var peek = RectTransformUtility.WorldToScreenPoint(null, handRow.position)
+            var peek = RectTransformUtility.WorldToScreenPoint(UIFactory.UiCamera, handRow.position)
                        + new Vector2(0f, 4f);
 
             PointAt(peek);
@@ -1514,11 +1514,28 @@ namespace Indoctrination.Tests
 
             Assert.IsTrue(roller.gameObject.activeSelf, "rolling should throw the dice");
 
-            var picture = roller.GetComponent<RawImage>();
-            Assert.IsNotNull(picture, "the dice are composited over the board as a picture");
-            Assert.IsNotNull(picture.texture, "with a render texture behind it");
-            Assert.IsFalse(picture.raycastTarget,
-                "the picture covers the whole board, so it must never take a click");
+            // The dice are real objects in the scene now, in front of the
+            // board's own plane, which is the whole reason they can be seen.
+            var stage = GameObject.Find("Die Stage");
+            Assert.IsNotNull(stage, "the dice should be thrown onto a real table in the scene");
+            Assert.IsTrue(stage.activeInHierarchy, "which is only up while dice are on it");
+
+            var bodies = stage.GetComponentsInChildren<Rigidbody>();
+            Assert.AreEqual(_manager.View.players.Count(p => p.isAlive && p.hasRolled), bodies.Length,
+                "one physical die per player who rolled");
+
+            var canvas = Object.FindAnyObjectByType<Canvas>();
+            Assert.AreNotEqual(RenderMode.ScreenSpaceOverlay, canvas.renderMode,
+                "the board has to be drawn through the camera, or nothing in the scene "
+                + "can ever appear in front of it");
+
+            foreach (var body in bodies)
+            {
+                var toDice = Vector3.Distance(Camera.main.transform.position, body.transform.position);
+                Assert.Less(toDice, UIFactory.CanvasPlaneDistance,
+                    $"a die at {body.transform.position} is further from the camera than the board "
+                    + $"itself, so it would be drawn behind it");
+            }
 
             // One die per player who rolled, not just the viewer's.
             var labels = roller.GetComponentsInChildren<Text>(includeInactive: true)

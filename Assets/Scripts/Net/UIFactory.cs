@@ -20,12 +20,50 @@ namespace Indoctrination.Net
     {
         public static Font DefaultFont => UITheme.BodyFont;
 
+        /// <summary>
+        /// How far in front of the camera the board is drawn. Anything nearer
+        /// than this renders over the board; anything further renders behind it.
+        /// </summary>
+        public const float CanvasPlaneDistance = 50f;
+
+        private static Canvas _canvas;
+
+        /// <summary>
+        /// The camera the board is drawn through, or null while it is an
+        /// overlay. Screen-point maths against the board must pass this.
+        /// </summary>
+        public static Camera UiCamera =>
+            _canvas != null && _canvas.renderMode != RenderMode.ScreenSpaceOverlay
+                ? _canvas.worldCamera
+                : null;
+
         /// <summary>The Canvas plus the EventSystem it needs to receive clicks under the new Input System.</summary>
         public static Canvas CreateCanvas(string name)
         {
             var go = new GameObject(name, typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             var canvas = go.GetComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+
+            // Rendered through the camera rather than as an overlay, which is
+            // what lets real 3D objects appear in front of the board. An overlay
+            // canvas is composited after every camera in the game, so nothing in
+            // the scene can be drawn over one by any means - dice included.
+            //
+            // The consequence to remember: screen-point maths against this
+            // canvas needs the camera passed in. Anywhere that used to pass null
+            // now uses UiCamera, and getting that wrong shows up as clicks and
+            // hover landing in the wrong place rather than as an error.
+            if (Camera.main != null)
+            {
+                canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                canvas.worldCamera = Camera.main;
+                canvas.planeDistance = CanvasPlaneDistance;
+            }
+            else
+            {
+                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            }
+
+            _canvas = canvas;
 
             var scaler = go.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;

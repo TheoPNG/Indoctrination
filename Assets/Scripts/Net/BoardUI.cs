@@ -1031,7 +1031,7 @@ namespace Indoctrination.Net
             }
 
             SetHandExpanded(
-                RectTransformUtility.RectangleContainsScreenPoint(_handRow, screenPoint, null));
+                RectTransformUtility.RectangleContainsScreenPoint(_handRow, screenPoint, UIFactory.UiCamera));
         }
 
         /// <summary>
@@ -1649,7 +1649,7 @@ namespace Indoctrination.Net
 
                 for (var i = 0; i < unitCells.Count; i++)
                 {
-                    var cellScreenPos = RectTransformUtility.WorldToScreenPoint(null, unitCells[i].position);
+                    var cellScreenPos = RectTransformUtility.WorldToScreenPoint(UIFactory.UiCamera, unitCells[i].position);
                     var distance = Vector2.Distance(cellScreenPos, screenPosition);
                     if (distance < bestDistance)
                     {

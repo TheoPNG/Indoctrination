@@ -16,12 +16,14 @@ namespace Indoctrination.Net
     /// each die to a tidy resting spot once it stopped, which is exactly why
     /// they appeared not to stay where they fell.
     ///
-    /// They are filmed by their own camera and that picture is laid over the
-    /// board, because the board is a ScreenSpaceOverlay canvas - Unity
-    /// composites those after every camera in the game, so nothing in the scene
-    /// can be drawn over one by any means. Showing 3D on this board without the
-    /// intermediate picture would mean moving the whole interface onto a
-    /// camera-space canvas.
+    /// They are ordinary objects in the scene, in front of the board, seen by
+    /// the game's own camera. That is possible because the board is drawn
+    /// through that camera rather than as an overlay - an overlay canvas is
+    /// composited after every camera, so nothing in the scene can appear over
+    /// one. Filming them into a texture and laying that over the board was
+    /// tried twice and showed nothing; this needs no intermediate picture at
+    /// all, so there is nothing left to go wrong between the dice and the
+    /// screen.
     /// </summary>
     public class DieRoller : MonoBehaviour
     {
@@ -49,27 +51,31 @@ namespace Indoctrination.Net
             (Vector3.back, 5)
         };
 
-        /// <summary>How far below the board the dice table sits.</summary>
-        private const float StageDepth = -2000f;
+        /// <summary>
+        /// How far in front of the board the dice roll. Nearer to the camera
+        /// than the board's own plane, which is what puts them in front of it.
+        /// </summary>
+        private const float StageHeight = 0f;
 
         /// <summary>Half-width of the table the dice are thrown onto.</summary>
         private const float TableHalfWidth = 5f;
 
-        /// <summary>How big a die is once the model has been normalised.</summary>
-        private const float DieSize = 1.15f;
+        /// <summary>
+        /// How big a die is once the model has been normalised. Measured against
+        /// the camera's orthographic size, so it is a readable fraction of the
+        /// board rather than a speck.
+        /// </summary>
+        private const float DieSize = 1.5f;
 
         /// <summary>Longest the dice may tumble before they are made to settle.</summary>
         private const float MaxTumbleSeconds = 3.2f;
 
-        private RawImage _display;
         private RectTransform _dismissArea;
         private Camera _camera;
-        private RenderTexture _texture;
         private Transform _stage;
         private GameObject _model;
         private PhysicsMaterial _contact;
         private Coroutine _rolling;
-        private Vector2Int _builtFor;
 
         private sealed class Thrown
         {
@@ -98,11 +104,6 @@ namespace Indoctrination.Net
         {
             UIFactory.Stretch(root);
 
-            // The picture covers the whole board so the dice can roll right
-            // across it. It never takes a click - the board underneath stays
-            // completely live.
-            _display = root.gameObject.AddComponent<RawImage>();
-            _display.raycastTarget = false;
 
             _dismissArea = UIFactory.Group("Dice", root);
             _dismissArea.anchorMin = _dismissArea.anchorMax = new Vector2(0.5f, 0.5f);
@@ -134,10 +135,10 @@ namespace Indoctrination.Net
         }
 
         /// <summary>
-        /// The table, the rails that keep the dice on it, the camera and the
-        /// light. Parked far below the board and isolated by distance rather
-        /// than by a layer: the board's own camera sits at y=12 with the default
-        /// 1000 of draw distance and simply cannot see this far.
+        /// The table the dice land on, the rails that keep them there, and a
+        /// light of their own. It sits in front of the board's own plane, in
+        /// full view of the game camera, which is what makes the dice visible
+        /// without any compositing.
         /// </summary>
         private void BuildTable()
         {
@@ -149,7 +150,7 @@ namespace Indoctrination.Net
             }
 
             var stage = new GameObject("Die Stage") { hideFlags = HideFlags.DontSave };
-            stage.transform.position = new Vector3(0f, StageDepth, 0f);
+            stage.transform.position = new Vector3(0f, StageHeight, 0f);
             _stage = stage.transform;
 
             _contact = new PhysicsMaterial("Die Felt")
@@ -189,18 +190,9 @@ namespace Indoctrination.Net
                     : new Vector3(sign * TableHalfWidth, 2.5f, 0f);
             }
 
-            var cameraObject = new GameObject("Die Camera") { hideFlags = HideFlags.DontSave };
-            cameraObject.transform.SetParent(stage.transform, false);
-            cameraObject.transform.localPosition = new Vector3(0f, 8.4f, -6.2f);
-            cameraObject.transform.localRotation = Quaternion.Euler(52f, 0f, 0f);
-
-            _camera = cameraObject.AddComponent<Camera>();
-            _camera.fieldOfView = 48f;
-            _camera.nearClipPlane = 0.3f;
-            _camera.farClipPlane = 45f;
-            _camera.clearFlags = CameraClearFlags.SolidColor;
-            _camera.backgroundColor = new Color(0f, 0f, 0f, 0f);
-            _camera.enabled = false;
+            // The game's own camera sees them, so there is no second camera and
+            // no texture in between - which is exactly what kept failing.
+            _camera = Camera.main;
 
             var lightObject = new GameObject("Die Light") { hideFlags = HideFlags.DontSave };
             lightObject.transform.SetParent(stage.transform, false);
@@ -209,35 +201,12 @@ namespace Indoctrination.Net
             light.type = LightType.Directional;
             light.intensity = 1.6f;
 
-            EnsureTexture();
+            // The dice are scene objects, not children of the board, so hiding
+            // the board's own object would leave them lying there. The stage is
+            // switched on and off with them.
+            stage.SetActive(false);
         }
 
-        /// <summary>
-        /// Keeps the picture the same shape as the board, so the dice are not
-        /// stretched out of square when the window changes.
-        /// </summary>
-        private void EnsureTexture()
-        {
-            var width = Mathf.Clamp(Screen.width, 320, 1920);
-            var height = Mathf.Clamp(Screen.height, 240, 1080);
-
-            if (_texture != null && _builtFor == new Vector2Int(width, height))
-            {
-                return;
-            }
-
-            if (_texture != null)
-            {
-                _camera.targetTexture = null;
-                _texture.Release();
-                Destroy(_texture);
-            }
-
-            _builtFor = new Vector2Int(width, height);
-            _texture = new RenderTexture(width, height, 24) { name = "Dice" };
-            _camera.targetTexture = _texture;
-            _display.texture = _texture;
-        }
 
         /// <summary>One player's die, as the board wants it thrown.</summary>
         public readonly struct Roll
@@ -274,10 +243,8 @@ namespace Indoctrination.Net
 
             _showing = signature;
             gameObject.SetActive(true);
+            _stage.gameObject.SetActive(true);
             transform.SetAsLastSibling();
-
-            EnsureTexture();
-            _camera.enabled = true;
 
             if (_rolling != null)
             {
@@ -376,14 +343,14 @@ namespace Indoctrination.Net
                 _rolling = null;
             }
 
-            if (_camera != null)
-            {
-                _camera.enabled = false;
-            }
-
             if (_dismissArea != null)
             {
                 _dismissArea.gameObject.SetActive(false);
+            }
+
+            if (_stage != null)
+            {
+                _stage.gameObject.SetActive(false);
             }
 
             gameObject.SetActive(false);
@@ -569,23 +536,5 @@ namespace Indoctrination.Net
             _dismissArea.gameObject.SetActive(true);
         }
 
-        private void OnDestroy()
-        {
-            if (_texture == null)
-            {
-                return;
-            }
-
-            // Unhooked before release: freeing a texture a camera still points
-            // at is an error in its own right, and surfaces during teardown
-            // where it is hardest to place.
-            if (_camera != null)
-            {
-                _camera.targetTexture = null;
-            }
-
-            _texture.Release();
-            Destroy(_texture);
-        }
     }
 }
