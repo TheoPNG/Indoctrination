@@ -1800,7 +1800,22 @@ namespace Indoctrination.Net
                 return;
             }
 
-            _dieRoller.Show(you.primaryDie);
+            // Every living player's die, not just yours - the table's whole
+            // roll decides which units wake, so an opponent's number matters as
+            // much as your own.
+            var rolls = view.players
+                .Where(player => player.isAlive && player.hasRolled && player.primaryDie > 0)
+                .Select(player => new DieRoller.Roll(
+                    player.name, player.primaryDie, player.playerId == view.viewerPlayerId))
+                .ToList();
+
+            if (rolls.Count == 0)
+            {
+                _dieRoller.Rearm();
+                return;
+            }
+
+            _dieRoller.Show(rolls);
         }
 
         /// <summary>

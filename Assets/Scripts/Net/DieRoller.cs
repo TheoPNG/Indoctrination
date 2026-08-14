@@ -1,4 +1,6 @@
 using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.UI;
@@ -6,45 +8,81 @@ using UnityEngine.UI;
 namespace Indoctrination.Net
 {
     /// <summary>
-    /// A real die, thrown across the table with real physics, in 3D.
+    /// Real dice, thrown across a table with real physics - one per player.
     ///
-    /// It is a genuine cube with six numbered faces, tumbling under gravity on a
-    /// floor, lit and seen in perspective. It is filmed by its own camera and
-    /// that picture is laid over the whole board - not because the die is fake,
-    /// but because the board is a ScreenSpaceOverlay canvas, which Unity
-    /// composites after every camera in the game. Nothing in the scene can be
-    /// drawn over such a canvas by any means, so a die that has to be seen has
-    /// to arrive as part of the picture. The alternative is moving the whole
-    /// interface to a camera-space canvas, which is a far larger change.
+    /// They are the supplied die model, dropped in with a shove and a spin, and
+    /// they tumble, bounce off the rails and come to rest wherever they come to
+    /// rest. **Nothing moves them after they land.** An earlier version slid
+    /// each die to a tidy resting spot once it stopped, which is exactly why
+    /// they appeared not to stay where they fell.
     ///
-    /// The physics is real, but the *result* is not left to it: the server has
-    /// already decided the number. Once the die stops moving it is turned the
-    /// short way onto the rolled face. In practice that is a small last tip,
-    /// because a settled die is already lying on a face.
+    /// They are filmed by their own camera and that picture is laid over the
+    /// board, because the board is a ScreenSpaceOverlay canvas - Unity
+    /// composites those after every camera in the game, so nothing in the scene
+    /// can be drawn over one by any means. Showing 3D on this board without the
+    /// intermediate picture would mean moving the whole interface onto a
+    /// camera-space canvas.
     /// </summary>
     public class DieRoller : MonoBehaviour
     {
-        /// <summary>How far below the board the die's table sits.</summary>
+        // ------------------------------------------------------------------
+        //  THE FACE MAP - this is the bit to correct once you can watch one land.
+        //
+        //  Which number is printed on which side of the model is not something
+        //  that can be read out of the file, so this is a starting guess: it
+        //  says "the side facing +Y carries a 1", and so on round the die.
+        //
+        //  To fix it: roll until you see a face clearly, note which number is
+        //  printed there and which way that side is pointing, and correct the
+        //  entry. Opposite sides of a real die add to seven, so fixing one of a
+        //  pair fixes its opposite too. Nothing else in here depends on these
+        //  values - they are only used to turn a landed die onto the number the
+        //  game actually rolled.
+        // ------------------------------------------------------------------
+        private static readonly (Vector3 Side, int Number)[] FaceMap =
+        {
+            (Vector3.up, 1),
+            (Vector3.down, 6),
+            (Vector3.right, 3),
+            (Vector3.left, 4),
+            (Vector3.forward, 2),
+            (Vector3.back, 5)
+        };
+
+        /// <summary>How far below the board the dice table sits.</summary>
         private const float StageDepth = -2000f;
 
-        /// <summary>Half-width of the little table the die is thrown onto.</summary>
-        private const float TableHalfWidth = 5.2f;
+        /// <summary>Half-width of the table the dice are thrown onto.</summary>
+        private const float TableHalfWidth = 5f;
 
-        /// <summary>Longest the die may tumble before it is made to settle.</summary>
-        private const float MaxTumbleSeconds = 2.6f;
+        /// <summary>How big a die is once the model has been normalised.</summary>
+        private const float DieSize = 1.15f;
+
+        /// <summary>Longest the dice may tumble before they are made to settle.</summary>
+        private const float MaxTumbleSeconds = 3.2f;
 
         private RawImage _display;
-        private Button _dismiss;
         private RectTransform _dismissArea;
         private Camera _camera;
         private RenderTexture _texture;
-        private Rigidbody _body;
-        private Transform _die;
+        private Transform _stage;
+        private GameObject _model;
+        private PhysicsMaterial _contact;
         private Coroutine _rolling;
         private Vector2Int _builtFor;
 
-        /// <summary>The roll on the table, so a repeated view does not re-throw it.</summary>
-        private int _showing = -1;
+        private sealed class Thrown
+        {
+            public Transform Die;
+            public Rigidbody Body;
+            public Text Label;
+            public int Value;
+        }
+
+        private readonly List<Thrown> _dice = new();
+
+        /// <summary>The whole table's roll, so a repeated view does not re-throw it.</summary>
+        private string _showing = "";
 
         public static DieRoller CreateOn(Transform canvas)
         {
@@ -60,34 +98,30 @@ namespace Indoctrination.Net
         {
             UIFactory.Stretch(root);
 
-            // The die's picture covers the whole board, so it can roll right
-            // across the table rather than being penned into a corner. It never
-            // takes a click: the board underneath stays completely live.
+            // The picture covers the whole board so the dice can roll right
+            // across it. It never takes a click - the board underneath stays
+            // completely live.
             _display = root.gameObject.AddComponent<RawImage>();
             _display.raycastTarget = false;
-            _display.color = Color.white;
 
-            // Only where the die actually comes to rest is clickable, and only
-            // once it is lying there. Moved into place when the die settles.
-            _dismissArea = UIFactory.Group("Die", root);
+            _dismissArea = UIFactory.Group("Dice", root);
             _dismissArea.anchorMin = _dismissArea.anchorMax = new Vector2(0.5f, 0.5f);
             _dismissArea.pivot = new Vector2(0.5f, 0.5f);
-            UIFactory.SetSize(_dismissArea, 150f, 150f);
+            UIFactory.SetSize(_dismissArea, 200f, 200f);
 
             var hit = _dismissArea.gameObject.AddComponent<Image>();
             hit.color = new Color(0f, 0f, 0f, 0f);
-            hit.raycastTarget = true;
 
-            _dismiss = _dismissArea.gameObject.AddComponent<Button>();
-            _dismiss.targetGraphic = hit;
-            _dismiss.transition = Selectable.Transition.None;
-            _dismiss.onClick.AddListener(Dismiss);
+            var dismiss = _dismissArea.gameObject.AddComponent<Button>();
+            dismiss.targetGraphic = hit;
+            dismiss.transition = Selectable.Transition.None;
+            dismiss.onClick.AddListener(Dismiss);
             _dismissArea.gameObject.SetActive(false);
 
             // Nothing renders outside play mode, and there is no render texture
             // at all without a graphics device - which is the case in batchmode,
             // where the tests run. The board plays normally either way; it
-            // simply never shows a die. A flourish must never be the reason
+            // simply never shows dice. A flourish must never be the reason
             // something fails.
             if (!Application.isPlaying || SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null)
             {
@@ -100,179 +134,87 @@ namespace Indoctrination.Net
         }
 
         /// <summary>
-        /// The die, the table it lands on, the walls that keep it there, and the
-        /// camera that films the lot.
-        ///
-        /// Parked far below the board and isolated by distance rather than by a
-        /// layer: layers live in project settings and would have to be reserved
-        /// and kept in step, whereas the board's own camera sits at y=12 with
-        /// the default 1000 of draw distance and simply cannot see this far.
+        /// The table, the rails that keep the dice on it, the camera and the
+        /// light. Parked far below the board and isolated by distance rather
+        /// than by a layer: the board's own camera sits at y=12 with the default
+        /// 1000 of draw distance and simply cannot see this far.
         /// </summary>
         private void BuildTable()
         {
+            _model = Resources.Load<GameObject>("Models/Die");
+            if (_model == null)
+            {
+                Debug.LogWarning("DieRoller found no die model at Resources/Models/Die.");
+                return;
+            }
+
             var stage = new GameObject("Die Stage") { hideFlags = HideFlags.DontSave };
             stage.transform.position = new Vector3(0f, StageDepth, 0f);
+            _stage = stage.transform;
+
+            _contact = new PhysicsMaterial("Die Felt")
+            {
+                bounciness = 0.28f,
+                dynamicFriction = 0.5f,
+                staticFriction = 0.5f,
+                bounceCombine = PhysicsMaterialCombine.Maximum,
+                frictionCombine = PhysicsMaterialCombine.Average
+            };
 
             var floor = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            floor.name = "Die Table";
+            floor.name = "Table";
             floor.transform.SetParent(stage.transform, false);
-            floor.transform.localScale = new Vector3(TableHalfWidth * 2f, 0.4f, TableHalfWidth * 2f);
-            floor.transform.localPosition = new Vector3(0f, -0.2f, 0f);
+            floor.transform.localScale = new Vector3(TableHalfWidth * 2f, 0.5f, TableHalfWidth * 2f);
+            floor.transform.localPosition = new Vector3(0f, -0.25f, 0f);
             floor.GetComponent<MeshRenderer>().enabled = false;
+            floor.GetComponent<BoxCollider>().material = _contact;
 
-            // Walls, so a hard throw cannot send the die off the table and out
-            // of shot. Invisible - they are a backstop, not scenery.
+            // Rails, so a hard throw cannot put a die off the table and out of
+            // shot. Invisible: a backstop, not scenery.
             for (var side = 0; side < 4; side++)
             {
                 var wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 wall.name = $"Rail {side}";
                 wall.transform.SetParent(stage.transform, false);
                 wall.GetComponent<MeshRenderer>().enabled = false;
+                wall.GetComponent<BoxCollider>().material = _contact;
 
                 var along = side % 2 == 0;
                 var sign = side < 2 ? 1f : -1f;
                 wall.transform.localScale = along
-                    ? new Vector3(TableHalfWidth * 2f, 4f, 0.4f)
-                    : new Vector3(0.4f, 4f, TableHalfWidth * 2f);
+                    ? new Vector3(TableHalfWidth * 2f, 5f, 0.5f)
+                    : new Vector3(0.5f, 5f, TableHalfWidth * 2f);
                 wall.transform.localPosition = along
-                    ? new Vector3(0f, 2f, sign * TableHalfWidth)
-                    : new Vector3(sign * TableHalfWidth, 2f, 0f);
+                    ? new Vector3(0f, 2.5f, sign * TableHalfWidth)
+                    : new Vector3(sign * TableHalfWidth, 2.5f, 0f);
             }
-
-            var die = new GameObject("Die") { hideFlags = HideFlags.DontSave };
-            die.transform.SetParent(stage.transform, false);
-            _die = die.transform;
-
-            die.AddComponent<MeshFilter>().sharedMesh = BuildDieMesh();
-
-            var renderer = die.AddComponent<MeshRenderer>();
-            renderer.sharedMaterial = BuildDieMaterial();
-            renderer.shadowCastingMode = ShadowCastingMode.Off;
-
-            die.AddComponent<BoxCollider>();
-
-            _body = die.AddComponent<Rigidbody>();
-            _body.mass = 1f;
-            _body.linearDamping = 0.12f;
-            _body.angularDamping = 0.16f;
-            _body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-            _body.interpolation = RigidbodyInterpolation.Interpolate;
 
             var cameraObject = new GameObject("Die Camera") { hideFlags = HideFlags.DontSave };
             cameraObject.transform.SetParent(stage.transform, false);
-            cameraObject.transform.localPosition = new Vector3(0f, 7.6f, -5.6f);
+            cameraObject.transform.localPosition = new Vector3(0f, 8.4f, -6.2f);
             cameraObject.transform.localRotation = Quaternion.Euler(52f, 0f, 0f);
 
             _camera = cameraObject.AddComponent<Camera>();
-            _camera.orthographic = false;
-            _camera.fieldOfView = 46f;
+            _camera.fieldOfView = 48f;
             _camera.nearClipPlane = 0.3f;
-            _camera.farClipPlane = 40f;
+            _camera.farClipPlane = 45f;
             _camera.clearFlags = CameraClearFlags.SolidColor;
             _camera.backgroundColor = new Color(0f, 0f, 0f, 0f);
             _camera.enabled = false;
 
             var lightObject = new GameObject("Die Light") { hideFlags = HideFlags.DontSave };
             lightObject.transform.SetParent(stage.transform, false);
-            lightObject.transform.localRotation = Quaternion.Euler(52f, -34f, 0f);
+            lightObject.transform.localRotation = Quaternion.Euler(50f, -30f, 0f);
             var light = lightObject.AddComponent<Light>();
             light.type = LightType.Directional;
-            light.intensity = 1.5f;
-            light.color = new Color(1f, 0.99f, 0.96f);
+            light.intensity = 1.6f;
 
             EnsureTexture();
         }
 
         /// <summary>
-        /// A cube whose six faces carry the six numbers, built here rather than
-        /// imported so that which face holds which number is known exactly -
-        /// which is what lets the die be turned onto the rolled number with no
-        /// guesswork. Opposite faces add to seven, as on a real die.
-        /// </summary>
-        private static Mesh BuildDieMesh()
-        {
-            // Face order: +Y 1, -Y 6, +X 3, -X 4, +Z 2, -Z 5.
-            var normals = new[] { Vector3.up, Vector3.down, Vector3.right, Vector3.left, Vector3.forward, Vector3.back };
-            var values = new[] { 1, 6, 3, 4, 2, 5 };
-
-            var vertices = new Vector3[24];
-            var uvs = new Vector2[24];
-            var faceNormals = new Vector3[24];
-            var triangles = new int[36];
-
-            for (var face = 0; face < 6; face++)
-            {
-                var normal = normals[face];
-
-                // Two axes across the face, perpendicular to its normal.
-                var right = Vector3.Cross(normal, Mathf.Abs(normal.y) > 0.5f ? Vector3.forward : Vector3.up).normalized;
-                var up = Vector3.Cross(right, normal).normalized;
-
-                var centre = normal * 0.5f;
-                var v = face * 4;
-
-                vertices[v + 0] = centre - (right * 0.5f) - (up * 0.5f);
-                vertices[v + 1] = centre - (right * 0.5f) + (up * 0.5f);
-                vertices[v + 2] = centre + (right * 0.5f) + (up * 0.5f);
-                vertices[v + 3] = centre + (right * 0.5f) - (up * 0.5f);
-
-                var cell = BoardArt.DieAtlasCell(values[face]);
-                uvs[v + 0] = new Vector2(cell.xMin, cell.yMin);
-                uvs[v + 1] = new Vector2(cell.xMin, cell.yMax);
-                uvs[v + 2] = new Vector2(cell.xMax, cell.yMax);
-                uvs[v + 3] = new Vector2(cell.xMax, cell.yMin);
-
-                for (var i = 0; i < 4; i++)
-                {
-                    faceNormals[v + i] = normal;
-                }
-
-                var t = face * 6;
-                triangles[t + 0] = v + 0;
-                triangles[t + 1] = v + 1;
-                triangles[t + 2] = v + 2;
-                triangles[t + 3] = v + 0;
-                triangles[t + 4] = v + 2;
-                triangles[t + 5] = v + 3;
-            }
-
-            var mesh = new Mesh { name = "Die" };
-            mesh.SetVertices(vertices);
-            mesh.SetUVs(0, uvs);
-            mesh.SetNormals(faceNormals);
-            mesh.SetTriangles(triangles, 0);
-            mesh.RecalculateTangents();
-            mesh.RecalculateBounds();
-            return mesh;
-        }
-
-        private static Material BuildDieMaterial()
-        {
-            // Whichever lit shader this project's pipeline provides. Falling
-            // back keeps this working if the pipeline is ever changed.
-            var shader = Shader.Find("Universal Render Pipeline/Lit")
-                         ?? Shader.Find("Standard")
-                         ?? Shader.Find("Sprites/Default");
-
-            var material = new Material(shader) { name = "Die" };
-            material.mainTexture = BoardArt.DieAtlas;
-
-            if (material.HasProperty("_BaseMap"))
-            {
-                material.SetTexture("_BaseMap", BoardArt.DieAtlas);
-            }
-
-            if (material.HasProperty("_Smoothness"))
-            {
-                material.SetFloat("_Smoothness", 0.18f);
-            }
-
-            return material;
-        }
-
-        /// <summary>
-        /// Keeps the picture the same shape as the board. A texture built for a
-        /// different window shape would stretch the die out of square.
+        /// Keeps the picture the same shape as the board, so the dice are not
+        /// stretched out of square when the window changes.
         /// </summary>
         private void EnsureTexture()
         {
@@ -292,25 +234,45 @@ namespace Indoctrination.Net
             }
 
             _builtFor = new Vector2Int(width, height);
-            _texture = new RenderTexture(width, height, 24) { name = "Die" };
+            _texture = new RenderTexture(width, height, 24) { name = "Dice" };
             _camera.targetTexture = _texture;
             _display.texture = _texture;
         }
 
-        /// <summary>
-        /// Throws the die and lands it on <paramref name="value"/>. Throwing the
-        /// same roll again does nothing: the die already on the table shows the
-        /// right number, and re-throwing would look like a roll that never
-        /// happened.
-        /// </summary>
-        public void Show(int value)
+        /// <summary>One player's die, as the board wants it thrown.</summary>
+        public readonly struct Roll
         {
-            if (_die == null || value < 1 || value > 6 || value == _showing)
+            public Roll(string name, int value, bool isViewer)
+            {
+                Name = name;
+                Value = value;
+                IsViewer = isViewer;
+            }
+
+            public string Name { get; }
+            public int Value { get; }
+            public bool IsViewer { get; }
+        }
+
+        /// <summary>
+        /// Throws one die per player. Throwing the same set again does nothing:
+        /// the dice already on the table show the right numbers, and re-throwing
+        /// would look like a roll that never happened.
+        /// </summary>
+        public void Show(IReadOnlyList<Roll> rolls)
+        {
+            if (_stage == null || rolls == null || rolls.Count == 0)
             {
                 return;
             }
 
-            _showing = value;
+            var signature = string.Join(",", rolls.Select(roll => $"{roll.Name}:{roll.Value}"));
+            if (signature == _showing)
+            {
+                return;
+            }
+
+            _showing = signature;
             gameObject.SetActive(true);
             transform.SetAsLastSibling();
 
@@ -322,10 +284,90 @@ namespace Indoctrination.Net
                 StopCoroutine(_rolling);
             }
 
-            _rolling = StartCoroutine(Throw(value));
+            BuildDice(rolls);
+            _rolling = StartCoroutine(Throw());
         }
 
-        /// <summary>Clears the die away, which is what clicking it does.</summary>
+        /// <summary>
+        /// Makes one die and one label per roll, reusing whatever is already on
+        /// the table so a four-player game does not build four fresh dice every
+        /// turn.
+        /// </summary>
+        private void BuildDice(IReadOnlyList<Roll> rolls)
+        {
+            while (_dice.Count < rolls.Count)
+            {
+                var die = Instantiate(_model, _stage);
+                die.name = $"Die {_dice.Count}";
+                die.hideFlags = HideFlags.DontSave;
+
+                // Normalised on its largest axis, so the throw reads the same
+                // whatever scale the model happens to have been exported at.
+                var widest = 0f;
+                foreach (var filter in die.GetComponentsInChildren<MeshFilter>())
+                {
+                    if (filter.sharedMesh != null)
+                    {
+                        var size = filter.sharedMesh.bounds.size;
+                        widest = Mathf.Max(widest, Mathf.Max(size.x, Mathf.Max(size.y, size.z)));
+                    }
+                }
+
+                if (widest > 0f)
+                {
+                    die.transform.localScale = Vector3.one * (DieSize / widest);
+                }
+
+                var collider = die.AddComponent<BoxCollider>();
+                collider.size = Vector3.one * (widest > 0f ? widest : 1f);
+                collider.material = _contact;
+
+                var body = die.AddComponent<Rigidbody>();
+                body.mass = 1f;
+                body.linearDamping = 0.05f;
+                body.angularDamping = 0.1f;
+                body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+                body.interpolation = RigidbodyInterpolation.Interpolate;
+
+                // Whose die it is, written under it. With several on the table
+                // the numbers mean nothing without knowing who threw which.
+                var label = UIFactory.Label(
+                    $"Die Owner {_dice.Count}", transform, "", 15, TextAnchor.MiddleCenter, UITheme.Bone);
+                label.fontStyle = FontStyle.Bold;
+                label.raycastTarget = false;
+                label.rectTransform.anchorMin = label.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+                UIFactory.SetSize(label.rectTransform, 220f, 26f);
+
+                var shadow = label.gameObject.AddComponent<Outline>();
+                shadow.effectColor = new Color(0f, 0f, 0f, 0.95f);
+                shadow.effectDistance = new Vector2(1.5f, -1.5f);
+
+                _dice.Add(new Thrown { Die = die.transform, Body = body, Label = label });
+            }
+
+            for (var i = 0; i < _dice.Count; i++)
+            {
+                var thrown = _dice[i];
+                var live = i < rolls.Count;
+
+                thrown.Die.gameObject.SetActive(live);
+                thrown.Label.gameObject.SetActive(live);
+
+                if (!live)
+                {
+                    continue;
+                }
+
+                thrown.Value = rolls[i].Value;
+
+                // The rolled number is written beside the name on purpose. It is
+                // what the game is using, so while the face map is still a guess
+                // this is what says whether the die agrees with it.
+                thrown.Label.text = $"{(rolls[i].IsViewer ? "YOU" : rolls[i].Name)}  ·  {rolls[i].Value}";
+                thrown.Label.color = rolls[i].IsViewer ? UITheme.Signal : UITheme.Bone;
+            }
+        }
+
         public void Dismiss()
         {
             if (_rolling != null)
@@ -348,45 +390,58 @@ namespace Indoctrination.Net
         }
 
         /// <summary>
-        /// Clears the die and forgets the roll, so the next one is thrown
-        /// afresh. The number deliberately survives an ordinary dismissal - the
-        /// board refreshes on every message from the server, and forgetting it
-        /// there would throw the same die again the moment it was clicked away.
+        /// Clears the dice and forgets the roll, so the next one is thrown
+        /// afresh. The numbers deliberately survive an ordinary dismissal - the
+        /// board refreshes on every message from the server, and forgetting them
+        /// there would throw the same dice again the moment they were clicked
+        /// away.
         /// </summary>
         public void Rearm()
         {
-            if (_showing == -1 && !gameObject.activeSelf)
+            if (_showing.Length == 0 && !gameObject.activeSelf)
             {
                 return;
             }
 
-            _showing = -1;
+            _showing = "";
             Dismiss();
         }
 
-        private IEnumerator Throw(int value)
+        private IEnumerator Throw()
         {
             _dismissArea.gameObject.SetActive(false);
 
-            // Thrown in from one side of the table, across it.
-            _body.isKinematic = false;
-            _die.localPosition = new Vector3(-TableHalfWidth + 0.9f, 2.4f, Random.Range(-1.4f, 1.4f));
-            _die.localRotation = Random.rotation;
+            var live = _dice.Where(die => die.Die.gameObject.activeSelf).ToList();
 
-            _body.linearVelocity = new Vector3(Random.Range(6.5f, 8.5f), 1.2f, Random.Range(-1.6f, 1.6f));
-            _body.angularVelocity = new Vector3(
-                Random.Range(-16f, 16f), Random.Range(-16f, 16f), Random.Range(-16f, 16f));
+            // Thrown in together from one end, spread across the table so they
+            // do not land in a heap.
+            for (var i = 0; i < live.Count; i++)
+            {
+                var lane = live.Count == 1 ? 0f : Mathf.Lerp(-2.4f, 2.4f, i / (live.Count - 1f));
+                var thrown = live[i];
 
-            // Tumbles until it runs out of energy, or until it has had long
-            // enough - a die that will not settle must not hold up the board.
+                thrown.Body.isKinematic = false;
+                thrown.Die.localPosition = new Vector3(-TableHalfWidth + 1f, 2.6f + (i * 0.4f), lane);
+                thrown.Die.localRotation = Random.rotation;
+
+                thrown.Body.linearVelocity = new Vector3(
+                    Random.Range(5.5f, 7.5f), 0.5f, Random.Range(-1.2f, 1.2f) - (lane * 0.25f));
+                thrown.Body.angularVelocity = new Vector3(
+                    Random.Range(-14f, 14f), Random.Range(-14f, 14f), Random.Range(-14f, 14f));
+            }
+
+            // Tumble until they have all run out of energy, or until they have
+            // had long enough - dice that will not settle must not hold up the
+            // board. The labels follow them the whole way.
             var tumbling = 0f;
             while (tumbling < MaxTumbleSeconds)
             {
                 tumbling += Time.deltaTime;
+                PlaceLabels();
 
-                if (tumbling > 0.55f
-                    && _body.linearVelocity.magnitude < 0.35f
-                    && _body.angularVelocity.magnitude < 0.9f)
+                if (tumbling > 0.7f && live.All(die =>
+                        die.Body.linearVelocity.magnitude < 0.3f
+                        && die.Body.angularVelocity.magnitude < 0.8f))
                 {
                     break;
                 }
@@ -394,42 +449,59 @@ namespace Indoctrination.Net
                 yield return null;
             }
 
-            // The number was decided before the throw, so the die is turned the
-            // short way onto it. A die that has settled is already lying on a
-            // face, so this is a small last tip rather than a visible cheat.
-            _body.isKinematic = true;
+            // The numbers were decided by the server before the throw, so each
+            // die is turned onto its own - **in place**. Only the rotation is
+            // touched: a die that has been moved after it stopped does not look
+            // like a die that landed there.
+            foreach (var thrown in live)
+            {
+                thrown.Body.isKinematic = true;
+            }
 
-            var from = _die.localRotation;
-            var to = NearestUpright(from, value);
-            var resting = new Vector3(_die.localPosition.x, 0.5f, _die.localPosition.z);
+            var from = live.Select(die => die.Die.localRotation).ToArray();
+            var to = live.Select((die, i) => NearestShowing(from[i], die.Value)).ToArray();
+
             var settling = 0f;
-
-            while (settling < 0.3f)
+            while (settling < 0.25f)
             {
                 settling += Time.deltaTime;
-                var t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(settling / 0.3f));
+                var t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(settling / 0.25f));
 
-                _die.localRotation = Quaternion.Slerp(from, to, t);
-                _die.localPosition = Vector3.Lerp(_die.localPosition, resting, t);
+                for (var i = 0; i < live.Count; i++)
+                {
+                    live[i].Die.localRotation = Quaternion.Slerp(from[i], to[i], t);
+                }
+
+                PlaceLabels();
                 yield return null;
             }
 
-            _die.localRotation = to;
-            _die.localPosition = resting;
+            for (var i = 0; i < live.Count; i++)
+            {
+                live[i].Die.localRotation = to[i];
+            }
 
-            PlaceDismissArea();
+            PlaceLabels();
+            PlaceDismissArea(live);
             _rolling = null;
         }
 
         /// <summary>
-        /// The orientation showing <paramref name="value"/> upward that is
-        /// closest to how the die already lies, so settling turns it as little
-        /// as possible. Chosen from the four ways that face can be up, which
-        /// differ only in how the die is spun about the vertical.
+        /// The orientation showing <paramref name="value"/> that is closest to
+        /// how the die already lies, so the last turn onto the rolled number is
+        /// as small as possible. Chosen from the four ways that side can be up,
+        /// which differ only in how the die is spun about the vertical.
         /// </summary>
-        private static Quaternion NearestUpright(Quaternion current, int value)
+        private static Quaternion NearestShowing(Quaternion current, int value)
         {
-            var bring = FaceUp(value);
+            var side = FaceMap.FirstOrDefault(entry => entry.Number == value).Side;
+            if (side == Vector3.zero)
+            {
+                return current;
+            }
+
+            // Turn that side to point straight up, then try the four spins.
+            var bring = Quaternion.FromToRotation(side, Vector3.up);
             var best = bring;
             var closest = -1f;
 
@@ -448,36 +520,51 @@ namespace Indoctrination.Net
             return best;
         }
 
-        /// <summary>
-        /// The rotation that puts a given number face up.
-        ///
-        /// Exact rather than guessed, because the mesh is built here: +Y carries
-        /// 1, -Y 6, +X 3, -X 4, +Z 2 and -Z 5, so each of these simply brings
-        /// that face's axis round to vertical.
-        /// </summary>
-        private static Quaternion FaceUp(int value) => value switch
+        /// <summary>Keeps each name sitting under the die it belongs to.</summary>
+        private void PlaceLabels()
         {
-            1 => Quaternion.identity,
-            6 => Quaternion.Euler(180f, 0f, 0f),
-            3 => Quaternion.Euler(0f, 0f, 90f),
-            4 => Quaternion.Euler(0f, 0f, -90f),
-            2 => Quaternion.Euler(-90f, 0f, 0f),
-            _ => Quaternion.Euler(90f, 0f, 0f)
-        };
-
-        /// <summary>
-        /// Puts the clickable patch over wherever the die came to rest. The
-        /// picture covers the whole board but never takes a click, so this is
-        /// the only part of the board the die takes away from the game.
-        /// </summary>
-        private void PlaceDismissArea()
-        {
-            var onScreen = _camera.WorldToViewportPoint(_die.position);
             var board = (RectTransform)transform;
 
-            _dismissArea.anchoredPosition = new Vector2(
-                (onScreen.x - 0.5f) * board.rect.width,
-                (onScreen.y - 0.5f) * board.rect.height);
+            foreach (var thrown in _dice)
+            {
+                if (!thrown.Die.gameObject.activeSelf)
+                {
+                    continue;
+                }
+
+                var viewport = _camera.WorldToViewportPoint(thrown.Die.position);
+                thrown.Label.rectTransform.anchoredPosition = new Vector2(
+                    (viewport.x - 0.5f) * board.rect.width,
+                    ((viewport.y - 0.5f) * board.rect.height) - 52f);
+            }
+        }
+
+        /// <summary>
+        /// Puts the clickable patch over the dice. The picture covers the whole
+        /// board but never takes a click, so this is the only part of the board
+        /// the dice take away from the game.
+        /// </summary>
+        private void PlaceDismissArea(IReadOnlyList<Thrown> live)
+        {
+            var board = (RectTransform)transform;
+            var min = new Vector2(float.MaxValue, float.MaxValue);
+            var max = new Vector2(float.MinValue, float.MinValue);
+
+            foreach (var thrown in live)
+            {
+                var viewport = _camera.WorldToViewportPoint(thrown.Die.position);
+                var point = new Vector2(
+                    (viewport.x - 0.5f) * board.rect.width,
+                    (viewport.y - 0.5f) * board.rect.height);
+
+                min = Vector2.Min(min, point);
+                max = Vector2.Max(max, point);
+            }
+
+            _dismissArea.anchoredPosition = (min + max) * 0.5f;
+            _dismissArea.sizeDelta = new Vector2(
+                Mathf.Max(200f, max.x - min.x + 200f),
+                Mathf.Max(200f, max.y - min.y + 200f));
 
             _dismissArea.gameObject.SetActive(true);
         }
@@ -490,7 +577,7 @@ namespace Indoctrination.Net
             }
 
             // Unhooked before release: freeing a texture a camera still points
-            // at is an error in its own right, and it surfaces during teardown
+            // at is an error in its own right, and surfaces during teardown
             // where it is hardest to place.
             if (_camera != null)
             {

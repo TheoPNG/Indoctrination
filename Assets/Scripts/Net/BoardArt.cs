@@ -143,7 +143,11 @@ namespace Indoctrination.Net
                 }
 
                 const int cell = 128;
-                _dieAtlas = new Texture2D(cell * 3, cell * 2, TextureFormat.RGBA32, mipChain: true)
+
+                // No mipmaps: the six faces sit side by side, and mip levels
+                // blend across the joins, which puts a ghost of one number on
+                // the face next to it.
+                _dieAtlas = new Texture2D(cell * 3, cell * 2, TextureFormat.RGBA32, mipChain: false)
                 {
                     filterMode = FilterMode.Bilinear,
                     wrapMode = TextureWrapMode.Clamp
@@ -151,11 +155,9 @@ namespace Indoctrination.Net
 
                 for (var value = 1; value <= 6; value++)
                 {
-                    var face = (Texture2D)DieFace(value).texture;
                     var column = (value - 1) % 3;
                     var row = 1 - ((value - 1) / 3);
-
-                    _dieAtlas.SetPixels(column * cell, row * cell, cell, cell, face.GetPixels());
+                    _dieAtlas.SetPixels(column * cell, row * cell, cell, cell, SolidDieFace(value, cell));
                 }
 
                 _dieAtlas.Apply();
@@ -163,12 +165,75 @@ namespace Indoctrination.Net
             }
         }
 
+        /// <summary>
+        /// One face of the 3D die: a solid square with pips, corner to corner.
+        ///
+        /// Deliberately not the UI face, which is a rounded tile with
+        /// transparent corners. Wrapped onto a cube and lit by an opaque shader
+        /// those corners are not transparent at all - the shader ignores alpha
+        /// and draws them in whatever colour is underneath, which put four black
+        /// notches on every face and made the die look broken.
+        /// </summary>
+        private static Color[] SolidDieFace(int value, int size)
+        {
+            var pixels = new Color[size * size];
+
+            var face = new Color(0.925f, 0.933f, 0.945f);
+            var bevel = new Color(0.760f, 0.775f, 0.800f);
+            var pip = new Color(0.055f, 0.063f, 0.078f);
+
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    // A darker rim, so the edges of the cube read as edges
+                    // rather than the faces blending into one another.
+                    var toEdge = Mathf.Min(Mathf.Min(x, size - 1 - x), Mathf.Min(y, size - 1 - y));
+                    pixels[(y * size) + x] = toEdge < 6 ? bevel : face;
+                }
+            }
+
+            var step = size / 4f;
+            foreach (var spot in PipLayout(value))
+            {
+                var cx = step * (spot.x + 1);
+                var cy = step * (spot.y + 1);
+
+                for (var y = 0; y < size; y++)
+                {
+                    for (var x = 0; x < size; x++)
+                    {
+                        var distance = Mathf.Sqrt(((x - cx) * (x - cx)) + ((y - cy) * (y - cy)));
+                        if (distance <= 12f)
+                        {
+                            // Softened at the rim so the pips do not look
+                            // stair-stepped when the die is close to the camera.
+                            pixels[(y * size) + x] = Color.Lerp(
+                                pip, pixels[(y * size) + x], Mathf.Clamp01(distance - 10.5f));
+                        }
+                    }
+                }
+            }
+
+            return pixels;
+        }
+
         /// <summary>The atlas cell holding a given face, in UV space.</summary>
         public static Rect DieAtlasCell(int value)
         {
             var column = (value - 1) % 3;
             var row = 1 - ((value - 1) / 3);
-            return new Rect(column / 3f, row / 2f, 1f / 3f, 1f / 2f);
+
+            // Pulled in by half a texel on every side. Sampling exactly on the
+            // join between two cells picks up the neighbouring face along the
+            // seam, which shows as a thin wrong-numbered line down the edge.
+            const float inset = 0.5f / 384f;
+
+            return new Rect(
+                (column / 3f) + inset,
+                (row / 2f) + inset,
+                (1f / 3f) - (inset * 2f),
+                (1f / 2f) - (inset * 2f));
         }
 
         private static readonly Dictionary<int, Sprite> _dieFaces = new();
