@@ -10,11 +10,18 @@ namespace Indoctrination.Net
     /// <summary>
     /// Real dice, thrown across a table with real physics - one per player.
     ///
-    /// They are the supplied die model, dropped in with a shove and a spin, and
-    /// they tumble, bounce off the rails and come to rest wherever they come to
-    /// rest. **Nothing moves them after they land.** An earlier version slid
-    /// each die to a tidy resting spot once it stopped, which is exactly why
-    /// they appeared not to stay where they fell.
+    /// They are the supplied die model, flung in hard with a random shove and a
+    /// random spin, and they tumble, bounce off the rails and come to rest
+    /// wherever they come to rest. **Nothing touches them after they land.**
+    /// Two earlier versions did: one slid each die to a tidy resting spot, and
+    /// one turned it onto the rolled number once it stopped. Both looked like
+    /// exactly what they were.
+    ///
+    /// The number is nonetheless the one the server rolled. See `Throw` - the
+    /// throw is simulated and recorded in the frame before it is shown, and the
+    /// model is turned inside its own collider so the right number is on the
+    /// face that is going to land upward. By the time anything is on screen the
+    /// roll is already correct and needs no help.
     ///
     /// They are ordinary objects in the scene, in front of the board, seen by
     /// the game's own camera. That is possible because the board is drawn
@@ -28,27 +35,27 @@ namespace Indoctrination.Net
     public class DieRoller : MonoBehaviour
     {
         // ------------------------------------------------------------------
-        //  THE FACE MAP - this is the bit to correct once you can watch one land.
+        //  THE FACE MAP - which number is printed on which side of the model.
         //
-        //  Which number is printed on which side of the model is not something
-        //  that can be read out of the file, so this is a starting guess: it
-        //  says "the side facing +Y carries a 1", and so on round the die.
+        //  Measured, not guessed. The pips on this model are modelled geometry
+        //  rather than a painted texture, so they can be counted straight out of
+        //  the mesh; `DieFaceProbe` in the editor tools does exactly that and
+        //  prints the result. Re-run it if the die model is ever replaced:
         //
-        //  To fix it: roll until you see a face clearly, note which number is
-        //  printed there and which way that side is pointing, and correct the
-        //  entry. Opposite sides of a real die add to seven, so fixing one of a
-        //  pair fixes its opposite too. Nothing else in here depends on these
-        //  values - they are only used to turn a landed die onto the number the
-        //  game actually rolled.
+        //      Unity -batchmode -nographics -projectPath . \
+        //        -executeMethod Indoctrination.EditorTools.DieFaceProbe.RunBatch
+        //
+        //  Opposite sides add to seven, as they do on a real die, which is a
+        //  free check on the measurement.
         // ------------------------------------------------------------------
         private static readonly (Vector3 Side, int Number)[] FaceMap =
         {
-            (Vector3.up, 1),
-            (Vector3.down, 6),
+            (Vector3.up, 2),
+            (Vector3.down, 5),
             (Vector3.right, 3),
             (Vector3.left, 4),
-            (Vector3.forward, 2),
-            (Vector3.back, 5)
+            (Vector3.forward, 6),
+            (Vector3.back, 1)
         };
 
         /// <summary>
@@ -83,8 +90,24 @@ namespace Indoctrination.Net
             return visibleHeight * DieShareOfView;
         }
 
-        /// <summary>Longest the dice may tumble before they are made to settle.</summary>
-        private const float MaxTumbleSeconds = 3.2f;
+        /// <summary>Longest a single simulated throw is allowed to run.</summary>
+        private const float MaxTumbleSeconds = 6f;
+
+        /// <summary>
+        /// Shortest throw worth watching. A die that stops almost at once is a
+        /// legal roll and a boring one, so it is simply thrown again - the
+        /// simulation is free, and nobody has seen it yet.
+        /// </summary>
+        private const float MinTumbleSeconds = 1.1f;
+
+        /// <summary>How many throws to try before settling for the last one.</summary>
+        private const int ThrowAttempts = 8;
+
+        /// <summary>
+        /// How square-on a die has to come to rest to count as having landed on
+        /// a number. `1` is dead flat; this allows a couple of degrees.
+        /// </summary>
+        private const float FlatEnough = 0.999f;
 
         private RectTransform _dismissArea;
         private Camera _camera;
@@ -95,10 +118,29 @@ namespace Indoctrination.Net
 
         private sealed class Thrown
         {
+            /// <summary>The physical die: a plain cube collider and a body.</summary>
             public Transform Die;
+
+            /// <summary>
+            /// The model, hung inside the collider on its own pivot. Turning
+            /// this by a quarter-turn moves which number is on which side
+            /// without touching the physics at all, because the collider is a
+            /// cube and a cube turned by a quarter-turn is the same cube. This
+            /// is what lets the die land on the rolled number without ever being
+            /// nudged after it lands.
+            /// </summary>
+            public Transform Facing;
+
             public Rigidbody Body;
             public Text Label;
             public int Value;
+        }
+
+        /// <summary>One die's throw, step by step, as the physics played it.</summary>
+        private sealed class Recording
+        {
+            public readonly List<Vector3> Positions = new();
+            public readonly List<Quaternion> Rotations = new();
         }
 
         private readonly List<Thrown> _dice = new();
@@ -171,9 +213,9 @@ namespace Indoctrination.Net
 
             _contact = new PhysicsMaterial("Die Felt")
             {
-                bounciness = 0.28f,
-                dynamicFriction = 0.5f,
-                staticFriction = 0.5f,
+                bounciness = 0.55f,
+                dynamicFriction = 0.28f,
+                staticFriction = 0.28f,
                 bounceCombine = PhysicsMaterialCombine.Maximum,
                 frictionCombine = PhysicsMaterialCombine.Average
             };
@@ -280,8 +322,25 @@ namespace Indoctrination.Net
         {
             while (_dice.Count < rolls.Count)
             {
-                var die = Instantiate(_model, _stage);
-                die.name = $"Die {_dice.Count}";
+                // Three layers, and the split matters:
+                //
+                //   Die N     the physical die - a cube collider and a body, and
+                //             nothing to look at. This is all the physics knows.
+                //     Facing  a pivot that turns the model inside the cube.
+                //       model the die as exported, centred and scaled to fit.
+                //
+                // Because the collider is a cube, turning `Facing` by a quarter
+                // turn changes which number is on top and changes nothing else.
+                // That is how the die lands on the number the game rolled without
+                // being touched after it lands.
+                var body = new GameObject($"Die {_dice.Count}") { hideFlags = HideFlags.DontSave };
+                body.transform.SetParent(_stage, false);
+
+                var facing = new GameObject("Facing").transform;
+                facing.SetParent(body.transform, false);
+
+                var die = Instantiate(_model, facing);
+                die.name = "Model";
                 die.hideFlags = HideFlags.DontSave;
 
                 StripSceneFurniture(die);
@@ -340,32 +399,28 @@ namespace Indoctrination.Net
                     ? Mathf.Max(measured.size.x, Mathf.Max(measured.size.y, measured.size.z))
                     : 0f;
 
-                if (widest > 0.0001f)
-                {
-                    die.transform.localScale = Vector3.one * (TargetDieSize() / widest);
-                }
-                else
-                {
-                    // Nothing measurable. Better a die of the wrong size than one
-                    // that swallows the screen.
-                    die.transform.localScale = Vector3.one;
-                }
+                // Scaled to the target size and shifted so the middle of the die
+                // sits on the pivot. The centring is what makes turning `Facing`
+                // safe: the model spins about its own middle rather than swinging
+                // out of the collider.
+                var fit = widest > 0.0001f ? TargetDieSize() / widest : 1f;
+                die.transform.localScale = Vector3.one * fit;
+                die.transform.localPosition = found ? -measured.center * fit : Vector3.zero;
 
-                // The collider is sized and placed from the same measurement, in
-                // the root's own space, so it wraps the die wherever the model
-                // happens to sit relative to its own origin. It scales with the
-                // root, so it is expressed unscaled here.
-                var collider = die.AddComponent<BoxCollider>();
-                collider.size = found ? measured.size : Vector3.one;
-                collider.center = found ? measured.center : Vector3.zero;
+                // A plain cube, the size the model was fitted to. Deliberately
+                // not measured: the target size is known exactly, and a collider
+                // that never depends on a measurement cannot be thrown off by a
+                // bad one.
+                var collider = body.AddComponent<BoxCollider>();
+                collider.size = Vector3.one * TargetDieSize();
                 collider.material = _contact;
 
-                var body = die.AddComponent<Rigidbody>();
-                body.mass = 1f;
-                body.linearDamping = 0.05f;
-                body.angularDamping = 0.1f;
-                body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-                body.interpolation = RigidbodyInterpolation.Interpolate;
+                var rigid = body.AddComponent<Rigidbody>();
+                rigid.mass = 1f;
+                rigid.linearDamping = 0.02f;
+                rigid.angularDamping = 0.04f;
+                rigid.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+                rigid.interpolation = RigidbodyInterpolation.None;
 
                 // Whose die it is, written under it. With several on the table
                 // the numbers mean nothing without knowing who threw which.
@@ -380,7 +435,13 @@ namespace Indoctrination.Net
                 shadow.effectColor = new Color(0f, 0f, 0f, 0.95f);
                 shadow.effectDistance = new Vector2(1.5f, -1.5f);
 
-                _dice.Add(new Thrown { Die = die.transform, Body = body, Label = label });
+                _dice.Add(new Thrown
+                {
+                    Die = body.transform,
+                    Facing = facing,
+                    Body = rigid,
+                    Label = label
+                });
             }
 
             for (var i = 0; i < _dice.Count; i++)
@@ -398,9 +459,9 @@ namespace Indoctrination.Net
 
                 thrown.Value = rolls[i].Value;
 
-                // The rolled number is written beside the name on purpose. It is
-                // what the game is using, so while the face map is still a guess
-                // this is what says whether the die agrees with it.
+                // The rolled number is written beside the name on purpose: it
+                // is what the game is actually using, so it is also the check
+                // that the die on the table agrees with it.
                 thrown.Label.text = $"{(rolls[i].IsViewer ? "YOU" : rolls[i].Name)}  ·  {rolls[i].Value}";
                 thrown.Label.color = rolls[i].IsViewer ? UITheme.Signal : UITheme.Bone;
             }
@@ -510,91 +571,68 @@ namespace Indoctrination.Net
             die.localScale *= ceiling / widest;
         }
 
+        /// <summary>
+        /// Throws the dice for real, and shows exactly the throw that happened.
+        ///
+        /// The awkward part of a die in a game like this is that the number is
+        /// already decided - the server rolled it before any of this ran - while
+        /// a die that is worth watching has to be genuinely thrown. Turning a
+        /// landed die onto the right number is the obvious way out and it looks
+        /// exactly like what it is: the die visibly flips at the last moment.
+        ///
+        /// So the throw happens first, out of sight, in the frame before it is
+        /// shown:
+        ///
+        ///   1. Throw the dice with real physics, from a random spot, with a
+        ///      random shove and a random spin, and record every step.
+        ///   2. Throw them again if that was a dull roll or if one came to rest
+        ///      leaning on something. Nobody has seen it, so it costs nothing to
+        ///      be picky, and this is what guarantees a die that has landed
+        ///      squarely on a face.
+        ///   3. Look at what came up, and turn the *model inside the cube* by a
+        ///      quarter turn so that the number the game rolled is the number on
+        ///      that face. The collider is a cube, so this changes nothing
+        ///      physical, and it happens before the die is ever shown.
+        ///   4. Play the recording back.
+        ///
+        /// What you watch is a real, unrepeatable, physically simulated roll,
+        /// and it lands on the right number without anything touching it.
+        /// </summary>
         private IEnumerator Throw()
         {
             _dismissArea.gameObject.SetActive(false);
 
             var live = _dice.Where(die => die.Die.gameObject.activeSelf).ToList();
+            if (live.Count == 0)
+            {
+                _rolling = null;
+                yield break;
+            }
 
             // One frame, so the renderers have been through a draw and their
             // bounds mean something, and then a last check on the size. The
-            // measurement above is the one that decides the size; this only
-            // catches the case where it was wrong, because a die that fills the
-            // screen has broken the board twice now and must not be able to
+            // measurement in BuildDice is the one that decides the size; this
+            // only catches the case where it was wrong, because a die that fills
+            // the screen has broken the board twice now and must not be able to
             // again. Imperceptible - the dice have not been thrown yet.
             yield return null;
             foreach (var thrown in live)
             {
-                ClampToView(thrown.Die);
+                ClampToView(thrown.Facing);
             }
 
-            // Thrown in together from one end, spread across the table so they
-            // do not land in a heap.
+            var recordings = BestOfSeveralThrows(live);
+
+            // Turn each model inside its cube so the face that landed upward is
+            // the face the game rolled. Done here, before the first frame of the
+            // playback, so nothing is ever corrected mid-roll.
             for (var i = 0; i < live.Count; i++)
             {
-                var lane = live.Count == 1 ? 0f : Mathf.Lerp(-2.4f, 2.4f, i / (live.Count - 1f));
-                var thrown = live[i];
-
-                thrown.Body.isKinematic = false;
-                thrown.Die.localPosition = new Vector3(-TableHalfWidth + 1f, 2.6f + (i * 0.4f), lane);
-                thrown.Die.localRotation = Random.rotation;
-
-                thrown.Body.linearVelocity = new Vector3(
-                    Random.Range(5.5f, 7.5f), 0.5f, Random.Range(-1.2f, 1.2f) - (lane * 0.25f));
-                thrown.Body.angularVelocity = new Vector3(
-                    Random.Range(-14f, 14f), Random.Range(-14f, 14f), Random.Range(-14f, 14f));
+                var landed = recordings[i].Rotations[recordings[i].Rotations.Count - 1];
+                live[i].Facing.localRotation = TurnOnto(landed, live[i].Value);
             }
 
-            // Tumble until they have all run out of energy, or until they have
-            // had long enough - dice that will not settle must not hold up the
-            // board. The labels follow them the whole way.
-            var tumbling = 0f;
-            while (tumbling < MaxTumbleSeconds)
-            {
-                tumbling += Time.deltaTime;
-                PlaceLabels();
-
-                if (tumbling > 0.7f && live.All(die =>
-                        die.Body.linearVelocity.magnitude < 0.3f
-                        && die.Body.angularVelocity.magnitude < 0.8f))
-                {
-                    break;
-                }
-
-                yield return null;
-            }
-
-            // The numbers were decided by the server before the throw, so each
-            // die is turned onto its own - **in place**. Only the rotation is
-            // touched: a die that has been moved after it stopped does not look
-            // like a die that landed there.
-            foreach (var thrown in live)
-            {
-                thrown.Body.isKinematic = true;
-            }
-
-            var from = live.Select(die => die.Die.localRotation).ToArray();
-            var to = live.Select((die, i) => NearestShowing(from[i], die.Value)).ToArray();
-
-            var settling = 0f;
-            while (settling < 0.25f)
-            {
-                settling += Time.deltaTime;
-                var t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(settling / 0.25f));
-
-                for (var i = 0; i < live.Count; i++)
-                {
-                    live[i].Die.localRotation = Quaternion.Slerp(from[i], to[i], t);
-                }
-
-                PlaceLabels();
-                yield return null;
-            }
-
-            for (var i = 0; i < live.Count; i++)
-            {
-                live[i].Die.localRotation = to[i];
-            }
+            yield return Replay(live, recordings);
 
             PlaceLabels();
             PlaceDismissArea(live);
@@ -602,37 +640,274 @@ namespace Indoctrination.Net
         }
 
         /// <summary>
-        /// The orientation showing <paramref name="value"/> that is closest to
-        /// how the die already lies, so the last turn onto the rolled number is
-        /// as small as possible. Chosen from the four ways that side can be up,
-        /// which differ only in how the die is spun about the vertical.
+        /// Throws the dice until they throw well, and hands back the best of it.
+        ///
+        /// A good throw is one that ran for a while and left every die sitting
+        /// squarely on a face. This is all simulated inside a single frame with
+        /// nothing drawn, so a rejected throw costs a fraction of a millisecond
+        /// and is never seen.
         /// </summary>
-        private static Quaternion NearestShowing(Quaternion current, int value)
+        private List<Recording> BestOfSeveralThrows(List<Thrown> live)
         {
-            var side = FaceMap.FirstOrDefault(entry => entry.Number == value).Side;
-            if (side == Vector3.zero)
+            var previous = Physics.simulationMode;
+
+            // The dice are the only physical things in this game, so stepping
+            // the world by hand for a moment holds nothing else up. Restored in
+            // the `finally` whatever happens - leaving the world on manual would
+            // stop physics for good.
+            Physics.simulationMode = SimulationMode.Script;
+
+            try
             {
-                return current;
+                List<Recording> best = null;
+
+                for (var attempt = 0; attempt < ThrowAttempts; attempt++)
+                {
+                    var recordings = SimulateThrow(live);
+                    best ??= recordings;
+
+                    var seconds = recordings[0].Positions.Count * Time.fixedDeltaTime;
+                    if (seconds < MinTumbleSeconds)
+                    {
+                        continue;
+                    }
+
+                    var landed = recordings.All(r =>
+                        Squareness(r.Rotations[r.Rotations.Count - 1]) >= FlatEnough
+                        && OnTheTable(r.Positions[r.Positions.Count - 1]));
+
+                    if (landed)
+                    {
+                        return recordings;
+                    }
+
+                    best = recordings;
+                }
+
+                return best;
+            }
+            finally
+            {
+                Physics.simulationMode = previous;
+            }
+        }
+
+        /// <summary>
+        /// One throw, stepped by hand and written down. Ends when every die has
+        /// run out of energy, or when the throw has gone on too long.
+        /// </summary>
+        private List<Recording> SimulateThrow(List<Thrown> live)
+        {
+            var step = Time.fixedDeltaTime;
+            var recordings = live.Select(_ => new Recording()).ToList();
+
+            for (var i = 0; i < live.Count; i++)
+            {
+                // Spread across the near end of the table so several dice do not
+                // start inside one another, but everything else about the throw
+                // is random: where along that end, how hard, which way, and how
+                // fast it is already spinning.
+                var lane = live.Count == 1
+                    ? Random.Range(-2f, 2f)
+                    : Mathf.Lerp(-2.6f, 2.6f, i / (live.Count - 1f)) + Random.Range(-0.3f, 0.3f);
+
+                var thrown = live[i];
+                thrown.Body.isKinematic = false;
+                // Clear of the near rail on purpose. Starting a die overlapping
+                // the rail is not a near miss - the solver pushes the overlap
+                // apart in one step and fires the die off the table.
+                thrown.Die.localPosition = new Vector3(
+                    -TableHalfWidth + Random.Range(1.3f, 2.2f),
+                    Random.Range(2.4f, 3.6f),
+                    lane);
+                thrown.Die.localRotation = Random.rotation;
+
+                // Hard enough to cross the table, hit the far rail and come
+                // back, with enough spin on it to keep tumbling the whole way.
+                thrown.Body.linearVelocity = new Vector3(
+                    Random.Range(9f, 13f),
+                    Random.Range(-0.5f, 1.5f),
+                    Random.Range(-4f, 4f));
+                thrown.Body.angularVelocity = new Vector3(
+                    Random.Range(-26f, 26f), Random.Range(-26f, 26f), Random.Range(-26f, 26f));
             }
 
-            // Turn that side to point straight up, then try the four spins.
-            var bring = Quaternion.FromToRotation(side, Vector3.up);
-            var best = bring;
-            var closest = -1f;
+            var steps = Mathf.CeilToInt(MaxTumbleSeconds / step);
+            var stillFor = 0;
 
-            for (var turn = 0; turn < 4; turn++)
+            for (var frame = 0; frame < steps; frame++)
             {
-                var candidate = Quaternion.Euler(0f, turn * 90f, 0f) * bring;
-                var alignment = Mathf.Abs(Quaternion.Dot(current, candidate));
+                Physics.Simulate(step);
 
-                if (alignment > closest)
+                for (var i = 0; i < live.Count; i++)
                 {
-                    closest = alignment;
-                    best = candidate;
+                    recordings[i].Positions.Add(live[i].Die.localPosition);
+                    recordings[i].Rotations.Add(live[i].Die.localRotation);
+                }
+
+                var resting = live.All(die =>
+                    die.Body.linearVelocity.magnitude < 0.06f
+                    && die.Body.angularVelocity.magnitude < 0.15f);
+
+                // Held still for a moment, not merely still for one step - a die
+                // at the top of a bounce is motionless too.
+                stillFor = resting ? stillFor + 1 : 0;
+                if (stillFor >= 8)
+                {
+                    break;
                 }
             }
 
+            foreach (var thrown in live)
+            {
+                thrown.Body.isKinematic = true;
+            }
+
+            return recordings;
+        }
+
+        /// <summary>Plays a recorded throw out at ordinary speed.</summary>
+        private IEnumerator Replay(List<Thrown> live, List<Recording> recordings)
+        {
+            var step = Time.fixedDeltaTime;
+            var length = recordings.Max(r => r.Positions.Count);
+
+            for (var i = 0; i < live.Count; i++)
+            {
+                live[i].Die.localPosition = recordings[i].Positions[0];
+                live[i].Die.localRotation = recordings[i].Rotations[0];
+            }
+
+            var clock = 0f;
+            while (true)
+            {
+                clock += Time.deltaTime;
+
+                var at = clock / step;
+                var frame = Mathf.FloorToInt(at);
+                if (frame >= length - 1)
+                {
+                    break;
+                }
+
+                var blend = at - frame;
+
+                for (var i = 0; i < live.Count; i++)
+                {
+                    var recording = recordings[i];
+                    var a = Mathf.Min(frame, recording.Positions.Count - 1);
+                    var b = Mathf.Min(frame + 1, recording.Positions.Count - 1);
+
+                    live[i].Die.localPosition = Vector3.Lerp(
+                        recording.Positions[a], recording.Positions[b], blend);
+                    live[i].Die.localRotation = Quaternion.Slerp(
+                        recording.Rotations[a], recording.Rotations[b], blend);
+                }
+
+                PlaceLabels();
+                yield return null;
+            }
+
+            for (var i = 0; i < live.Count; i++)
+            {
+                var recording = recordings[i];
+                live[i].Die.localPosition = recording.Positions[recording.Positions.Count - 1];
+                live[i].Die.localRotation = recording.Rotations[recording.Rotations.Count - 1];
+            }
+        }
+
+        /// <summary>
+        /// Whether a die finished lying on the table, rather than perched on a
+        /// rail or thrown clear of it. A die that ends up somewhere it should
+        /// not be is a throw nobody needs to see.
+        /// </summary>
+        private static bool OnTheTable(Vector3 at)
+        {
+            var edge = TableHalfWidth - (TargetDieSize() * 0.5f);
+            return Mathf.Abs(at.x) < edge
+                   && Mathf.Abs(at.z) < edge
+                   && at.y > 0f
+                   && at.y < TargetDieSize() * 1.5f;
+        }
+
+        /// <summary>
+        /// How squarely a die is sitting: 1 when a face is dead flat against the
+        /// table, less as it tips over onto an edge or a corner.
+        /// </summary>
+        private static float Squareness(Quaternion rotation)
+        {
+            var best = 0f;
+            foreach (var (side, _) in FaceMap)
+            {
+                best = Mathf.Max(best, Vector3.Dot(rotation * side, Vector3.up));
+            }
+
             return best;
+        }
+
+        /// <summary>
+        /// The quarter-turn to give the model so that a die lying at
+        /// <paramref name="landed"/> shows <paramref name="value"/>.
+        ///
+        /// Built out of two axis-aligned frames rather than a shortest-arc turn,
+        /// so the result is always one of the twenty-four ways a cube can sit on
+        /// itself. Anything else would leave the model at an angle inside its own
+        /// collider, and the die would look like it had come to rest crooked.
+        /// </summary>
+        public static Quaternion TurnOnto(Quaternion landed, int value)
+        {
+            var wanted = FaceMap.FirstOrDefault(entry => entry.Number == value).Side;
+            if (wanted == Vector3.zero)
+            {
+                return Quaternion.identity;
+            }
+
+            var top = TopSide(landed);
+
+            // A second axis at right angles to each, so the turn is fully
+            // pinned down and lands exactly on a quarter turn.
+            var acrossWanted = Perpendicular(wanted);
+            var acrossTop = Perpendicular(top);
+
+            return Quaternion.LookRotation(top, acrossTop)
+                   * Quaternion.Inverse(Quaternion.LookRotation(wanted, acrossWanted));
+        }
+
+        /// <summary>
+        /// The number a die is showing, given how the physical cube came to rest
+        /// and how the model is turned inside it. This is the readback that says
+        /// whether the whole face arrangement is right, and it is what the tests
+        /// check against, since they cannot look at the screen.
+        /// </summary>
+        public static int NumberShowing(Quaternion landed, Quaternion facing)
+        {
+            var top = TopSide(landed * facing);
+            return FaceMap.First(entry => entry.Side == top).Number;
+        }
+
+        /// <summary>Which side of the die this rotation puts uppermost.</summary>
+        private static Vector3 TopSide(Quaternion rotation)
+        {
+            var top = FaceMap[0].Side;
+            var highest = float.MinValue;
+
+            foreach (var (side, _) in FaceMap)
+            {
+                var height = Vector3.Dot(rotation * side, Vector3.up);
+                if (height > highest)
+                {
+                    highest = height;
+                    top = side;
+                }
+            }
+
+            return top;
+        }
+
+        /// <summary>Any axis at right angles to this one, chosen the same way every time.</summary>
+        private static Vector3 Perpendicular(Vector3 axis)
+        {
+            return Mathf.Abs(axis.y) < 0.5f ? Vector3.up : Vector3.forward;
         }
 
         /// <summary>Keeps each name sitting under the die it belongs to.</summary>

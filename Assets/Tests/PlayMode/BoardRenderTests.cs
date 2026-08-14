@@ -1579,6 +1579,56 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// However a die lands, it shows the number the game rolled.
+        ///
+        /// The dice are thrown for real, so where they stop is not decided in
+        /// advance; what is decided in advance is the number. The two are
+        /// reconciled by turning the model inside its own cube before the throw
+        /// is shown, which only works if the map of which number is printed on
+        /// which side is right and the turn is exact. Both are checked here
+        /// against every landing and every value, which is something no amount
+        /// of watching dice roll would cover.
+        ///
+        /// It is also pure arithmetic, so it holds in batchmode where no die is
+        /// ever built.
+        /// </summary>
+        [Test]
+        public void ADieAlwaysComesToRestOnTheNumberTheGameRolled()
+        {
+            Random.InitState(20260814);
+
+            for (var landing = 0; landing < 400; landing++)
+            {
+                // Any way up at all, including the awkward ones: dead level,
+                // balanced on an edge, and everything between.
+                var landed = landing < 24
+                    ? Quaternion.Euler(90f * (landing % 4), 90f * (landing / 4 % 4), 90f * (landing / 16))
+                    : Random.rotation;
+
+                for (var value = 1; value <= 6; value++)
+                {
+                    var facing = DieRoller.TurnOnto(landed, value);
+
+                    Assert.AreEqual(value, DieRoller.NumberShowing(landed, facing),
+                        $"a die landing at {landed.eulerAngles} should show {value}");
+
+                    // The turn has to be one of the ways a cube sits on itself.
+                    // Anything else leaves the model at an angle inside its own
+                    // collider, and the die reads as having stopped crooked.
+                    foreach (var axis in new[] { Vector3.right, Vector3.up, Vector3.forward })
+                    {
+                        var turned = facing * axis;
+                        var squareness = Mathf.Max(
+                            Mathf.Abs(turned.x), Mathf.Max(Mathf.Abs(turned.y), Mathf.Abs(turned.z)));
+
+                        Assert.Greater(squareness, 0.9999f,
+                            $"showing {value} should be a quarter turn, but {axis} went to {turned}");
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// The Rolling phase waits for a player holding Try again.
         ///
         /// The rules were always right about the reroll; the server was not. It

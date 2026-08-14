@@ -7,6 +7,91 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-14 — Claude (dice thrown for real, and the face map measured)
+
+Two things: the dice now genuinely roll, and the numbers on them are right.
+
+### The face map was wrong, and is now measured rather than guessed
+
+The pips on this model are modelled geometry, not a painted texture, so they can
+be counted straight out of the mesh - no rendering, which matters because
+batchmode has no graphics device. `Assets/Scripts/Editor/DieFaceProbe.cs` takes
+the triangles near each side that do not lie flat along it (the pip walls),
+clusters them, and counts the clusters. Run it with:
+
+    Unity -batchmode -nographics -projectPath . \
+      -executeMethod Indoctrination.EditorTools.DieFaceProbe.RunBatch
+
+Measured: `up=2 down=5 right=3 left=4 forward=6 back=1`. Opposite sides add to
+seven, which is a free check, and all three pairs do. It also reproduces all four
+mappings Theodore reported from play, from a completely independent direction.
+
+### The dice now roll, and land on the number without being turned
+
+The old throw tumbled the die and then rotated it onto the rolled number. That
+is the visible "flip at the last second", and no amount of easing hides it.
+
+`DieRoller.Throw` now does the throw **before** it is shown, in the frame the
+dice are built:
+
+1. `Physics.simulationMode` goes to `Script` for a moment - the dice are the only
+   rigid bodies in this game, so stepping the world by hand holds nothing else
+   up - and the throw is simulated and recorded step by step. Restored in a
+   `finally`; leaving it on `Script` would stop physics for good.
+2. A throw is rejected and re-thrown if it was over quickly, if any die came to
+   rest crooked, or if any die ended up off the table. Up to eight attempts. None
+   of this has been seen, so being picky is free.
+3. Each die is a three-layer object now: `Die N` (cube collider + body) →
+   `Facing` (a pivot) → the model. **Because the collider is a cube, turning
+   `Facing` by a quarter turn changes which number is on top and changes nothing
+   physical.** That turn is applied before the first frame of playback, so the
+   die is already going to land on the rolled number.
+4. The recording is played back at ordinary speed.
+
+What you watch is an unrepeatable physically simulated roll that lands correctly
+with nothing touching it. `TurnOnto` is built from two axis-aligned frames rather
+than a shortest-arc rotation, so it is always one of the twenty-four ways a cube
+sits on itself - a shortest-arc turn between opposite faces picks an arbitrary
+axis and would leave the model crooked inside its own collider.
+
+### Measured, not assumed
+
+A throwaway probe ran 1,200 headless throws across 1, 2 and 4 dice. First run
+found a real bug: dice spawned at `-TableHalfWidth + 0.6` **overlap the near
+rail**, and the solver resolves the overlap by firing the die off the table
+(one escape, 86 units of travel). Spawn moved to `+1.3..2.2`. After that, across
+1,200 throws: no escapes, none failed to settle, none stopped inside 1.1s,
+settle time 3.5-4.3s average, and about 7% of four-dice throws ended with one die
+crooked - which the retry loop reduces to nothing. Damping barely affected settle
+time, so the liveliest setting was kept.
+
+Also: bounciness 0.28 → 0.55, friction 0.5 → 0.28, throw speed 5.5-7.5 → 9-13,
+spin +/-14 → +/-26.
+
+### Files
+
+- Updated `Assets/Scripts/Net/DieRoller.cs`.
+- Added `Assets/Scripts/Editor/DieFaceProbe.cs` (kept - it is how the face map is
+  re-measured if the model changes).
+- Added `ADieAlwaysComesToRestOnTheNumberTheGameRolled` to
+  `Assets/Tests/PlayMode/BoardRenderTests.cs`: for 400 landings x 6 values it
+  asserts the die shows the rolled number and that the correction is an exact
+  quarter turn. Pure arithmetic, so it holds in batchmode.
+- `DieRoller.TurnOnto` and `NumberShowing` are public so the test can read the
+  face arrangement back without looking at the screen.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 47 passed.
+- RulesCheck all green; SmokeTest passed.
+
+### Follow-up status
+
+- The face map is now measured and cross-checked, but the only true confirmation
+  is watching a die land. If a number is still wrong, re-run `DieFaceProbe`
+  before changing anything by hand.
+
 ## 2026-08-14 — Claude (the die model was importing its own camera)
 
 **"All I see is the sky spinning around behind the red die."** The camera was
