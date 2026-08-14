@@ -61,11 +61,27 @@ namespace Indoctrination.Net
         private const float TableHalfWidth = 5f;
 
         /// <summary>
-        /// How big a die is once the model has been normalised. Measured against
-        /// the camera's orthographic size, so it is a readable fraction of the
-        /// board rather than a speck.
+        /// How much of the visible height a die takes up. Expressed as a
+        /// fraction of what the camera can see rather than as a fixed number of
+        /// units, so it is the same size on the board whatever the camera is set
+        /// to - and so a mis-measured model cannot produce a die the size of the
+        /// screen.
         /// </summary>
-        private const float DieSize = 1.5f;
+        private const float DieShareOfView = 0.07f;
+
+        /// <summary>
+        /// The size a die should end up, in world units, from what the camera can
+        /// actually see. Falls back to something sane if there is no camera.
+        /// </summary>
+        private static float TargetDieSize()
+        {
+            var camera = Camera.main;
+            var visibleHeight = camera != null && camera.orthographic
+                ? camera.orthographicSize * 2f
+                : 12f;
+
+            return visibleHeight * DieShareOfView;
+        }
 
         /// <summary>Longest the dice may tumble before they are made to settle.</summary>
         private const float MaxTumbleSeconds = 3.2f;
@@ -270,29 +286,52 @@ namespace Indoctrination.Net
 
                 // Normalised on its largest axis, so the throw reads the same
                 // whatever scale the model was exported at.
-                //
-                // Measured from what is actually rendered, not from the raw
-                // mesh. The mesh in this model is 0.02 units across but its own
-                // transforms scale it up, so sizing from the mesh alone asked
-                // for a 75x multiplier on top of a die that was already the
-                // right size - which is how it ended up enormous.
                 die.transform.localScale = Vector3.one;
                 die.transform.localRotation = Quaternion.identity;
                 die.transform.localPosition = Vector3.zero;
 
+                // Measured from the meshes and the scale their own transforms
+                // apply to them, rather than from Renderer.bounds. Renderer
+                // bounds are only meaningful once the object has been through a
+                // frame, and these dice are measured the moment they are made -
+                // reading them a frame early gives the raw mesh size, which in
+                // this model is 100x smaller than what it renders at and so asks
+                // for a die 100x too large. That is how it ended up enormous.
                 var measured = new Bounds();
                 var found = false;
-
-                foreach (var meshRenderer in die.GetComponentsInChildren<Renderer>())
+                foreach (var filter in die.GetComponentsInChildren<MeshFilter>(true))
                 {
-                    if (!found)
+                    if (filter.sharedMesh == null)
                     {
-                        measured = meshRenderer.bounds;
-                        found = true;
                         continue;
                     }
 
-                    measured.Encapsulate(meshRenderer.bounds);
+                    // Each mesh's corners, brought into the die root's own space.
+                    // The root is unscaled and unrotated at this point, so this is
+                    // the space the collider is expressed in too.
+                    var local = filter.sharedMesh.bounds;
+                    for (var corner = 0; corner < 8; corner++)
+                    {
+                        var point = local.center + Vector3.Scale(
+                            local.extents,
+                            new Vector3(
+                                (corner & 1) == 0 ? -1f : 1f,
+                                (corner & 2) == 0 ? -1f : 1f,
+                                (corner & 4) == 0 ? -1f : 1f));
+
+                        var inRoot = die.transform.InverseTransformPoint(
+                            filter.transform.TransformPoint(point));
+
+                        if (found)
+                        {
+                            measured.Encapsulate(inRoot);
+                        }
+                        else
+                        {
+                            measured = new Bounds(inRoot, Vector3.zero);
+                            found = true;
+                        }
+                    }
                 }
 
                 var widest = found
@@ -301,17 +340,22 @@ namespace Indoctrination.Net
 
                 if (widest > 0.0001f)
                 {
-                    die.transform.localScale = Vector3.one * (DieSize / widest);
+                    die.transform.localScale = Vector3.one * (TargetDieSize() / widest);
+                }
+                else
+                {
+                    // Nothing measurable. Better a die of the wrong size than one
+                    // that swallows the screen.
+                    die.transform.localScale = Vector3.one;
                 }
 
                 // The collider is sized and placed from the same measurement, in
                 // the root's own space, so it wraps the die wherever the model
-                // happens to sit relative to its own origin.
+                // happens to sit relative to its own origin. It scales with the
+                // root, so it is expressed unscaled here.
                 var collider = die.AddComponent<BoxCollider>();
-                collider.size = Vector3.one * (widest > 0.0001f ? widest : 1f);
-                collider.center = found
-                    ? measured.center - die.transform.position
-                    : Vector3.zero;
+                collider.size = found ? measured.size : Vector3.one;
+                collider.center = found ? measured.center : Vector3.zero;
                 collider.material = _contact;
 
                 var body = die.AddComponent<Rigidbody>();
@@ -399,11 +443,54 @@ namespace Indoctrination.Net
             Dismiss();
         }
 
+        /// <summary>
+        /// The hard ceiling on a die's size, read from what is actually on
+        /// screen. Only shrinks - a die that came out too small is a blemish, a
+        /// die that came out too big hides the whole game behind it.
+        /// </summary>
+        private static void ClampToView(Transform die)
+        {
+            var renderers = die.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0)
+            {
+                return;
+            }
+
+            var drawn = renderers[0].bounds;
+            for (var i = 1; i < renderers.Length; i++)
+            {
+                drawn.Encapsulate(renderers[i].bounds);
+            }
+
+            var widest = Mathf.Max(drawn.size.x, Mathf.Max(drawn.size.y, drawn.size.z));
+            var ceiling = TargetDieSize() * 1.5f;
+            if (widest <= ceiling || widest <= 0.0001f)
+            {
+                return;
+            }
+
+            Debug.LogWarning(
+                $"Die measured {widest:0.###} units, over the {ceiling:0.###} ceiling. Shrinking it.");
+            die.localScale *= ceiling / widest;
+        }
+
         private IEnumerator Throw()
         {
             _dismissArea.gameObject.SetActive(false);
 
             var live = _dice.Where(die => die.Die.gameObject.activeSelf).ToList();
+
+            // One frame, so the renderers have been through a draw and their
+            // bounds mean something, and then a last check on the size. The
+            // measurement above is the one that decides the size; this only
+            // catches the case where it was wrong, because a die that fills the
+            // screen has broken the board twice now and must not be able to
+            // again. Imperceptible - the dice have not been thrown yet.
+            yield return null;
+            foreach (var thrown in live)
+            {
+                ClampToView(thrown.Die);
+            }
 
             // Thrown in together from one end, spread across the table so they
             // do not land in a heap.

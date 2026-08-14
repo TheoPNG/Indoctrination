@@ -7,6 +7,58 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-13 — Claude (die size measured from the camera, with a hard ceiling)
+
+The die was still enormous. The size is now derived from what the camera can
+actually see rather than from a fixed number of units, and it is measured in a
+way that does not depend on the object having been rendered yet.
+
+**Why it kept happening.** The model's mesh is 0.02 units across but its own
+child transforms scale it 100x, so it renders at 2.0. Sizing from
+`sharedMesh.bounds` alone therefore asked for a ~75x multiplier on a die that
+was already the right size. Switching to `Renderer.bounds` fixed the arithmetic
+but not the timing: renderer bounds are only meaningful once the object has been
+through a frame, and these dice are measured the instant they are instantiated,
+so the read came back as the raw mesh size and reproduced the same 75x.
+
+**What it does now.** `BuildDice` walks every `MeshFilter`, transforms the mesh's
+eight corners into the die root's own space, and takes the union. That is pure
+transform maths - correct on the frame the object is created, with nothing
+render-dependent in it. The same bounds size and centre the `BoxCollider`, which
+also fixes the collider, previously left offset by a subtraction against a world
+position.
+
+`TargetDieSize()` replaces the old `DieSize = 1.5f` constant: the die is 7% of
+the camera's visible height (`orthographicSize * 2`), so it stays proportionate
+if the camera is ever changed.
+
+**The ceiling.** `ClampToView` runs one frame into `Throw()`, when renderer
+bounds are trustworthy, and shrinks any die more than 1.5x the target, logging a
+warning. It only ever shrinks. This is deliberate belt-and-braces: a screen-
+filling die has broken the board twice, and no future measurement bug should be
+able to do it a third time.
+
+**On "the camera is moving with it":** nothing parents to or moves
+`Camera.main`. `DieRoller` only reads it, for `WorldToViewportPoint` when placing
+the owner labels, and `Die Stage` is a root object fixed at `(0, 0, 0)`. What
+looked like camera movement was a die large enough to sweep across the whole
+view as it tumbled.
+
+### Files
+
+- Updated `Assets/Scripts/Net/DieRoller.cs`.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 45 passed, including `RollingThrowsADieThatCanBeClickedAway`.
+- RulesCheck all green; SmokeTest passed.
+
+### Follow-up status
+
+- `FaceMap` at the top of `DieRoller.cs` is still an admitted guess at which
+  number is printed on which side of the model, awaiting a look at a landed die.
+
 ## 2026-08-09 — Codex (semicircle draft target and unclipped hand fan)
 
 The current drafter now gets a 620x112 maximum drop affordance behind the hand:
