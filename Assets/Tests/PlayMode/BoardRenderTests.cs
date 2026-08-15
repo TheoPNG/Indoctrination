@@ -1642,6 +1642,66 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// The high roller takes their prize off the circles on the left, the
+        /// same place every other resource in this game comes from.
+        ///
+        /// It used to be a second set of colour buttons in a popup, which taught
+        /// a different way to pick a colour for the one case that is not the
+        /// resource phase.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheHighRollPrizeIsTakenFromTheResourceCircles()
+        {
+            yield return StartGame();
+
+            var game = ServerGame();
+            while (game.Phase == TurnPhase.Draft)
+            {
+                var drafter = game.CurrentDrafterId.Value;
+                ApplyAsHost(_ => game.DraftCard(drafter, game.DraftZone[0].InstanceId));
+                yield return WaitForFrames(2);
+            }
+
+            foreach (var player in game.LivingPlayers.ToList())
+            {
+                if (!game.HasRolled(player.PlayerId))
+                {
+                    ApplyAsHost(_ => game.RollPrimaryDie(player.PlayerId));
+                }
+            }
+
+            // An outright winner, so there is a prize to take at all.
+            var viewer = _manager.View.viewerPlayerId;
+            ApplyAsHost(_ =>
+            {
+                foreach (var player in game.LivingPlayers.ToList())
+                {
+                    player.SetPrimaryDie(player.PlayerId == viewer ? 6 : 1);
+                }
+            });
+
+            yield return WaitForFrames(3);
+            Canvas.ForceUpdateCanvases();
+
+            Assert.IsFalse(_manager.View.highRollResourceClaimed);
+
+            var red = FindButtonNamed("Red Slot");
+            Assert.IsNotNull(red, WhyUnusable("Red Slot"));
+            Assert.IsTrue(red.interactable,
+                "the circles should light up for the high roller's pick");
+
+            var before = _manager.View.Viewer.red;
+            red.onClick.Invoke();
+            yield return WaitForFrames(4);
+
+            Assert.IsTrue(_manager.View.highRollResourceClaimed,
+                "pressing a circle should take the prize");
+            Assert.AreEqual(before + 1, _manager.View.Viewer.red,
+                "and it should be the colour that was pressed");
+            Assert.IsNull(_manager.LastError);
+        }
+
+        /// <summary>
         /// The draft clock runs, and starts again for whoever is asked next.
         ///
         /// Two separate faults made it read "0s until a pick is made for you"

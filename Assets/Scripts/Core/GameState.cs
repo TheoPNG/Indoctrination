@@ -693,26 +693,56 @@ namespace Indoctrination.Core
         /// and collected by the queued effect, so a player who cannot pay is
         /// turned away before the card leaves their hand.
         /// </summary>
-        private void BuyForSpecialCost(PlayerState player, CardInstance card)
+        /// <summary>
+        /// Whether this player could pay a card's special cost right now.
+        ///
+        /// The board needs this as a question, not only as an exception. A card
+        /// priced "*" costs no resources at all, so asking the resource pool
+        /// whether it is affordable always answers no - and the board lights and
+        /// unlocks cards by exactly that answer, which left It Who Consumes
+        /// impossible to buy however ready for it you were.
+        /// </summary>
+        public bool CanPaySpecialCost(PlayerState player, CardInstance card)
+        {
+            return SpecialCostShortfall(player, card) == null;
+        }
+
+        /// <summary>
+        /// What is missing before a special cost can be paid, or null if nothing
+        /// is. One list, read both by the board deciding whether to offer the
+        /// card and by the buy refusing it, so the two can never disagree.
+        /// </summary>
+        private static string SpecialCostShortfall(PlayerState player, CardInstance card)
         {
             if (card.Definition.Id != CardIds.ItWhoConsumes)
             {
-                throw new InvalidOperationException($"{card.Title} has no rules for its special cost yet.");
+                return $"{card.Title} has no rules for its special cost yet.";
             }
 
             if (!player.Compound.Any(c => c.Type == CardType.Unit))
             {
-                throw new InvalidOperationException("It Who Consumes needs a Unit to sacrifice.");
+                return "It Who Consumes needs a Unit to sacrifice.";
             }
 
             if (!player.Compound.Any(c => c.Type == CardType.Blessing))
             {
-                throw new InvalidOperationException("It Who Consumes needs a Blessing to sacrifice.");
+                return "It Who Consumes needs a Blessing to sacrifice.";
             }
 
             if (!player.Hand.Any(c => c.Type == CardType.Ritual && c != card))
             {
-                throw new InvalidOperationException("It Who Consumes needs a Ritual in hand to activate.");
+                return "It Who Consumes needs a Ritual in hand to activate.";
+            }
+
+            return null;
+        }
+
+        private void BuyForSpecialCost(PlayerState player, CardInstance card)
+        {
+            var shortfall = SpecialCostShortfall(player, card);
+            if (shortfall != null)
+            {
+                throw new InvalidOperationException(shortfall);
             }
 
             player.Hand.Remove(card);

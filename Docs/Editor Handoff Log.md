@@ -7,6 +7,69 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-15 — Claude (It Who Consumes buyable again; the high roll picked on the left)
+
+The package clash from the previous entry is **resolved and verified**: with the
+Editor closed, the reimport ran, `Library/ScriptAssemblies` now holds only
+`Unity.Services.Multiplayer.dll`, and everything compiles. That entry's caveat
+can be considered discharged.
+
+### It Who Consumes could not be bought, and it was not the card's fault
+
+`ResourcePool.CanAfford` returns **false for any special cost** - which is
+reasonable on its own terms, since a `"*"` cost is paid in cards and the resource
+pool has no opinion about that. But `GameViewBuilder` set `view.canAfford` from
+exactly that answer, and the board gates on `canAfford`:
+`BoardCardView.SetAffordable` lights the card by it, and the drag-to-buy only
+sends the RPC `if (card.canAfford)`.
+
+So the card was never lit and the buy was refused on the client, however ready
+for it the player was. The rules were right the whole way through - the server
+would have accepted it - but nothing could ask.
+
+**This is why it "used to work".** Before the layout overhaul the buy was a
+button that fired unconditionally and let the server decide. Gating the board on
+affordability is right; answering that question with a pool that cannot price the
+card is not.
+
+Fix: `GameState.CanPaySpecialCost`, built on a new `SpecialCostShortfall` that
+returns what is missing or null. `BuyForSpecialCost` throws with that message and
+the view builder asks the same question, so the offer and the refusal cannot
+disagree.
+
+**Worth remembering:** `canAfford` is not decoration. Two separate parts of the
+board refuse to act on a card that reports false, so anything priced unusually
+has to answer that question truthfully or it becomes unbuyable.
+
+### The high roll is taken from the circles on the left
+
+It was a second set of colour buttons in a popup - a different way to pick a
+colour, for the one case that is not the resource phase. `RefreshResourceHud`
+now lights the circles for it too, and the popup just says
+`Highest roll - take one from the left`.
+
+The phase's own collection takes precedence while it is running: during Resource,
+the circles collect, because that is what the board is waiting on. The prize
+keeps. Lighting still waits on `DiceRevealed` for the same reason the offer does
+- lighting the circles announces the winner before the dice land.
+
+### Files
+
+- Updated `Assets/Scripts/Core/GameState.cs`, `Assets/Scripts/Net/GameViewBuilder.cs`,
+  `Assets/Scripts/Net/BoardUI.cs`.
+- `Tools/RulesCheck/RulesCheck.cs`: a `PricedView` helper that reads one card
+  through the real view builder, and two checks around It Who Consumes.
+  **Confirmed they bite** - reverting the view builder fails
+  "and told it can once there is a Unit, a Blessing and a Ritual".
+- Added `TheHighRollPrizeIsTakenFromTheResourceCircles` to
+  `Assets/Tests/PlayMode/BoardRenderTests.cs`.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 54 passed.
+- RulesCheck all green; SmokeTest passed.
+
 ## 2026-08-14 — Claude (Standardized Uniforms' die is thrown; one package clash to clear)
 
 ### The private die is now a die on the table

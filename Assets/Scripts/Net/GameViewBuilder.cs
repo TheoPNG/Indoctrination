@@ -120,7 +120,13 @@ namespace Indoctrination.Net
 
             view.costForYou = cost.ToString();
             view.isDiscounted = !cost.IsSpecial && cost.Total < card.Cost.Total;
-            view.canAfford = player.CanAfford(cost);
+            // A "*" cost is paid in cards, not resources, so the resource pool
+            // has no opinion worth having about it - it says no to every special
+            // cost. Asked of the rules instead, which know what the card
+            // actually wants.
+            view.canAfford = cost.IsSpecial
+                ? game.CanPaySpecialCost(player, card)
+                : player.CanAfford(cost);
             return view;
         }
 

@@ -1601,20 +1601,42 @@ namespace Indoctrination.Net
         {
             var you = view.Viewer;
             var allowance = you?.resourceAllowance ?? GameSettings.ResourcesPerTurn;
-            var pickable = you is { isAlive: true }
-                           && !view.isGameOver
-                           && view.phase == nameof(TurnPhase.Resource)
-                           && !you.collectedResources;
+            var playing = you is { isAlive: true } && !view.isGameOver;
 
-            if (!pickable)
+            var collecting = playing
+                             && view.phase == nameof(TurnPhase.Resource)
+                             && !you.collectedResources;
+
+            // The high roller's prize is a resource of their choosing, so it is
+            // taken the way every other resource is: off the circles on the
+            // left, which light up for it exactly as they do for the phase's own
+            // collection. Waits for the dice to stop for the same reason the
+            // offer itself does - lighting them announces the winner.
+            var claimingHighRoll = playing
+                                   && view.diceRolled
+                                   && !view.highRollResourceClaimed
+                                   && DiceRevealed
+                                   && HighestUniqueRoller(view) == view.viewerPlayerId;
+
+            if (!collecting)
             {
                 _pendingResources.Clear();
             }
 
-            _resourceHud.Populate(you, pickable, color =>
+            _resourceHud.Populate(you, collecting || claimingHighRoll, color =>
             {
                 BoardEffects.Instance.Pop(_resourceHud.Pip(color));
                 _resourceHud.ShowResourceGain(color);
+
+                // The phase's own collection wins while it is running: taking
+                // your resources is what the board is waiting on, and the prize
+                // keeps until it is not.
+                if (!collecting)
+                {
+                    manager.RequestClaimHighRollResourceRpc((int)color);
+                    return;
+                }
+
                 _pendingResources.Add(color);
 
                 if (_pendingResources.Count >= allowance)
@@ -2893,8 +2915,11 @@ namespace Indoctrination.Net
                 return false;
             }
 
-            ActionLabel("Highest roll - take one:", 16);
-            RenderColorButtons(color => manager.RequestClaimHighRollResourceRpc((int)color));
+            // Taken from the circles on the left, the same as every other
+            // resource this game hands out. A second set of colour buttons in a
+            // popup taught a different way to pick a colour for the one case
+            // that is not the resource phase.
+            ActionLabel("Highest roll - take one from the left", 16);
             return true;
         }
 

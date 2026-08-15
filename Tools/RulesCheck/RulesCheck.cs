@@ -509,6 +509,18 @@ static class RulesCheck
         Check("a runaway effect is cut off instead of hanging", true);
     }
 
+    /// <summary>
+    /// One card as its holder is shown it, straight out of the real view
+    /// builder - the same object the board reads, so a check here is a check on
+    /// what a player actually sees.
+    /// </summary>
+    static CardView PricedView(GameState game, int playerId, CardInstance card)
+    {
+        return GameViewBuilder.Build(game, playerId, 0f, 0f)
+            .players.First(p => p.playerId == playerId)
+            .hand.First(c => c.instanceId == card.InstanceId);
+    }
+
     /// <summary>An effect that never finishes, to prove the safety valve works.</summary>
     static IEnumerator<ChoiceRequest> Forever(EffectContext context)
     {
@@ -696,10 +708,21 @@ static class RulesCheck
         Check("It Who Consumes cannot be bought with nothing to sacrifice",
               Throws(() => consume.BuyCard(0, it.InstanceId)));
 
+        // The board decides what to light up and what to let go of by asking
+        // the view whether a card is affordable. A "*" cost is paid in cards
+        // rather than resources, so the resource pool answers no to it however
+        // ready the player is - which made this card impossible to buy at all
+        // once the board started gating on that answer.
+        Check("and the board is told it cannot be afforded yet",
+              !PricedView(consume, 0, it).canAfford);
+
         consume.Players[0].Compound.Add(Card(-22, CardIds.AsherPirozzi));       // a Unit
         consume.Players[0].Compound.Add(Card(-23, CardIds.WondrousBlood));      // a Blessing
         var ritual = Card(-24, CardIds.Sermon);
         consume.Players[0].Hand.Add(ritual);
+
+        Check("and told it can once there is a Unit, a Blessing and a Ritual",
+              PricedView(consume, 0, it).canAfford);
 
         consume.BuyCard(0, it.InstanceId);
         while (consume.PendingChoice != null)
