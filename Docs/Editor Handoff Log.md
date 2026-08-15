@@ -7,6 +7,86 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-14 — Claude (online multiplayer: Relay + Lobby, join codes and a game browser)
+
+Play over the internet. Direct IP is gone from the title screen, as asked.
+
+### What was added
+
+`Assets/Scripts/Net/OnlineSession.cs`. Two services doing two jobs that are easy
+to confuse:
+
+- **Relay** carries the game traffic. The host asks for an allocation and gets a
+  join code; anyone entering that code is routed to the same allocation. Nobody
+  connects to an address, so there is no port to forward - which is the whole
+  point, because home routers refuse incoming connections and asking a
+  playtester to reconfigure theirs is asking them not to playtest.
+- **Lobby** is only a noticeboard: an entry per open game with the Relay join
+  code on it. Browsing reads that list; joining from it pulls out the code and
+  does exactly what typing the code does. No game data goes through Lobby.
+
+**The rules, the views and the RPCs are untouched.** It is still one
+authoritative host and a set of Netcode clients; only how the pipe is built
+changed.
+
+### Points worth keeping
+
+- `CreateAllocationAsync(maxPlayers - 1)`: connections, not players. The host
+  does not connect to itself.
+- The host is started **before** the lobby entry is published. A game listed
+  before it can accept anybody fails to join for whoever is quickest.
+- Lobby drops an entry after 30s of silence, so the host pings every 15s.
+- Leaving deletes the entry (`LeaveGame`, and the quit prompt). Without it the
+  browser advertises a table nobody can sit at until it times out.
+- Anonymous sign-in. An account is a thing to create, remember and lose, and the
+  game has never asked for one.
+- Every entry point catches and reports into `LastError`; a failed match leaves a
+  title screen you can press again, never a half-started host.
+- `EndpointOf` prefers the `dtls` endpoint - encrypted - and falls back to
+  whatever the allocation offers.
+
+### The title screen
+
+Address and port are gone. Game name + **Host Online**, code + **Join**,
+**Browse Games** over a list of open games with player counts, then Solo
+Playtest and Quit. The host's code is shown in the lobby so it can be read out.
+
+**Solo Playtest still starts a purely local host with no services involved**, and
+so does the whole test suite - which is what keeps the suite runnable offline.
+That is why `StartAs` and the loopback connection data survive even though no
+player can reach them any more.
+
+### Files
+
+- Added `Assets/Scripts/Net/OnlineSession.cs`.
+- Updated `Assets/Scripts/Net/BoardUI.cs` (title screen, browser panel, join code
+  in the lobby, leave path), `QuitPrompt.cs` (delete the entry on the way out),
+  `Indoctrination.Net.asmdef` (service assemblies), `Packages/manifest.json`.
+- Deleted `Tools/Build/address.sh` and the references to it in
+  `Tools/Build/run.sh` - there is no address to print any more.
+- Added `TheTitleScreenOffersOnlinePlayAndNoAddressFields` to
+  `Assets/Tests/PlayMode/BoardRenderTests.cs`.
+- `AGENTS.md` gained a paragraph under the architecture invariants.
+
+Packages: `com.unity.services.core 1.18.0`, `authentication 3.7.4`,
+`relay 1.2.0`, `lobby 1.3.0`.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 52 passed.
+- RulesCheck all green; SmokeTest passed.
+- `./Tools/Build/run.sh` produced a working 141 MB macOS player.
+
+**Not verified: an actual online match.** That needs Relay and Lobby switched on
+for the cloud project (`theopng / Indoctrination`), which is a dashboard action
+no script here can take, and two machines. Everything up to the first service
+call is proven; the service calls themselves are not.
+
+### Follow-up status
+
+- Bloodstone still unreproduced; Asmodeus still benched.
+
 ## 2026-08-14 — Claude (peek cards sized properly, activation stage seated like a table)
 
 ### The peek was drawing cards a fifth of the size they should be

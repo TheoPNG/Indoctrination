@@ -177,6 +177,10 @@ namespace Indoctrination.Net
                 }
             }
 
+            // Off the noticeboard first, then off the network. A hosted game
+            // left listed advertises a table nobody can sit at.
+            OnlineSession.Instance?.CloseAsync();
+
             if (NetworkManager.Singleton != null)
             {
                 NetworkManager.Singleton.Shutdown();

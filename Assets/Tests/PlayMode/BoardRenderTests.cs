@@ -1606,6 +1606,42 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// The title screen offers online play and nothing that asks for an
+        /// address.
+        ///
+        /// Relay exists precisely so that no player ever sees an IP or a port,
+        /// so leaving those fields on the screen would be offering a way in that
+        /// no longer connects anybody to anybody.
+        /// </summary>
+        [Test]
+        public void TheTitleScreenOffersOnlinePlayAndNoAddressFields()
+        {
+            var named = Object.FindObjectsByType<RectTransform>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .Select(rect => rect.gameObject.name)
+                .ToHashSet();
+
+            foreach (var control in new[]
+                     {
+                         "Host Button", "Join Button", "Browse Button",
+                         "Game Name Field", "Join Code Field", "Solo Button", "Quit Button"
+                     })
+            {
+                Assert.Contains(control, named.ToList(), $"the title screen should offer {control}");
+            }
+
+            foreach (var gone in new[] { "Address Field", "Port Field", "Address Row" })
+            {
+                Assert.IsFalse(named.Contains(gone),
+                    $"{gone} connects nobody to anybody now that play goes through Relay");
+            }
+
+            // The browser is built but stays out of the way until it is asked for.
+            var browser = GameObject.Find("Browser Box");
+            Assert.IsTrue(browser == null || !browser.activeInHierarchy,
+                "the game list should not be covering the title screen");
+        }
+
+        /// <summary>
         /// The draft clock runs, and starts again for whoever is asked next.
         ///
         /// Two separate faults made it read "0s until a pick is made for you"

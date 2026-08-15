@@ -64,6 +64,20 @@ the fast rules feedback loop entirely:
 cannot reference game code without them): `Core` (no references) → `Net` →
 `Editor` / `PlayModeTests`.
 
+**Relay is only a pipe; Lobby is only a noticeboard.** `OnlineSession` gets a
+Relay allocation and hands the resulting connection data to `UnityTransport`,
+then publishes the join code on a Lobby entry so games can be browsed. Neither
+service knows anything about the game. Nothing about the rules, the views or the
+RPCs changes because a match is online — if you find yourself wanting to send
+game data through Lobby, the answer is an RPC.
+
+Everything in `OnlineSession` is `async` and every entry point catches and
+reports rather than throwing: it talks to the internet, so it fails routinely,
+and a failed match must leave a title screen you can press again — never a
+half-started host. **The rest of the game must never wait on it.** Solo Playtest
+and the whole test suite start a local host with no services involved, which is
+what keeps the suite runnable offline.
+
 ---
 
 ## 3. Unity traps that have actually bitten this project

@@ -109,9 +109,14 @@ namespace Indoctrination.Net
         private RectTransform _lobbyPanel;
         private RectTransform _gameRoot;
 
-        private InputField _addressField;
+        private InputField _gameNameField;
+        private InputField _joinCodeField;
+        private Text _onlineStatus;
+        private RectTransform _browserPanel;
+        private RectTransform _browserList;
+        private OnlineSession _online;
+        private Text _joinCodeLabel;
         private InputField _nameField;
-        private InputField _portField;
         private Text _lobbyPlayersText;
         private Button _startGameButton;
         private Button _addBotButton;
@@ -249,7 +254,10 @@ namespace Indoctrination.Net
             backdropImage.sprite = BoardArt.Backdrop;
             backdropImage.raycastTarget = false;
 
+            _online = OnlineSession.CreateOn(transform);
+
             _connectPanel = BuildConnectPanel(canvas.transform);
+            _browserPanel = BuildBrowserPanel(canvas.transform);
             _lobbyPanel = BuildLobbyPanel(canvas.transform);
             _gameRoot = BuildGameRoot(canvas.transform);
             BuildErrorLabel(canvas.transform);
@@ -415,6 +423,13 @@ namespace Indoctrination.Net
 
         private void ShowOnly(RectTransform visible)
         {
+            // The browser only belongs over the title screen. Leaving it up
+            // through a connect would put a list of other games over the lobby.
+            if (visible != _connectPanel)
+            {
+                CloseBrowser();
+            }
+
             _connectPanel.gameObject.SetActive(visible == _connectPanel);
             _lobbyPanel.gameObject.SetActive(visible == _lobbyPanel);
             _gameRoot.gameObject.SetActive(visible == _gameRoot);
@@ -495,24 +510,37 @@ namespace Indoctrination.Net
                 "Title", box, "I N D O C T R I N A T I O N", 26,
                 TextAnchor.MiddleCenter, UITheme.Signal), 40);
             AddFixedHeight(UIFactory.Label(
-                "Subtitle", box, "Host a game, or join one that is already running.", 14,
+                "Subtitle", box, "Open a game for others to find, or join one with a code.", 14,
                 TextAnchor.MiddleCenter, UITheme.BoneDim), 22);
 
-            var addressRow = UIFactory.Group("Address Row", box);
-            AddFixedHeight(addressRow, 34);
-            UIFactory.HorizontalLayout(addressRow, 8, new RectOffset(0, 0, 0, 0));
-            AddFixedWidth(UIFactory.Label("Address Label", addressRow, "Address", 14), 70);
-            _addressField = UIFactory.TextInput("Address Field", addressRow, address);
-            AddFixedWidthHeight(_addressField.GetComponent<RectTransform>(), 180, 30);
-            AddFixedWidth(UIFactory.Label("Port Label", addressRow, "Port", 14), 40);
-            _portField = UIFactory.TextInput("Port Field", addressRow, port.ToString());
-            AddFixedWidthHeight(_portField.GetComponent<RectTransform>(), 80, 30);
+            // Hosting: a name for the noticeboard entry, and the button that
+            // opens the game. No address and no port - the whole point of going
+            // through Relay is that neither exists any more.
+            var hostRow = UIFactory.Group("Host Row", box);
+            AddFixedHeight(hostRow, 34);
+            UIFactory.HorizontalLayout(hostRow, 8, new RectOffset(0, 0, 0, 0));
+            AddFixedWidth(UIFactory.Label("Game Label", hostRow, "Game", 14), 52);
+            _gameNameField = UIFactory.TextInput("Game Name Field", hostRow, "");
+            AddFixedWidthHeight(_gameNameField.GetComponent<RectTransform>(), 190, 30);
+            UIFactory.ButtonWithLabel(
+                "Host Button", hostRow, "Host Online", HostOnline, UITheme.Affirm, 150, 30);
 
-            var buttonRow = UIFactory.Group("Button Row", box);
-            AddFixedHeight(buttonRow, 40);
-            UIFactory.HorizontalLayout(buttonRow, 12, new RectOffset(0, 0, 0, 0));
-            UIFactory.ButtonWithLabel("Host Button", buttonRow, "Host", () => StartAs(host: true), width: 160, height: 36);
-            UIFactory.ButtonWithLabel("Join Button", buttonRow, "Join", () => StartAs(host: false), width: 160, height: 36);
+            var joinRow = UIFactory.Group("Join Row", box);
+            AddFixedHeight(joinRow, 34);
+            UIFactory.HorizontalLayout(joinRow, 8, new RectOffset(0, 0, 0, 0));
+            AddFixedWidth(UIFactory.Label("Code Label", joinRow, "Code", 14), 52);
+            _joinCodeField = UIFactory.TextInput("Join Code Field", joinRow, "");
+            AddFixedWidthHeight(_joinCodeField.GetComponent<RectTransform>(), 190, 30);
+            UIFactory.ButtonWithLabel(
+                "Join Button", joinRow, "Join", () => JoinOnline(_joinCodeField.text),
+                UITheme.Button, 150, 30);
+
+            UIFactory.ButtonWithLabel(
+                "Browse Button", box, "Browse Games", ToggleBrowser, UITheme.Button, 200, 32);
+
+            _onlineStatus = UIFactory.Label(
+                "Online Status", box, "", 13, TextAnchor.MiddleCenter, UITheme.Signal);
+            AddFixedHeight(_onlineStatus.rectTransform, 20);
 
             // One press to a playable game on your own. Hosting, seating a bot
             // and starting are three steps that are always taken together when
@@ -526,6 +554,159 @@ namespace Indoctrination.Net
                 "Quit Button", box, "Quit", OpenQuitPrompt, UITheme.ButtonQuiet, 200, 30);
 
             return panel;
+        }
+
+        /// <summary>
+        /// Leaves the game, and takes it off the noticeboard on the way out if
+        /// this machine was the one hosting it. An entry left behind advertises
+        /// a game nobody can join until the service times it out.
+        /// </summary>
+        private void LeaveGame()
+        {
+            _online?.CloseAsync();
+            NetworkManager.Singleton?.Shutdown();
+            SetOnlineStatus("");
+        }
+
+        // ---------------------------------------------------------- Online
+
+        /// <summary>
+        /// Opens a game others can reach, and says so.
+        ///
+        /// Deliberately not awaited into the caller: a button press cannot block
+        /// while a network round trip happens, so the status line is the only
+        /// report and it is written from both ends of the call.
+        /// </summary>
+        private async void HostOnline()
+        {
+            if (_online == null || _online.Busy)
+            {
+                return;
+            }
+
+            SetOnlineStatus("Opening a game...");
+
+            if (await _online.HostAsync(_gameNameField.text, GameSettings.MaxPlayers))
+            {
+                SetOnlineStatus($"Open. Code: {_online.JoinCode}");
+            }
+            else
+            {
+                SetOnlineStatus(_online.LastError);
+            }
+        }
+
+        private async void JoinOnline(string code)
+        {
+            if (_online == null || _online.Busy)
+            {
+                return;
+            }
+
+            SetOnlineStatus("Joining...");
+
+            if (await _online.JoinAsync(code))
+            {
+                SetOnlineStatus("Connected.");
+                CloseBrowser();
+            }
+            else
+            {
+                SetOnlineStatus(_online.LastError);
+            }
+        }
+
+        private void SetOnlineStatus(string message)
+        {
+            if (_onlineStatus != null)
+            {
+                _onlineStatus.text = message ?? "";
+            }
+        }
+
+        private void ToggleBrowser()
+        {
+            if (_browserPanel == null)
+            {
+                return;
+            }
+
+            if (_browserPanel.gameObject.activeSelf)
+            {
+                CloseBrowser();
+                return;
+            }
+
+            _browserPanel.gameObject.SetActive(true);
+            _browserPanel.SetAsLastSibling();
+            RefreshBrowser();
+        }
+
+        private void CloseBrowser()
+        {
+            if (_browserPanel != null)
+            {
+                _browserPanel.gameObject.SetActive(false);
+            }
+        }
+
+        /// <summary>
+        /// Reads the noticeboard and draws one row per open game. Joining a row
+        /// does exactly what typing its code would - the list is a convenience
+        /// over the code, not a second way in.
+        /// </summary>
+        private async void RefreshBrowser()
+        {
+            if (_online == null || _browserList == null)
+            {
+                return;
+            }
+
+            UIFactory.DestroyChildren(_browserList);
+            var searching = UIFactory.Label(
+                "Searching", _browserList, "Looking for games...", 14,
+                TextAnchor.MiddleCenter, UITheme.BoneDim);
+            AddFixedHeight(searching.rectTransform, 30);
+
+            var games = await _online.BrowseAsync();
+
+            // The panel can be closed, or the whole board torn down, while the
+            // query is in flight. Neither is an error; there is simply nothing
+            // left to draw into.
+            if (_browserList == null || !_browserList.gameObject.activeInHierarchy)
+            {
+                return;
+            }
+
+            UIFactory.DestroyChildren(_browserList);
+
+            if (games.Count == 0)
+            {
+                var empty = UIFactory.Label(
+                    "No Games", _browserList,
+                    string.IsNullOrEmpty(_online.LastError)
+                        ? "No open games right now. Host one, or ask for a code."
+                        : _online.LastError,
+                    14, TextAnchor.MiddleCenter, UITheme.BoneDim);
+                AddFixedHeight(empty.rectTransform, 40);
+                return;
+            }
+
+            foreach (var game in games)
+            {
+                var row = UIFactory.Group($"Game {game.Id}", _browserList);
+                AddFixedHeight(row, 34);
+                UIFactory.HorizontalLayout(row, 8, new RectOffset(0, 0, 0, 0));
+
+                var label = UIFactory.Label(
+                    "Game Name", row, $"{game.Name}   {game.Players}/{game.MaxPlayers}", 14,
+                    TextAnchor.MiddleLeft);
+                AddFlexibleWidth(label.rectTransform);
+
+                var code = game.JoinCode;
+                UIFactory.ButtonWithLabel(
+                    "Join Game", row, "Join", () => JoinOnline(code), UITheme.Affirm, 90, 30);
+            }
         }
 
         /// <summary>
@@ -582,14 +763,13 @@ namespace Indoctrination.Net
                 return;
             }
 
-            address = string.IsNullOrWhiteSpace(_addressField.text) ? address : _addressField.text;
-            port = ushort.TryParse(_portField.text, out var typedPort) ? typedPort : port;
-
             var transport = network.GetComponent<UnityTransport>();
             if (transport != null)
             {
-                // 0.0.0.0 lets other machines on the network reach the host;
-                // binding to the address itself would only accept local connections.
+                // Loopback. This path is no longer how anybody reaches anybody
+                // else - online play goes through Relay and sets its own
+                // connection data - so all this has to do is let a host and its
+                // bots run inside one process for Solo Playtest.
                 transport.SetConnectionData(address, port, "0.0.0.0");
             }
 
@@ -601,6 +781,50 @@ namespace Indoctrination.Net
             {
                 network.StartClient();
             }
+        }
+
+        /// <summary>
+        /// The list of open games, over the title screen. Its own panel rather
+        /// than part of the box, because it grows with however many games there
+        /// are and the box is a fixed shape.
+        /// </summary>
+        private RectTransform BuildBrowserPanel(Transform parent)
+        {
+            var panel = UIFactory.Panel("Browser Panel", parent, new Color(
+                UITheme.Void.r, UITheme.Void.g, UITheme.Void.b, 0.86f));
+            UIFactory.Stretch(panel);
+
+            var box = UIFactory.Panel("Browser Box", panel, UITheme.SurfaceRaised);
+            UITheme.Frame(box.GetComponent<Image>(), 1.25f);
+            box.anchorMin = box.anchorMax = new Vector2(0.5f, 0.5f);
+            UIFactory.SetSize(box, 520, 420);
+
+            var layout = UIFactory.VerticalLayout(
+                box, 10, new RectOffset(18, 18, 16, 16), controlHeight: true);
+            layout.childAlignment = TextAnchor.UpperCenter;
+
+            AddFixedHeight(UIFactory.Label(
+                "Browser Title", box, "OPEN GAMES", 20,
+                TextAnchor.MiddleCenter, UITheme.Signal), 28);
+
+            _browserList = UIFactory.Group("Game List", box);
+            var listLayout = UIFactory.VerticalLayout(
+                _browserList, 6, new RectOffset(0, 0, 0, 0), controlHeight: true);
+            listLayout.childAlignment = TextAnchor.UpperCenter;
+            AddFlexibleHeight(_browserList);
+
+            var buttons = UIFactory.Group("Browser Buttons", box);
+            AddFixedHeight(buttons, 36);
+            var buttonLayout = UIFactory.HorizontalLayout(buttons, 10, new RectOffset(0, 0, 0, 0));
+            buttonLayout.childAlignment = TextAnchor.MiddleCenter;
+
+            UIFactory.ButtonWithLabel(
+                "Refresh Games", buttons, "Refresh", RefreshBrowser, UITheme.Button, 150, 34);
+            UIFactory.ButtonWithLabel(
+                "Close Browser", buttons, "Back", CloseBrowser, UITheme.ButtonQuiet, 150, 34);
+
+            panel.gameObject.SetActive(false);
+            return panel;
         }
 
         // --------------------------------------------------------------- Lobby
@@ -635,8 +859,15 @@ namespace Indoctrination.Net
             UIFactory.ButtonWithLabel("Set Name", nameRow, "Set",
                 () => SubmitName(_nameField.text), UITheme.ButtonQuiet, 60, 30);
 
+            // The code to pass on. Only the host has one, and only when the game
+            // was opened online - a solo playtest has nothing to share.
+            _joinCodeLabel = UIFactory.Label(
+                "Join Code", box, "", 18, TextAnchor.MiddleCenter, UITheme.Signal);
+            _joinCodeLabel.fontStyle = FontStyle.Bold;
+            AddFixedHeight(_joinCodeLabel.rectTransform, 26);
+
             _lobbyPlayersText = UIFactory.Label("Players", box, "", 15, TextAnchor.UpperCenter);
-            AddFixedHeight(_lobbyPlayersText.rectTransform, 120);
+            AddFixedHeight(_lobbyPlayersText.rectTransform, 100);
 
             // The host's settings. Timers are off unless a table asks for them,
             // because a clock that takes your draft pick is worse than waiting.
@@ -656,7 +887,7 @@ namespace Indoctrination.Net
                 width: 200, height: 40);
 
             var leaveButton = UIFactory.ButtonWithLabel(
-                "Leave Button", box, "Leave", () => NetworkManager.Singleton?.Shutdown(),
+                "Leave Button", box, "Leave", LeaveGame,
                 UITheme.Blood, 200, 32);
             leaveButton.gameObject.name = "Leave Button";
 
@@ -731,6 +962,12 @@ namespace Indoctrination.Net
             _startGameButton.gameObject.SetActive(isHost);
             _timerToggle.gameObject.SetActive(isHost);
             _addBotButton.gameObject.SetActive(isHost);
+            if (_joinCodeLabel != null)
+            {
+                var code = _online == null ? "" : _online.JoinCode;
+                _joinCodeLabel.text = string.IsNullOrEmpty(code) ? "" : $"Code:  {code}";
+            }
+
             _addBotButton.interactable = lobby.playerNames.Length < lobby.maxPlayers;
             _startGameButton.interactable = lobby.playerNames.Length >= lobby.minPlayers;
         }
@@ -2531,7 +2768,7 @@ namespace Indoctrination.Net
             }
 
             UIFactory.ButtonWithLabel("Leave", _actionPanel, "Leave",
-                () => NetworkManager.Singleton?.Shutdown(), UITheme.Blood, ActionButtonWidth(), 34);
+                LeaveGame, UITheme.Blood, ActionButtonWidth(), 34);
         }
 
         /// <summary>One leader's final line: name, and their two tracks as bars.</summary>

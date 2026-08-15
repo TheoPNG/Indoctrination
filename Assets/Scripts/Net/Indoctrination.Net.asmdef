@@ -5,7 +5,11 @@
         "Indoctrination.Core",
         "Unity.Netcode.Runtime",
         "Unity.Networking.Transport",
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "Unity.Services.Core",
+        "Unity.Services.Authentication",
+        "Unity.Services.Relay",
+        "Unity.Services.Lobbies"
     ],
     "autoReferenced": true
 }
