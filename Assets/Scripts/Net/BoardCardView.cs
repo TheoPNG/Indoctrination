@@ -32,6 +32,14 @@ namespace Indoctrination.Net
         private RectTransform _counterStack;
         private Button _button;
         private EventTrigger _hover;
+
+        /// <summary>
+        /// Raised as the pointer arrives and leaves. The hand uses it to bring
+        /// the card being looked at out from under its neighbours; the fan
+        /// overlaps on purpose, so the card under the pointer is otherwise the
+        /// one half-covered.
+        /// </summary>
+        public Action<bool> OnHoverChanged;
         private string _counterSignature = "";
 
         public CardView Card { get; private set; }
@@ -93,11 +101,19 @@ namespace Indoctrination.Net
             _hover = gameObject.AddComponent<EventTrigger>();
 
             var enter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
-            enter.callback.AddListener(_ => BoardEffects.Instance.Hover(rect, hovering: true));
+            enter.callback.AddListener(_ =>
+            {
+                BoardEffects.Instance.Hover(rect, hovering: true);
+                OnHoverChanged?.Invoke(true);
+            });
             _hover.triggers.Add(enter);
 
             var exit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
-            exit.callback.AddListener(_ => BoardEffects.Instance.Hover(rect, hovering: false));
+            exit.callback.AddListener(_ =>
+            {
+                BoardEffects.Instance.Hover(rect, hovering: false);
+                OnHoverChanged?.Invoke(false);
+            });
             _hover.triggers.Add(exit);
 
             // controlHeight lets each label report its own wrapped-text height

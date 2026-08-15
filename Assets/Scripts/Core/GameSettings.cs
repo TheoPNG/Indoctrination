@@ -11,14 +11,14 @@ namespace Indoctrination.Core
         public const int MinPlayers = 2;
         public const int MaxPlayers = 4;
 
-        public const int StartingHealth = 19;
+        public const int StartingHealth = 15;
 
         /// <summary>
         /// The ceiling healing cannot pass. One above the starting health, so
         /// there is a point of headroom to heal into rather than healing being
         /// wasted from the first turn.
         /// </summary>
-        public const int MaxHealth = 20;
+        public const int MaxHealth = 16;
 
         public const int StartingFollowers = 1;
 

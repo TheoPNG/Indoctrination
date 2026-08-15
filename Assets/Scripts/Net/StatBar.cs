@@ -12,23 +12,24 @@ namespace Indoctrination.Net
     /// </summary>
     public class StatBar : MonoBehaviour
     {
-        /// <summary>The whole bar, one line tall.</summary>
-        public const float BarHeight = 34f;
+        /// <summary>The whole card: a name and two tracks stacked under it.</summary>
+        public const float BarHeight = 74f;
 
         /// <summary>The die face shown beside a player's name.</summary>
-        private const float DieSize = 22f;
+        private const float DieSize = 20f;
 
-        /// <summary>Width of the health track at full health - the scale block is measured against.</summary>
-        private const float HealthTrackWidth = 130f;
+        /// <summary>How wide the tracks are.</summary>
+        private const float TrackWidth = 168f;
 
-        /// <summary>Width of the follower track at the win line.</summary>
-        private const float FollowerTrackWidth = 100f;
+        /// <summary>How tall each track is.</summary>
+        private const float TrackHeight = 15f;
 
         private Text _nameText;
         private Image _healthFill;
         private Text _healthText;
         private RectTransform _blockTrack;
         private Image _blockFill;
+        private Text _blockText;
         private Image _followerFill;
         private Text _followerText;
         private RectTransform _dieBox;
@@ -56,32 +57,48 @@ namespace Indoctrination.Net
 
             _built = true;
 
+            // Stacked rather than strung out along one line. A single line put
+            // the name, a die, two bars and a block segment in a row 380 wide
+            // and gave the reader no grouping at all - it read as five unrelated
+            // things that happened to be adjacent. Name on top, its two numbers
+            // underneath, in a box that says they belong together.
             var rect = (RectTransform)transform;
-            UIFactory.SetSize(rect, HealthTrackWidth + FollowerTrackWidth + 150, BarHeight);
+            UIFactory.SetSize(rect, TrackWidth + 24f, BarHeight);
 
-            // Pins this bar's own size when it sits inside another layout group
-            // (the top row of opponents), the same way BoardCardView pins itself.
             var pin = gameObject.AddComponent<LayoutElement>();
             pin.minHeight = pin.preferredHeight = BarHeight;
+            pin.minWidth = pin.preferredWidth = TrackWidth + 24f;
             pin.flexibleWidth = 0;
 
-            var layout = UIFactory.HorizontalLayout(rect, 6, new RectOffset(8, 8, 4, 4));
-            layout.childAlignment = TextAnchor.MiddleLeft;
+            var box = gameObject.AddComponent<Image>();
+            box.color = UITheme.Surface;
+            UITheme.Frame(box, 1f, UITheme.Border);
 
-            _nameText = UIFactory.Label("Name", rect, "", 14, TextAnchor.MiddleLeft);
+            var layout = UIFactory.VerticalLayout(
+                rect, 3, new RectOffset(10, 10, 6, 6), controlHeight: true);
+            layout.childAlignment = TextAnchor.UpperLeft;
+            layout.childForceExpandWidth = true;
+
+            // Name row: who, and what they rolled.
+            var nameRow = UIFactory.Group("Name Row", rect);
+            PinRow(nameRow, 20f);
+            var nameLayout = UIFactory.HorizontalLayout(nameRow, 5, new RectOffset(0, 0, 0, 0));
+            nameLayout.childAlignment = TextAnchor.MiddleLeft;
+
+            _nameText = UIFactory.Label("Name", nameRow, "", 14, TextAnchor.MiddleLeft);
             _nameText.fontStyle = FontStyle.Bold;
             var namePin = _nameText.gameObject.AddComponent<LayoutElement>();
-            namePin.minWidth = 60;
-            namePin.preferredWidth = 90;
-            namePin.flexibleWidth = 0;
+            namePin.flexibleWidth = 1;
 
-            _dieBox = UIFactory.Panel("Die", rect, UITheme.Bone);
+            _dieBox = UIFactory.Panel("Die", nameRow, UITheme.Bone);
+            _dieBox.GetComponent<Image>().sprite = BoardArt.Disc;
             UIFactory.SetSize(_dieBox, DieSize, DieSize);
             var diePin = _dieBox.gameObject.AddComponent<LayoutElement>();
             diePin.minWidth = diePin.preferredWidth = DieSize;
             diePin.minHeight = diePin.preferredHeight = DieSize;
+            diePin.flexibleWidth = 0;
 
-            _dieText = UIFactory.Label("Die Face", _dieBox, "", 14, TextAnchor.MiddleCenter,
+            _dieText = UIFactory.Label("Die Face", _dieBox, "", 13, TextAnchor.MiddleCenter,
                 UITheme.Void);
             _dieText.fontStyle = FontStyle.Bold;
             UIFactory.Stretch(_dieText.rectTransform);
@@ -90,42 +107,60 @@ namespace Indoctrination.Net
             // grants one, and without somewhere to show it the card reads as
             // doing nothing at all - its units wake on a number that is not on
             // the table anywhere.
-            _privateDice = UIFactory.Group("Private Dice", rect);
+            _privateDice = UIFactory.Group("Private Dice", nameRow);
             var privatePin = _privateDice.gameObject.AddComponent<LayoutElement>();
             privatePin.minHeight = privatePin.preferredHeight = DieSize;
             privatePin.flexibleWidth = 0;
             var privateLayout = UIFactory.HorizontalLayout(_privateDice, 3, new RectOffset(0, 0, 0, 0));
-            privateLayout.childAlignment = TextAnchor.MiddleLeft;
+            privateLayout.childAlignment = TextAnchor.MiddleRight;
             UIFactory.FitToContent(_privateDice);
 
-            // Health and Block share one visual run: Block is armour standing in
-            // front of health rather than a separate pool, so it reads as the
-            // health bar simply continuing on past its usual end.
-            // Health and Block share a row with no spacing between them, so the
-            // green butts directly onto the end of the red and reads as the same
-            // bar running further. Sitting in the parent row it inherited that
-            // row's gap and looked like a separate box parked nearby.
+            // Health, with Block welded onto its right-hand end at the same
+            // scale - armour standing in front of health rather than a second
+            // pool, so it reads as the bar simply running on a little further.
             var healthRow = UIFactory.Group("Health Row", rect);
-            var healthLayout = UIFactory.HorizontalLayout(healthRow, 0, new RectOffset(0, 0, 0, 0));
+            PinRow(healthRow, TrackHeight);
+            var healthLayout = UIFactory.HorizontalLayout(
+                healthRow, 0, new RectOffset(0, 0, 0, 0));
             healthLayout.childAlignment = TextAnchor.MiddleLeft;
-            UIFactory.FitToContent(healthRow);
-            var healthRowPin = healthRow.gameObject.AddComponent<LayoutElement>();
-            healthRowPin.minHeight = healthRowPin.preferredHeight = 18;
 
             (_healthFill, _healthText) = MakeBar(
-                "Health", new Color(0.800f, 0.247f, 0.318f), healthRow, HealthTrackWidth);
-            _pointWidth = HealthTrackWidth / GameSettings.MaxHealth;
+                "Health", new Color(0.800f, 0.247f, 0.318f), healthRow, TrackWidth);
+            _pointWidth = TrackWidth / GameSettings.MaxHealth;
 
             _blockTrack = UIFactory.Panel("Block", healthRow, new Color(0.247f, 0.722f, 0.502f, 0.95f));
             var blockPin = _blockTrack.gameObject.AddComponent<LayoutElement>();
-            blockPin.minHeight = blockPin.preferredHeight = 18;
+            blockPin.minHeight = blockPin.preferredHeight = TrackHeight;
             blockPin.minWidth = blockPin.preferredWidth = 0;
             blockPin.flexibleWidth = 0;
             _blockFill = _blockTrack.GetComponent<Image>();
             _blockTrack.gameObject.SetActive(false);
 
+            // The block number rides just past the end of the green rather than
+            // inside it: at one or two points that segment is a few pixels wide
+            // and a digit in it is unreadable, which is what made Block look
+            // like a smear on the end of the health bar.
+            _blockText = UIFactory.Label(
+                "Block Value", _blockTrack, "", 11, TextAnchor.MiddleLeft,
+                new Color(0.247f, 0.722f, 0.502f), wrap: false);
+            _blockText.fontStyle = FontStyle.Bold;
+            _blockText.raycastTarget = false;
+            _blockText.rectTransform.anchorMin = new Vector2(1f, 0f);
+            _blockText.rectTransform.anchorMax = new Vector2(1f, 1f);
+            _blockText.rectTransform.pivot = new Vector2(0f, 0.5f);
+            _blockText.rectTransform.sizeDelta = new Vector2(34f, 0f);
+            _blockText.rectTransform.anchoredPosition = new Vector2(3f, 0f);
+
             (_followerFill, _followerText) = MakeBar(
-                "Followers", new Color(0.290f, 0.561f, 0.902f), rect, FollowerTrackWidth);
+                "Followers", new Color(0.290f, 0.561f, 0.902f), rect, TrackWidth);
+        }
+
+        private static void PinRow(RectTransform rect, float height)
+        {
+            var element = rect.gameObject.GetComponent<LayoutElement>()
+                          ?? rect.gameObject.AddComponent<LayoutElement>();
+            element.minHeight = element.preferredHeight = height;
+            element.flexibleWidth = 1;
         }
 
         /// <summary>
@@ -140,7 +175,7 @@ namespace Indoctrination.Net
 
             var pin = track.gameObject.AddComponent<LayoutElement>();
             pin.minWidth = pin.preferredWidth = width;
-            pin.minHeight = pin.preferredHeight = 18;
+            pin.minHeight = pin.preferredHeight = TrackHeight;
             pin.flexibleWidth = 0;
 
             var fill = UIFactory.FillBar($"{name} Fill", track, color);
@@ -148,7 +183,7 @@ namespace Indoctrination.Net
             fill.rectTransform.offsetMin = new Vector2(1f, 1f);
             fill.rectTransform.offsetMax = new Vector2(-1f, -1f);
 
-            var label = UIFactory.Label($"{name} Label", track, "", 11, TextAnchor.MiddleCenter);
+            var label = UIFactory.Label($"{name} Label", track, "", 10, TextAnchor.MiddleCenter);
             label.fontStyle = FontStyle.Bold;
             UIFactory.Stretch(label.rectTransform);
 
@@ -192,14 +227,22 @@ namespace Indoctrination.Net
             BuildPrivateDice(player, revealDice);
 
             _healthText.text = $"{player.health}/{GameSettings.MaxHealth}";
+            _healthText.fontSize = 10;
             BoardEffects.Instance.FillTo(_healthFill, (float)player.health / GameSettings.MaxHealth);
 
             // Directly appended to the end of the health bar, to the same
             // per-point scale, rather than a separate boxed counter - Block reads
             // as the health bar simply running on a little further.
-            var blockWidth = player.block * _pointWidth;
+            // A minimum width so one point of Block is still a visible segment
+            // rather than a hairline, and the number sits just past the end of
+            // it where there is room to read it.
+            var blockWidth = player.block <= 0
+                ? 0f
+                : Mathf.Max(6f, player.block * _pointWidth);
+
             var blockPin = _blockTrack.gameObject.GetComponent<LayoutElement>();
             blockPin.minWidth = blockPin.preferredWidth = blockWidth;
+            _blockText.text = player.block > 0 ? $"+{player.block}" : "";
             _blockTrack.gameObject.SetActive(player.block > 0);
             if (player.block > 0)
             {
@@ -207,6 +250,7 @@ namespace Indoctrination.Net
             }
 
             _followerText.text = $"{player.followers}/{GameSettings.FollowersToWin}";
+            _followerText.fontSize = 10;
             BoardEffects.Instance.FillTo(
                 _followerFill, (float)player.followers / GameSettings.FollowersToWin);
         }

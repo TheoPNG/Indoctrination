@@ -5,15 +5,23 @@ using UnityEngine.UI;
 namespace Indoctrination.Net
 {
     /// <summary>
-    /// Somebody's message, thrown across the board large enough to read from
-    /// across the room and gone again a few seconds later.
+    /// Somebody's message, in a small box above the chat corner, gone again a
+    /// few seconds later.
+    ///
+    /// It used to be thrown across the middle of the board at forty point, which
+    /// is fine for one word and covers the game for a sentence. It sits with the
+    /// box it was typed into now: still impossible to miss, because it appears
+    /// and moves, but no longer standing between a player and the board.
     ///
     /// Deliberately not a chat log. There is no history, nothing to scroll, and
-    /// nothing to miss by looking away for a turn - it is closer to shouting
+    /// nothing to miss by looking away for a turn - it is closer to a remark
     /// across a table than to messaging, which is the point of it.
     /// </summary>
     public class ShoutBanner : MonoBehaviour
     {
+        /// <summary>Wide enough for a sentence, narrow enough to stay in its corner.</summary>
+        private const float PanelWidth = 300f;
+
         private RectTransform _panel;
         private CanvasGroup _group;
         private Text _fromLabel;
@@ -43,25 +51,30 @@ namespace Indoctrination.Net
             _group.blocksRaycasts = false;
             _group.interactable = false;
 
-            _panel = UIFactory.Panel("Shout", root, new Color(
-                UITheme.Void.r, UITheme.Void.g, UITheme.Void.b, 0.92f));
+            // Bottom right, sitting just above the box it was typed into, and
+            // sized to its own content rather than to a slab of the screen.
+            _panel = UIFactory.Panel("Shout", root, UITheme.SurfaceRaised);
             UITheme.Frame(_panel.GetComponent<Image>(), 1f, UITheme.Signal);
-            _panel.anchorMin = new Vector2(0.08f, 0.58f);
-            _panel.anchorMax = new Vector2(0.92f, 0.78f);
-            _panel.offsetMin = _panel.offsetMax = Vector2.zero;
+            _panel.anchorMin = _panel.anchorMax = new Vector2(1f, 0f);
+            _panel.pivot = new Vector2(1f, 0f);
+            UIFactory.SetSize(_panel, PanelWidth, 10f);
+            _panel.anchoredPosition = new Vector2(-16f, 54f);
 
-            var layout = UIFactory.VerticalLayout(_panel, 6, new RectOffset(20, 20, 12, 12), controlHeight: true);
-            layout.childAlignment = TextAnchor.MiddleCenter;
+            var layout = UIFactory.VerticalLayout(
+                _panel, 2, new RectOffset(12, 12, 8, 8), controlHeight: true);
+            layout.childAlignment = TextAnchor.UpperLeft;
             layout.childForceExpandWidth = true;
+            UIFactory.FitToContent(
+                _panel,
+                ContentSizeFitter.FitMode.Unconstrained,
+                ContentSizeFitter.FitMode.PreferredSize);
 
-            _fromLabel = UIFactory.Label("From", _panel, "", 16, TextAnchor.MiddleCenter, UITheme.Signal);
+            _fromLabel = UIFactory.Label("From", _panel, "", 12, TextAnchor.MiddleLeft, UITheme.Signal);
             _fromLabel.fontStyle = FontStyle.Bold;
-            FixedRow(_fromLabel.rectTransform, 20);
+            FixedRow(_fromLabel.rectTransform, 15);
 
-            _messageLabel = UIFactory.Label("Message", _panel, "", 40, TextAnchor.MiddleCenter, UITheme.Bone);
-            _messageLabel.fontStyle = FontStyle.Bold;
+            _messageLabel = UIFactory.Label("Message", _panel, "", 16, TextAnchor.UpperLeft, UITheme.Bone);
             var messageRow = _messageLabel.gameObject.AddComponent<LayoutElement>();
-            messageRow.flexibleHeight = 1;
             messageRow.flexibleWidth = 1;
 
             gameObject.SetActive(false);
@@ -108,12 +121,12 @@ namespace Indoctrination.Net
                 elapsed += Time.deltaTime;
                 var t = Mathf.SmoothStep(0f, 1f, elapsed / rise);
                 _group.alpha = t;
-                _panel.localScale = Vector3.one * Mathf.Lerp(0.88f, 1f, t);
+                _panel.anchoredPosition = new Vector2(-16f, Mathf.Lerp(34f, 54f, t));
                 yield return null;
             }
 
             _group.alpha = 1f;
-            _panel.localScale = Vector3.one;
+            _panel.anchoredPosition = new Vector2(-16f, 54f);
             yield return new WaitForSeconds(hold);
 
             elapsed = 0f;

@@ -7,6 +7,90 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-15 — Claude (visual overhaul, first pass: twelve items)
+
+### The board
+
+1. **Corner toolbar.** Offer draw, Resign and Quit are icon buttons now, via a
+   new `UIFactory.IconButton` - a round quiet disc with one glyph, no hard frame.
+   As words they were a row of clutter along the top; as marks they read as
+   somewhere to go rather than something to do. **The glyphs are placeholders**
+   (`=`, `⚑`, `✕`, `i`); swapping in real art means giving the button's Image a
+   sprite and clearing the glyph.
+2. **Info moved to the right**, last in that toolbar, and is an icon on the same
+   footing as the rest instead of a 24x22 chip on the far left.
+3. **Starting health 15.** `MaxHealth` follows to 16, keeping the documented
+   "one point of headroom to heal into". RulesCheck had `19` written into a
+   check twice; both now read the constant.
+4. **Chat lives in the bottom-right** in its own corner, out of the dock along
+   the top where it had put a text field in the middle of the row you press
+   every turn. **Open to everybody at the table** - the passcode gate is gone
+   (`CanShout` is now "are you seated"; the length cap and cooldown are what stop
+   abuse). The shout popup is a small box above the chat corner that rises into
+   place, not forty-point text across the middle of the board.
+5. **"ROLL DIE" is "Roll".**
+6. **The leftmost hand card.** The card width is clamped to `MinCardWidth`, so on
+   a narrow window or a full hand the clamp wins over the width the tray allows
+   and the fan runs off the left over the resource circles. It now tightens the
+   overlap instead, down to a floor of 0.30 where cards stop reading as separate.
+   Plus a 14px margin at each end - flush reads as clipped.
+7. **The hovered card comes to the front.** `BoardCardView.OnHoverChanged`, and
+   the hand raises that slot and restores the painting order on the way out.
+8. **The discard is a popup**, opened by "View discard". It used to be a row
+   appended to the battlefield, which re-planned every other row and shrank every
+   card on the table to make room for something being glanced at.
+9. **Stat bars are stacked boxes**: name and die on top, health and followers as
+   rows beneath, in a bordered box 192 wide. One line had put five unrelated
+   things next to each other across 380px with no grouping at all.
+10. **Block** is a green segment welded to the right of the health bar with a
+    `+N` just past its end. It has a minimum width, so one point of Block is a
+    visible segment rather than a hairline, and the number sits where there is
+    room to read it rather than inside a 6px sliver.
+11. **Resource pips fly to the actual circle** for that colour on the resource
+    HUD, resolved through a new `resourceSpot` callback, rather than at a guessed
+    fraction across the stage. Only the viewer's own gains fly - there is nowhere
+    on the board an opponent's pile lives for a pip to land in.
+12. **Activation tracks are a fixed 300x104, centred**, instead of each claiming
+    an equal share of the stage. Two players in a wide window had half the screen
+    each, which put two slabs either side of the card everything is about.
+
+### A test that did not test anything
+
+`TheOpenHandIsFullyOnScreen` grew left/right assertions against the tray - and
+**passed with the fan fix removed**, because the test window is wide enough that
+the fan never has to make the decision. The failure needs a narrow tray or a full
+hand.
+
+So the decision was extracted into `BoardUI.HandFanOverlapFor`, pure arithmetic,
+and `TheHandFanTightensInsteadOfRunningOffTheTray` checks it across tray widths
+from 320 to 1400 and hands of one to seven. **Confirmed it bites**: with the
+tightening removed it fails with "4 cards in a 320px tray span 341.4px".
+
+Worth remembering: a layout assertion that only ever sees one window size is
+evidence about that window, not about the layout.
+
+### Files
+
+- `UIFactory.cs` (IconButton), `BoardUI.cs`, `StatBar.cs`, `ShoutBanner.cs`,
+  `ActivationStage.cs`, `BoardCardView.cs`, `NetworkGameManager.cs`,
+  `GameSettings.cs`, `Tools/RulesCheck/RulesCheck.cs`.
+- Tests updated for the renamed controls (`Roll`, `View discard`, and the icon
+  buttons found by name rather than label), the die box now nested under the
+  name row, and the draw count reading `1/2` rather than `Draw 1/2`.
+- Added `TheHandFanTightensInsteadOfRunningOffTheTray` and
+  `HoveringAHandCardBringsItToTheFront`.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 57 passed.
+- RulesCheck all green; SmokeTest passed.
+
+### Follow-up status
+
+- The toolbar glyphs are placeholders awaiting real icons.
+- Bloodstone still unreproduced; Asmodeus still benched.
+
 ## 2026-08-15 — Claude (It Who Consumes buyable again; the high roll picked on the left)
 
 The package clash from the previous entry is **resolved and verified**: with the

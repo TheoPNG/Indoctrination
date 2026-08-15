@@ -152,6 +152,58 @@ namespace Indoctrination.Net
             return button;
         }
 
+        /// <summary>
+        /// A square control carrying one glyph instead of a word.
+        ///
+        /// Rounder and quieter than <see cref="ButtonWithLabel"/>: no hard frame,
+        /// a glyph sized to fill it, and the accent carried by the glyph rather
+        /// than by a block of colour behind it. Used for the handful of controls
+        /// that sit in a corner and are pressed rarely - a row of small words up
+        /// there reads as clutter, where a row of marks reads as a toolbar.
+        ///
+        /// The glyphs are placeholders. Swapping one for real art means giving
+        /// the returned button's Image a sprite and clearing the glyph.
+        /// </summary>
+        public static Button IconButton(
+            string name, Transform parent, string glyph, Action onClick,
+            Color? accent = null, float size = 30f, string tooltip = null)
+        {
+            var rect = Panel(name, parent, UITheme.ButtonQuiet);
+            SetSize(rect, size, size);
+
+            var pin = rect.gameObject.AddComponent<LayoutElement>();
+            pin.minWidth = pin.preferredWidth = size;
+            pin.minHeight = pin.preferredHeight = size;
+            pin.flexibleWidth = 0f;
+
+            var background = rect.GetComponent<Image>();
+            background.sprite = BoardArt.Disc;
+            background.type = Image.Type.Simple;
+
+            var button = rect.gameObject.AddComponent<Button>();
+            button.targetGraphic = background;
+            UITheme.StyleButton(button);
+
+            if (onClick != null)
+            {
+                button.onClick.AddListener(() => onClick());
+            }
+
+            var label = Label(
+                $"{name} Glyph", rect, glyph, Mathf.RoundToInt(size * 0.52f),
+                TextAnchor.MiddleCenter, accent ?? UITheme.Bone, wrap: false);
+            label.fontStyle = FontStyle.Bold;
+            label.raycastTarget = false;
+            Stretch(label.rectTransform);
+
+            if (!string.IsNullOrEmpty(tooltip))
+            {
+                rect.gameObject.name = name;
+            }
+
+            return button;
+        }
+
         /// <summary>A single-line text field, e.g. for the host address or an amount.</summary>
         public static InputField TextInput(string name, Transform parent, string startingValue)
         {

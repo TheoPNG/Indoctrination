@@ -234,7 +234,7 @@ namespace Indoctrination.Tests
         /// The exact failure a player reported: the draft finishes and the board
         /// never moves on. Every pick is made through the real RPC, and the
         /// client's own replicated view has to reach Rolling with a working
-        /// ROLL DIE button on it.
+        /// Roll button on it.
         /// </summary>
         [UnityTest]
         public IEnumerator FinishingTheDraftGivesTheClientARollButton()
@@ -272,8 +272,8 @@ namespace Indoctrination.Tests
 
             Assert.IsFalse(_manager.View.Viewer.hasRolled, "the player has not rolled yet");
 
-            var roll = FindButtonLabelled("ROLL DIE");
-            Assert.IsNotNull(roll, WhyUnusable("ROLL DIE"));
+            var roll = FindButtonLabelled("Roll");
+            Assert.IsNotNull(roll, WhyUnusable("Roll"));
             Assert.IsTrue(roll.interactable, "and it has to be clickable");
 
             var rect = ((RectTransform)roll.transform).rect;
@@ -823,7 +823,7 @@ namespace Indoctrination.Tests
             Assert.IsNotNull(ready, "the Ready control should be present during play");
             Assert.IsFalse(ready.interactable, "and disabled while the player still has to roll");
 
-            FindButtonLabelled("ROLL DIE").onClick.Invoke();
+            FindButtonLabelled("Roll").onClick.Invoke();
             yield return WaitForFrames(4);
 
             Assert.IsTrue(FindButtonAnywhere("Ready").interactable,
@@ -853,8 +853,8 @@ namespace Indoctrination.Tests
 
             var before = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None).Length;
 
-            var discard = FindButtonLabelled("Discard");
-            Assert.IsNotNull(discard, WhyUnusable("Discard"));
+            var discard = FindButtonLabelled("View discard");
+            Assert.IsNotNull(discard, WhyUnusable("View discard"));
             discard.onClick.Invoke();
             yield return WaitForFrames(3);
 
@@ -883,7 +883,7 @@ namespace Indoctrination.Tests
 
             Assert.IsNull(FindVisibleDieFace(), "no die should show before rolling");
 
-            FindButtonLabelled("ROLL DIE").onClick.Invoke();
+            FindButtonLabelled("Roll").onClick.Invoke();
             yield return WaitForFrames(4);
             Canvas.ForceUpdateCanvases();
 
@@ -913,7 +913,7 @@ namespace Indoctrination.Tests
                 .FirstOrDefault(card => card.Card?.instanceId == instanceId);
             Assert.IsNotNull(before, "the test unit should be visible before rolling");
 
-            FindButtonLabelled("ROLL DIE").onClick.Invoke();
+            FindButtonLabelled("Roll").onClick.Invoke();
             yield return WaitForFrames(4);
 
             var after = Object.FindObjectsByType<BoardCardView>(FindObjectsSortMode.None)
@@ -1118,7 +1118,12 @@ namespace Indoctrination.Tests
             var bar = Object.FindObjectsByType<StatBar>(FindObjectsSortMode.None)
                 .FirstOrDefault(b => (b.GetComponentInChildren<Text>()?.text ?? "").Contains("(you)"));
 
-            var box = bar == null ? null : bar.transform.Find("Die");
+            // Nested under the name row now that the strip is stacked rather
+            // than strung out along one line.
+            var box = bar == null
+                ? null
+                : bar.GetComponentsInChildren<RectTransform>(true)
+                    .FirstOrDefault(child => child.gameObject.name == "Die");
             if (box == null || !box.gameObject.activeInHierarchy)
             {
                 return null;
@@ -1196,7 +1201,7 @@ namespace Indoctrination.Tests
             yield return StartGame();
             yield return WaitForFrames(3);
 
-            var resign = FindButtonLabelled("Resign");
+            var resign = FindButtonNamed("Resign");
             Assert.IsNotNull(resign, WhyUnusable("Resign"));
 
             resign.onClick.Invoke();
@@ -1204,9 +1209,9 @@ namespace Indoctrination.Tests
 
             Assert.IsTrue(_manager.View.Viewer.isAlive,
                           "one press must not resign - it only asks for confirmation");
-            Assert.IsNotNull(FindButtonLabelled("Sure?"), "and the button should ask");
+            Assert.IsNotNull(FindButtonLabelled("?"), "and the button should ask");
 
-            FindButtonLabelled("Sure?").onClick.Invoke();
+            FindButtonLabelled("?").onClick.Invoke();
             yield return WaitForFrames(4);
 
             Assert.IsFalse(_manager.View.Viewer.isAlive, "confirming resigns");
@@ -1223,8 +1228,8 @@ namespace Indoctrination.Tests
             yield return StartGame();
             yield return WaitForFrames(3);
 
-            var offer = FindButtonLabelled("Offer draw");
-            Assert.IsNotNull(offer, WhyUnusable("Offer draw"));
+            var offer = FindButtonNamed("Offer Draw");
+            Assert.IsNotNull(offer, WhyUnusable("Offer Draw"));
 
             offer.onClick.Invoke();
             yield return WaitForFrames(4);
@@ -1232,7 +1237,7 @@ namespace Indoctrination.Tests
             Assert.IsFalse(_manager.View.isGameOver,
                            "one player offering a draw must not end the game");
             Assert.IsTrue(_manager.View.Viewer.offeringDraw, "but the offer stands");
-            Assert.IsNotNull(FindButtonLabelled("Draw 1/2"),
+            Assert.IsNotNull(FindButtonLabelled("1/2"),
                              "and the button says how many have agreed");
 
             // The other seat agrees, and only then is it a draw.
@@ -2221,6 +2226,109 @@ namespace Indoctrination.Tests
                 Assert.IsTrue(IsFullyVisibleThroughEveryMask(card.GetComponent<Image>()),
                     "a hand card is being clipped by a mask above it");
             }
+
+            // Sideways as well, and against the tray rather than the screen -
+            // the tray stops clear of the resource circles on the left, so a
+            // card that runs past its edge is over the top of them. The card
+            // size is clamped to a minimum, so on a narrow window or a full hand
+            // the fan has to tighten its overlap rather than overflow, and this
+            // is the check that it does.
+            var tray = WorldRect(handRow);
+
+            foreach (var card in cards)
+            {
+                var rect = WorldRect((RectTransform)card.transform);
+
+                Assert.GreaterOrEqual(rect.xMin, tray.xMin - 0.5f,
+                    $"the leftmost hand card runs {tray.xMin - rect.xMin:0.#}px past the "
+                    + $"left of the tray (card {rect}, tray {tray})");
+                Assert.LessOrEqual(rect.xMax, tray.xMax + 0.5f,
+                    $"the rightmost hand card runs {rect.xMax - tray.xMax:0.#}px past the "
+                    + $"right of the tray (card {rect}, tray {tray})");
+            }
+        }
+
+        /// <summary>
+        /// The hand fan tightens rather than overflowing.
+        ///
+        /// The visible check on the open hand only ever sees the test window,
+        /// which is wide enough that the fan never has to make this decision -
+        /// it passes with the fix removed. The failure needs a narrow tray or a
+        /// full hand, so it is checked here as arithmetic, across the sizes a
+        /// real window actually reaches.
+        /// </summary>
+        [Test]
+        public void TheHandFanTightensInsteadOfRunningOffTheTray()
+        {
+            // The proportions a rotated card occupies, from the board's own
+            // constants - a 4 degree tilt on a card 1.4 times as tall as it is
+            // wide.
+            const float rotatedWidthUnits = 1.096f;
+            const float minCardWidth = 96f;
+
+            foreach (var tray in new[] { 320f, 480f, 700f, 900f, 1400f })
+            {
+                for (var count = 1; count <= 7; count++)
+                {
+                    var overlap = BoardUI.HandFanOverlapFor(
+                        tray, minCardWidth, rotatedWidthUnits, count);
+
+                    var span = minCardWidth * (rotatedWidthUnits + (overlap * (count - 1)));
+
+                    // Either it fits, or the fan is already as tight as it is
+                    // allowed to get and the cards themselves are simply wider
+                    // than the tray - which is a sizing problem, not a fan one.
+                    var tightest = Mathf.Approximately(overlap, 0.30f);
+                    Assert.IsTrue(span <= tray + 0.5f || tightest,
+                        $"{count} cards in a {tray}px tray span {span:0.#}px at overlap {overlap:0.00}");
+
+                    Assert.That(overlap, Is.InRange(0.30f, 0.82f),
+                        "the overlap should stay between readable and tightest");
+                }
+            }
+        }
+
+        /// <summary>
+        /// The card under the pointer comes out from under its neighbours.
+        ///
+        /// The fan overlaps on purpose, so without this the card being looked at
+        /// is the one half-covered by the card next to it.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator HoveringAHandCardBringsItToTheFront()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Buy);
+            yield return ExpandHand();
+            Canvas.ForceUpdateCanvases();
+
+            var handRow = (RectTransform)typeof(BoardUI)
+                .GetField("_handRow", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(_board);
+
+            var cards = handRow.GetComponentsInChildren<BoardCardView>();
+            Assert.Greater(cards.Length, 2, "this needs a hand with cards behind others");
+
+            // The leftmost card is painted first, so it is the one buried.
+            var buried = cards
+                .OrderBy(card => card.transform.position.x)
+                .First();
+
+            var slot = (RectTransform)buried.transform.parent;
+            Assert.Less(slot.GetSiblingIndex(), handRow.childCount - 1,
+                "the outermost card should start underneath the others");
+
+            buried.OnHoverChanged?.Invoke(true);
+            yield return WaitForFrames(1);
+
+            Assert.AreEqual(handRow.childCount - 1, slot.GetSiblingIndex(),
+                "hovering a card should bring it out in front");
+
+            buried.OnHoverChanged?.Invoke(false);
+            yield return WaitForFrames(1);
+
+            Assert.Less(slot.GetSiblingIndex(), handRow.childCount - 1,
+                "and it should drop back when the pointer leaves");
         }
 
         /// <summary>

@@ -123,7 +123,7 @@ static class RulesCheck
 
         Console.WriteLine("\nStarting stats:");
         var game = new GameState(new[] { "Teddy", "Asher" }, cards, randomSeed: 7);
-        Check("health starts at 19", game.Players.All(p => p.Health == 19));
+        Check($"health starts at {GameSettings.StartingHealth}", game.Players.All(p => p.Health == GameSettings.StartingHealth));
         Check("followers start at 1", game.Players.All(p => p.Followers == 1));
         Check("nobody has won yet", game.Winner == null);
 

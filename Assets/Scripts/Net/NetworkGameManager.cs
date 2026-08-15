@@ -502,7 +502,14 @@ namespace Indoctrination.Net
         /// </summary>
         private const string ShoutPasscode = "goated";
 
-        /// <summary>Seats that have said the word. Cleared with the seat, not the game.</summary>
+        /// <summary>
+        /// Seats that have said the word.
+        ///
+        /// Kept, but no longer a gate: chat is open to everybody at the table.
+        /// It was passcode-only when it was a full-screen banner nobody had
+        /// asked for; it is a small box in a corner now, which is a thing a
+        /// table can simply have.
+        /// </summary>
         private readonly HashSet<int> _shoutUnlocked = new();
 
         /// <summary>Time.time each seat last shouted, so nobody can hold the board hostage.</summary>
@@ -511,8 +518,8 @@ namespace Indoctrination.Net
         /// <summary>The shortest gap between one seat's shouts.</summary>
         private const float ShoutCooldownSeconds = 1.5f;
 
-        /// <summary>Whether this machine has unlocked shouting, for the interface to offer it.</summary>
-        public bool CanShout { get; private set; }
+        /// <summary>Whether this machine may chat. Everybody seated may.</summary>
+        public bool CanShout => View is { viewerPlayerId: >= 0 } || Lobby != null;
 
         /// <summary>Raised on every client when somebody shouts.</summary>
         public event Action<string, string> Shouted;
@@ -542,7 +549,6 @@ namespace Indoctrination.Net
         [Rpc(SendTo.SpecifiedInParams)]
         private void ConfirmShoutUnlockedRpc(RpcParams rpcParams)
         {
-            CanShout = true;
             Changed?.Invoke();
         }
 
@@ -553,8 +559,10 @@ namespace Indoctrination.Net
         [Rpc(SendTo.Server)]
         public void RequestShoutRpc(string message, RpcParams rpcParams = default)
         {
+            // Seated is the whole test. Anyone at the table may talk to it; the
+            // length cap and the cooldown below are what stop it being abused.
             var seat = SeatIndexOf(rpcParams.Receive.SenderClientId);
-            if (seat < 0 || !_shoutUnlocked.Contains(seat))
+            if (seat < 0)
             {
                 return;
             }

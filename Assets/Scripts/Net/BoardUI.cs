@@ -70,6 +70,9 @@ namespace Indoctrination.Net
 
         // Rolling only needs one button. Its frame fits that control instead of
         // borrowing the full question window used by card choices.
+        /// <summary>The corner toolbar's buttons, all the same size.</summary>
+        private const float IconSize = 30f;
+
         private const float RollingPopupWidth = 300f;
         private const float RollingPopupHeight = 94f;
         private const float RollButtonWidth = 260f;
@@ -84,6 +87,16 @@ namespace Indoctrination.Net
         /// cut off - and the tilt makes the titles harder to read for no gain.
         /// </summary>
         private const float HandFanMaxAngle = 4f;
+
+        /// <summary>Clear space kept at each end of the fan.</summary>
+        private const float HandFanSideMargin = 14f;
+
+        /// <summary>
+        /// How far the cards may be pushed over one another before the fan is
+        /// allowed to be too wide instead. Below this they stop reading as
+        /// separate cards.
+        /// </summary>
+        private const float HandFanTightestOverlap = 0.30f;
 
         private const float HandFanCenterLift = 8f;
         private const float HandFanPadding = 10f;
@@ -258,6 +271,7 @@ namespace Indoctrination.Net
 
             _connectPanel = BuildConnectPanel(canvas.transform);
             _browserPanel = BuildBrowserPanel(canvas.transform);
+            BuildDiscardPanel(canvas.transform);
             _lobbyPanel = BuildLobbyPanel(canvas.transform);
             _gameRoot = BuildGameRoot(canvas.transform);
             BuildErrorLabel(canvas.transform);
@@ -988,36 +1002,37 @@ namespace Indoctrination.Net
             var status = UIFactory.Group("Status Row", root);
             AddFixedHeight(status, StatusRowHeight);
             UIFactory.HorizontalLayout(status, 8, new RectOffset(4, 4, 0, 0), controlWidth: true);
-            // The turn counters are reference material, not something to read every
-            // turn, so they live small in the corner and expand only when asked.
-            _statusToggle = UIFactory.ButtonWithLabel(
-                "Status Toggle", status, "i", ToggleStatusDetail,
-                UITheme.ButtonQuiet, 24, 22);
-
             _statusText = UIFactory.Label("Status", status, "", 12, TextAnchor.MiddleLeft,
                 UITheme.BoneDim);
             AddFlexibleWidth(_statusText.rectTransform);
 
-            // Conceding and offering a draw live behind the same chip as the
-            // counters. Both are rare, and one of them ends your game - neither
-            // belongs next to the controls you press every turn.
-            _drawButton = UIFactory.ButtonWithLabel(
-                "Offer Draw", status, "Offer draw", ToggleDrawOffer,
-                UITheme.ButtonQuiet, 110, StatusRowHeight);
+            _timerText = UIFactory.Label("Timer", status, "", 13, TextAnchor.MiddleRight, UITheme.Signal);
+            AddResponsiveWidth(_timerText.rectTransform, 130, 210, 0);
 
-            _resignButton = UIFactory.ButtonWithLabel(
-                "Resign", status, "Resign", PressResign,
-                UITheme.Blood, 90, StatusRowHeight);
+            // The corner toolbar: four things you press rarely and never in the
+            // same breath as playing a card. As words they were a row of clutter
+            // across the top of the board; as marks they read as what they are,
+            // which is somewhere to go rather than something to do.
+            //
+            // The glyphs are placeholders for real icons.
+            _drawButton = UIFactory.IconButton(
+                "Offer Draw", status, "=", ToggleDrawOffer, UITheme.Bone, IconSize);
+
+            _resignButton = UIFactory.IconButton(
+                "Resign", status, "⚑", PressResign, UITheme.Blood, IconSize);
             _resignLabel = _resignButton.GetComponentInChildren<Text>();
 
             // Beside Resign, because it is the same decision wearing a different
             // hat - and unlike Resign it stays put once you are out, since
             // somebody who has lost still needs to be able to close the game.
-            UIFactory.ButtonWithLabel(
-                "Quit", status, "Quit", OpenQuitPrompt,
-                UITheme.ButtonQuiet, 70, StatusRowHeight);
-            _timerText = UIFactory.Label("Timer", status, "", 13, TextAnchor.MiddleRight, UITheme.Signal);
-            AddResponsiveWidth(_timerText.rectTransform, 150, 230, 0);
+            UIFactory.IconButton(
+                "Quit", status, "✕", OpenQuitPrompt, UITheme.BoneDim, IconSize);
+
+            // The turn counters are reference material rather than something to
+            // read every turn, so they sit with the rest of the corner and open
+            // only when asked.
+            _statusToggle = UIFactory.IconButton(
+                "Status Toggle", status, "i", ToggleStatusDetail, UITheme.Signal, IconSize);
 
             // Opponents across the top of the board. This row scrolls rather than
             // shrinking or clipping stat bars when several players share a small
@@ -1112,26 +1127,13 @@ namespace Indoctrination.Net
                 UITheme.BoneDim);
             AddFixedWidth(_handCountLabel.rectTransform, 70);
 
-            // Shouting across the table. Locked until somebody types the word,
-            // so a table that does not know about it never sees a chat box.
-            _shoutRow = UIFactory.Group("Shout Row", dockTop);
-            var shoutPin = _shoutRow.gameObject.AddComponent<LayoutElement>();
-            shoutPin.minWidth = shoutPin.preferredWidth = 250;
-            UIFactory.HorizontalLayout(_shoutRow, 4, new RectOffset(0, 0, 0, 0));
-
-            _shoutField = UIFactory.TextInput("Shout Field", _shoutRow, "");
-            AddFixedWidthHeight(_shoutField.GetComponent<RectTransform>(), 170, 30);
-            _shoutField.characterLimit = NetworkGameManager.MaxShoutLength;
-            _shoutField.onEndEdit.AddListener(SubmitShout);
-
-            _shoutButton = UIFactory.ButtonWithLabel(
-                "Shout", _shoutRow, "Say", () => SubmitShout(_shoutField.text),
-                UITheme.ButtonQuiet, 70, 30);
-
-            // The discard is public information and Rituals fly into it, so it is
-            // a real place on the board rather than a number in the status line.
+            // The discard is public information and Rituals fly into it, so there
+            // is somewhere to go and look. A small button rather than a shelf
+            // that pushes the board around when it opens.
             _discardButton = UIFactory.ButtonWithLabel(
-                "Discard", dockTop, "Discard", ShowDiscard, UITheme.ButtonQuiet, 100, 34);
+                "Discard", dockTop, "View discard", ShowDiscard, UITheme.ButtonQuiet, 120, 34);
+
+            BuildChatCorner(root);
 
             // Pips and drag ghosts are drawn above everything, so one crossing
             // the board is never hidden behind a panel it passes over.
@@ -1476,7 +1478,8 @@ namespace Indoctrination.Net
             _activationStage.Present(
                 view,
                 (parent, prompt) => BuildActivationChoice(parent, prompt, manager, view),
-                BoardCardPosition);
+                BoardCardPosition,
+                colour => _resourceHud == null ? null : _resourceHud.PipPosition(colour));
         }
 
         /// <summary>One line saying what this phase wants, for the banner.</summary>
@@ -1824,15 +1827,6 @@ namespace Indoctrination.Net
                 });
             }
 
-            if (_discardOpen && view.discardPile.Length > 0)
-            {
-                rows.Add(new PlannedRow
-                {
-                    Label = $"Discard ({view.discardPile.Length})",
-                    Cards = view.discardPile.Reverse().ToArray()
-                });
-            }
-
             var cardWidth = CardWidthForBoard(rows);
 
             foreach (var row in rows)
@@ -1862,7 +1856,7 @@ namespace Indoctrination.Net
                 : "none";
 
             return $"{view.phase}|{view.viewerPlayerId}|{view.currentDrafterId}|"
-                   + $"{_discardOpen}|{players}|{Cards(view.draftZone)}|"
+                   + $"{players}|{Cards(view.draftZone)}|"
                    + $"{Cards(view.discardPile)}|{marks}|{choice}";
         }
 
@@ -2238,10 +2232,39 @@ namespace Indoctrination.Net
         /// </summary>
         private void RefreshShoutControls(NetworkGameManager manager)
         {
-            var unlocked = manager != null && manager.CanShout;
+            var canChat = manager != null && manager.CanShout;
 
-            _shoutButton.GetComponentInChildren<Text>().text = unlocked ? "Say" : "•••";
-            _shoutButton.targetGraphic.color = unlocked ? UITheme.Button : UITheme.ButtonQuiet;
+            _shoutRow.gameObject.SetActive(canChat);
+            _shoutButton.interactable = canChat;
+        }
+
+        /// <summary>
+        /// The chat box, in the bottom-right corner and out of everybody's way.
+        ///
+        /// It used to sit in the dock along the top with the phase controls,
+        /// which put a text field in the middle of the row you press every turn.
+        /// Down here it is next to nothing, and it is the corner people already
+        /// expect a chat box to be in.
+        /// </summary>
+        private void BuildChatCorner(RectTransform root)
+        {
+            _shoutRow = UIFactory.Group("Shout Row", root.parent);
+            _shoutRow.anchorMin = _shoutRow.anchorMax = new Vector2(1f, 0f);
+            _shoutRow.pivot = new Vector2(1f, 0f);
+            UIFactory.SetSize(_shoutRow, 250f, 30f);
+            _shoutRow.anchoredPosition = new Vector2(-BoardSafeInset, BoardSafeInset);
+
+            var layout = UIFactory.HorizontalLayout(_shoutRow, 4, new RectOffset(0, 0, 0, 0));
+            layout.childAlignment = TextAnchor.MiddleRight;
+
+            _shoutField = UIFactory.TextInput("Shout Field", _shoutRow, "");
+            AddFixedWidthHeight(_shoutField.GetComponent<RectTransform>(), 176, 30);
+            _shoutField.characterLimit = NetworkGameManager.MaxShoutLength;
+            _shoutField.onEndEdit.AddListener(SubmitShout);
+
+            _shoutButton = UIFactory.ButtonWithLabel(
+                "Shout", _shoutRow, "Say", () => SubmitShout(_shoutField.text),
+                UITheme.ButtonQuiet, 66, 30);
         }
 
         /// <summary>
@@ -2455,6 +2478,11 @@ namespace Indoctrination.Net
                 _gameRoot.rect.width - HandLeftInset - BoardSafeInset
                 - (canBuy ? RecycleBinWidth + 24f : 0f));
 
+            // A margin off each end, so the outermost cards stop short of the
+            // tray rather than exactly on its edge. Flush reads as clipped.
+
+            available -= HandFanSideMargin * 2f;
+
             var angle = HandFanMaxAngle * Mathf.Deg2Rad;
             var aspect = BoardCardView.Height / BoardCardView.Width;
             var rotatedWidthUnits = Mathf.Cos(angle) + (aspect * Mathf.Sin(angle));
@@ -2470,6 +2498,14 @@ namespace Indoctrination.Net
 
             var handCardWidth = Mathf.Clamp(
                 Mathf.Min(widthAllows, heightAllows), MinCardWidth, BoardCardView.Width);
+
+            // The clamp above can hand back a card wider than the space it was
+            // measured against - `MinCardWidth` wins over `widthAllows` on a
+            // narrow window or a full hand - and the fan then runs off the left
+            // of the tray, which is exactly the card that kept coming out
+            // clipped. Tighten the overlap instead of overflowing: the cards
+            // slide further over one another and the fan fits.
+            var overlap = HandFanOverlapFor(available, handCardWidth, rotatedWidthUnits, count);
 
             var handCardHeight = handCardWidth * (BoardCardView.Height / BoardCardView.Width);
             var rotatedHeight = handCardWidth * rotatedHeightUnits;
@@ -2493,7 +2529,7 @@ namespace Indoctrination.Net
                 slot.pivot = new Vector2(0.5f, 0.5f);
                 slot.anchoredPosition = new Vector2(
                     fanCenterX
-                    + ((index - ((count - 1f) / 2f)) * handCardWidth * HandFanOverlap),
+                    + ((index - ((count - 1f) / 2f)) * handCardWidth * overlap),
                     HandFanPadding + (rotatedHeight / 2f)
                     + ((1f - Mathf.Abs(normalized)) * HandFanCenterLift));
                 slot.localEulerAngles = new Vector3(0f, 0f, -normalized * HandFanMaxAngle);
@@ -2506,6 +2542,22 @@ namespace Indoctrination.Net
 
                 handCard.Populate(card, null, null);
                 handCard.ScaleTo(handCardWidth);
+
+                // Whichever card the pointer is on comes to the front. The fan
+                // overlaps on purpose, so without this the card being looked at
+                // is the one half-covered by its neighbour.
+                var slotToRaise = slot;
+                handCard.OnHoverChanged = hovering =>
+                {
+                    if (hovering)
+                    {
+                        slotToRaise.SetAsLastSibling();
+                    }
+                    else
+                    {
+                        RestoreFanOrder();
+                    }
+                };
 
                 if (!canBuy)
                 {
@@ -2547,14 +2599,58 @@ namespace Indoctrination.Net
                 };
             }
 
-            // Paint from the outside inward. The raised centre cards therefore
-            // overlap only the bottoms of their neighbours instead of a later
-            // right-hand card slicing across everybody else's upper corner.
-            foreach (var fanSlot in fanSlots.OrderByDescending(item => item.DistanceFromCenter))
+            _fanOrder = fanSlots.OrderByDescending(item => item.DistanceFromCenter)
+                .Select(item => item.Slot)
+                .ToList();
+
+            RestoreFanOrder();
+        }
+
+        /// <summary>
+        /// How far the cards in the fan should sit over one another.
+        ///
+        /// Normally the resting overlap. But the card size is clamped to a
+        /// minimum, so `MinCardWidth` can win over the width the tray actually
+        /// allows - on a narrow window, or a full hand - and the fan then runs
+        /// off the left of the tray over the resource circles. That is the
+        /// leftmost card that kept coming out clipped. When it happens the cards
+        /// slide further over one another instead, down to a floor past which
+        /// they stop reading as separate cards.
+        ///
+        /// Pure arithmetic and public so it can be checked at sizes the test
+        /// window never reaches.
+        /// </summary>
+        public static float HandFanOverlapFor(
+            float available, float cardWidth, float rotatedWidthUnits, int count)
+        {
+            if (count <= 1 || cardWidth <= 0f)
             {
-                fanSlot.Slot.SetAsLastSibling();
+                return HandFanOverlap;
+            }
+
+            var fits = ((available / cardWidth) - rotatedWidthUnits) / (count - 1);
+            return Mathf.Clamp(
+                Mathf.Min(HandFanOverlap, fits), HandFanTightestOverlap, HandFanOverlap);
+        }
+
+        /// <summary>
+        /// Paints from the outside inward. The raised centre cards therefore
+        /// overlap only the bottoms of their neighbours instead of a later
+        /// right-hand card slicing across everybody else's upper corner. Also
+        /// what a hovered card is put back into when the pointer leaves it.
+        /// </summary>
+        private void RestoreFanOrder()
+        {
+            foreach (var slot in _fanOrder)
+            {
+                if (slot != null)
+                {
+                    slot.SetAsLastSibling();
+                }
             }
         }
+
+        private List<RectTransform> _fanOrder = new();
 
         /// <summary>
         /// Shows the payment leaving the bin for the permanent resource HUD.
@@ -2891,7 +2987,7 @@ namespace Indoctrination.Net
             {
                 UIFactory.SetSize(_popupPanel, RollingPopupWidth, RollingPopupHeight);
                 UIFactory.ButtonWithLabel(
-                    "Roll", _actionPanel, "ROLL DIE", () => manager.RequestRollRpc(),
+                    "Roll", _actionPanel, "Roll", () => manager.RequestRollRpc(),
                     UITheme.Affirm, width: RollButtonWidth, height: RollButtonHeight);
                 return true;
             }
@@ -3033,23 +3129,141 @@ namespace Indoctrination.Net
         }
 
         /// <summary>Opens the discard pile for reading. Everything in it is public.</summary>
+        /// <summary>
+        /// Opens the discard over the board rather than inside it.
+        ///
+        /// It used to be a row appended to the battlefield, which re-planned
+        /// every other row and shrank every card on the table to make space for
+        /// something being glanced at. A popup costs the board nothing and
+        /// closes without disturbing it.
+        /// </summary>
         private void ShowDiscard()
         {
             var view = NetworkGameManager.Instance?.View;
-            if (view == null)
+            if (view == null || _discardPanel == null)
             {
                 return;
             }
 
             _discardOpen = !_discardOpen;
+            _discardPanel.gameObject.SetActive(_discardOpen);
 
-            // Only the board changes. Rebuilding the stat bars as well restarted
-            // every bar animation from wherever it had got to, which read as the
-            // health bars flickering every time a menu was opened.
-            RefreshBattlefield(NetworkGameManager.Instance, view);
+            if (!_discardOpen)
+            {
+                return;
+            }
+
+            _discardPanel.SetAsLastSibling();
+            BuildDiscardContents(view);
+        }
+
+        private void BuildDiscardContents(GameView view)
+        {
+            UIFactory.DestroyChildren(_discardList);
+
+            _discardTitle.text = $"DISCARD  ({view.discardPile.Length})";
+
+            if (view.discardPile.Length == 0)
+            {
+                var empty = UIFactory.Label(
+                    "Discard Empty", _discardList, "Nothing has been discarded yet.", 14,
+                    TextAnchor.MiddleCenter, UITheme.BoneDim);
+                AddFixedHeight(empty.rectTransform, 40);
+                return;
+            }
+
+            // Newest first: what just went in is what somebody opening this
+            // wants to see.
+            BuildCardRow(
+                _discardList,
+                new PlannedRow
+                {
+                    Label = "Most recent first",
+                    Cards = view.discardPile.Reverse().ToArray()
+                },
+                DiscardCardWidth,
+                view,
+                availableWidth: DiscardPanelWidth - 40f);
+        }
+
+        /// <summary>The discard, over the board, sized so a long pile scrolls.</summary>
+        private void BuildDiscardPanel(Transform parent)
+        {
+            var panel = UIFactory.Panel("Discard Panel", parent, new Color(
+                UITheme.Void.r, UITheme.Void.g, UITheme.Void.b, 0.86f));
+            UIFactory.Stretch(panel);
+            _discardPanel = panel;
+
+            var closer = panel.gameObject.AddComponent<Button>();
+            closer.targetGraphic = panel.GetComponent<Image>();
+            closer.transition = Selectable.Transition.None;
+            closer.onClick.AddListener(CloseDiscard);
+
+            var box = UIFactory.Panel("Discard Box", panel, UITheme.SurfaceRaised);
+            UITheme.Frame(box.GetComponent<Image>(), 1.25f);
+            box.anchorMin = box.anchorMax = new Vector2(0.5f, 0.5f);
+            UIFactory.SetSize(box, DiscardPanelWidth, 470f);
+
+            var layout = UIFactory.VerticalLayout(
+                box, 10, new RectOffset(18, 18, 14, 14), controlHeight: true);
+            layout.childAlignment = TextAnchor.UpperCenter;
+
+            _discardTitle = UIFactory.Label(
+                "Discard Title", box, "DISCARD", 20, TextAnchor.MiddleCenter, UITheme.Signal);
+            AddFixedHeight(_discardTitle.rectTransform, 26);
+
+            // Its own scroll, because a long game's discard is genuinely long
+            // and there is no sizing that makes forty cards fit a panel.
+            var frame = UIFactory.Group("Discard Scroll", box);
+            AddFlexibleHeight(frame);
+
+            var viewport = UIFactory.Panel("Discard Viewport", frame, Color.clear);
+            viewport.gameObject.AddComponent<RectMask2D>();
+            UIFactory.Stretch(viewport);
+
+            var scroll = frame.gameObject.AddComponent<ScrollRect>();
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+            scroll.scrollSensitivity = 22f;
+
+            _discardList = UIFactory.Group("Discard Content", viewport);
+            _discardList.anchorMin = new Vector2(0f, 1f);
+            _discardList.anchorMax = new Vector2(1f, 1f);
+            _discardList.pivot = new Vector2(0.5f, 1f);
+            _discardList.sizeDelta = Vector2.zero;
+            UIFactory.VerticalLayout(
+                _discardList, 6, new RectOffset(4, 4, 4, 4), controlHeight: true);
+            UIFactory.FitToContent(
+                _discardList,
+                ContentSizeFitter.FitMode.Unconstrained,
+                ContentSizeFitter.FitMode.PreferredSize);
+
+            scroll.viewport = viewport;
+            scroll.content = _discardList;
+
+            UIFactory.ButtonWithLabel(
+                "Close Discard", box, "Close", CloseDiscard, UITheme.ButtonQuiet, 150, 34);
+
+            panel.gameObject.SetActive(false);
+        }
+
+        private void CloseDiscard()
+        {
+            _discardOpen = false;
+            if (_discardPanel != null)
+            {
+                _discardPanel.gameObject.SetActive(false);
+            }
         }
 
         private bool _discardOpen;
+        private RectTransform _discardPanel;
+        private RectTransform _discardList;
+        private Text _discardTitle;
+
+        private const float DiscardPanelWidth = 620f;
+        private const float DiscardCardWidth = 108f;
 
         /// <summary>
         /// Resigning takes two presses. It ends your game with no way back, so a
@@ -3060,7 +3274,7 @@ namespace Indoctrination.Net
             if (!_resignArmed)
             {
                 _resignArmed = true;
-                _resignLabel.text = "Sure?";
+                _resignLabel.text = "?";
                 _resignButton.targetGraphic.color = new Color(0.906f, 0.267f, 0.310f);
                 return;
             }
@@ -3108,9 +3322,12 @@ namespace Indoctrination.Net
             var offering = view.players.Count(p => p.isAlive && p.offeringDraw);
             var alive = view.players.Count(p => p.isAlive);
 
+            // The count only exists while an offer is open, so the icon carries
+            // it rather than a word that would have to say "Offer draw" the rest
+            // of the time.
             _drawButton.GetComponentInChildren<Text>().text = you.offeringDraw
-                ? $"Draw {offering}/{alive}"
-                : "Offer draw";
+                ? $"{offering}/{alive}"
+                : "=";
 
             _drawButton.targetGraphic.color = you.offeringDraw
                 ? UITheme.Affirm
@@ -3125,10 +3342,10 @@ namespace Indoctrination.Net
 
             _armedForView = _resignArmed ? view : null;
 
-            _resignLabel.text = _resignArmed ? "Sure?" : "Resign";
+            _resignLabel.text = _resignArmed ? "?" : "⚑";
             _resignButton.targetGraphic.color = _resignArmed
                 ? new Color(0.906f, 0.267f, 0.310f)
-                : UITheme.Blood;
+                : UITheme.ButtonQuiet;
         }
 
         private GameView _armedForView;

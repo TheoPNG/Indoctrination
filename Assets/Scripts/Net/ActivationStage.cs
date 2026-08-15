@@ -95,6 +95,9 @@ namespace Indoctrination.Net
         /// </summary>
         private Func<int, Vector3?> _originResolver;
 
+        /// <summary>Where a colour's circle sits on the board's own resource HUD.</summary>
+        private Func<ResourceColor, Vector3?> _resourceSpot;
+
         public static ActivationStage CreateOn(Transform parent)
         {
             var root = UIFactory.Panel("Activation Stage", parent,
@@ -123,9 +126,10 @@ namespace Indoctrination.Net
             _hud.offsetMin = new Vector2(22f, -152f);
             _hud.offsetMax = new Vector2(-22f, -14f);
             var hudLayout = UIFactory.HorizontalLayout(
-                _hud, 14, new RectOffset(8, 8, 8, 8), controlWidth: true, controlHeight: true);
-            hudLayout.childForceExpandWidth = true;
-            hudLayout.childForceExpandHeight = true;
+                _hud, 12, new RectOffset(8, 8, 8, 8), controlWidth: true, controlHeight: true);
+            hudLayout.childAlignment = TextAnchor.UpperCenter;
+            hudLayout.childForceExpandWidth = false;
+            hudLayout.childForceExpandHeight = false;
 
             // Your own track, at your own edge of the table. Sits above the
             // menu, which keeps the very bottom of the stage.
@@ -136,9 +140,10 @@ namespace Indoctrination.Net
             _selfHud.offsetMin = new Vector2(22f, 0f);
             _selfHud.offsetMax = new Vector2(-22f, 0f);
             var selfLayout = UIFactory.HorizontalLayout(
-                _selfHud, 14, new RectOffset(8, 8, 4, 4), controlWidth: true, controlHeight: true);
-            selfLayout.childForceExpandWidth = true;
-            selfLayout.childForceExpandHeight = true;
+                _selfHud, 12, new RectOffset(8, 8, 4, 4), controlWidth: true, controlHeight: true);
+            selfLayout.childAlignment = TextAnchor.LowerCenter;
+            selfLayout.childForceExpandWidth = false;
+            selfLayout.childForceExpandHeight = false;
 
             _ownerLabel = UIFactory.Label(
                 "Controller", root, "", 24, TextAnchor.MiddleCenter, UITheme.Bone);
@@ -191,14 +196,21 @@ namespace Indoctrination.Net
 
         private const float ChipSize = 30f;
 
+        /// <summary>How wide and tall one player's track is drawn.</summary>
+        private const float TrackWidth = 300f;
+
+        private const float TrackHeight = 104f;
+
         /// <summary>Consumes newly completed entries from a server view.</summary>
         public void Present(
             GameView view,
             Action<RectTransform, Text> choiceBuilder = null,
-            Func<int, Vector3?> originResolver = null)
+            Func<int, Vector3?> originResolver = null,
+            Func<ResourceColor, Vector3?> resourceSpot = null)
         {
             _choiceBuilder = choiceBuilder;
             _originResolver = originResolver;
+            _resourceSpot = resourceSpot;
             var finishingLethalActivation = view != null
                                             && view.activationBatch == _batch
                                             && view.activationCompletedCount > _seen;
@@ -646,11 +658,14 @@ namespace Indoctrination.Net
                     yours ? _selfHud : _hud,
                     new Color(0.075f, 0.061f, 0.105f, 0.98f));
                 UITheme.Frame(panel.GetComponent<Image>(), 1.3f, UITheme.Border);
+                // A fixed size, centred, rather than each track claiming an
+                // equal share of the stage. Two players in a wide window gave
+                // them half the screen each, which put two enormous slabs
+                // either side of the card everything is supposed to be about.
                 var pin = panel.gameObject.AddComponent<LayoutElement>();
-                pin.minWidth = 230f;
-                pin.preferredWidth = 300f;
-                pin.preferredHeight = 118f;
-                pin.flexibleWidth = 1f;
+                pin.minWidth = pin.preferredWidth = TrackWidth;
+                pin.minHeight = pin.preferredHeight = TrackHeight;
+                pin.flexibleWidth = 0f;
 
                 var layout = UIFactory.VerticalLayout(
                     panel, 5, new RectOffset(9, 9, 7, 7), controlHeight: true);
@@ -679,8 +694,9 @@ namespace Indoctrination.Net
                 var blockPin = blockTrack.gameObject.AddComponent<LayoutElement>();
                 blockPin.minHeight = blockPin.preferredHeight = 25f;
                 blockPin.flexibleWidth = 0f;
-                blockPin.minWidth = blockPin.preferredWidth =
-                    Mathf.Clamp01(player.Block / (float)GameSettings.MaxHealth) * 150f;
+                blockPin.minWidth = blockPin.preferredWidth = player.Block <= 0
+                    ? 0f
+                    : Mathf.Max(6f, Mathf.Clamp01(player.Block / (float)GameSettings.MaxHealth) * 120f);
                 blockTrack.gameObject.SetActive(player.Block > 0);
 
                 var followers = BuildBar(panel, "Followers", UITheme.Signal,
@@ -884,16 +900,29 @@ namespace Indoctrination.Net
                     continue;
                 }
 
+                // Only the viewer's own gains fly. A pip crossing the screen
+                // means "this went into your pile", and there is nowhere on the
+                // board that an opponent's pile lives for it to land in.
+                if (pair.Key != playback.After.ViewerId)
+                {
+                    continue;
+                }
+
                 foreach (var color in BoardArt.Colors)
                 {
                     var gained = pair.Value.Resources.GetValueOrDefault(color)
                                  - before.Resources.GetValueOrDefault(color);
 
+                    // The actual circle for that colour on the resource HUD,
+                    // asked of the board rather than guessed at a fraction of
+                    // the way across the stage. A pip that lands next to the
+                    // pile it went into rather than on it says nothing.
+                    var target = _resourceSpot?.Invoke(color)
+                                 ?? _root.TransformPoint(new Vector3(
+                                     -_root.rect.width * 0.42f, -_root.rect.height * 0.34f, 0f));
+
                     for (var i = 0; i < Mathf.Min(gained, 5); i++)
                     {
-                        var target = _root.TransformPoint(
-                            new Vector3(-_root.rect.width * 0.42f, -_root.rect.height * 0.34f, 0f));
-
                         StartCoroutine(FlyGlyph("●", BoardArt.ColorOf(color), target, i * 0.07f));
                     }
                 }
