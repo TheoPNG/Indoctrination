@@ -291,19 +291,28 @@ namespace Indoctrination.Net
         }
 
 
-        /// <summary>One player's die, as the board wants it thrown.</summary>
+        /// <summary>One die, as the board wants it thrown.</summary>
         public readonly struct Roll
         {
-            public Roll(string name, int value, bool isViewer)
+            public Roll(string name, int value, bool isViewer, bool isPrivate = false)
             {
                 Name = name;
                 Value = value;
                 IsViewer = isViewer;
+                IsPrivate = isPrivate;
             }
 
             public string Name { get; }
             public int Value { get; }
             public bool IsViewer { get; }
+
+            /// <summary>
+            /// A die only its owner's units answer to - Standardized Uniforms.
+            /// It is thrown with the rest because it is a die on the table like
+            /// any other, but reading the board depends on knowing that nobody
+            /// else's units wake on it, so it says so under itself.
+            /// </summary>
+            public bool IsPrivate { get; }
         }
 
         /// <summary>
@@ -490,7 +499,8 @@ namespace Indoctrination.Net
                 // actually using, so it is also the check that the die on the
                 // table agrees with it, but printing it during the throw
                 // announces the result before the die gets there.
-                thrown.Owner = rolls[i].IsViewer ? "YOU" : rolls[i].Name;
+                thrown.Owner = (rolls[i].IsViewer ? "YOU" : rolls[i].Name)
+                               + (rolls[i].IsPrivate ? "  ·  own units only" : "");
                 thrown.Label.text = thrown.Owner;
                 thrown.Label.color = rolls[i].IsViewer ? UITheme.Signal : UITheme.Bone;
             }

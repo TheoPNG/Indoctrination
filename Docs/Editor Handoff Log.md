@@ -7,6 +7,53 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-14 — Claude (Standardized Uniforms' die is thrown; one package clash to clear)
+
+### The private die is now a die on the table
+
+Standardized Uniforms grants a die only its owner's units answer to. It was
+rolled by the rules, sent in the view and drawn as a small number beside the
+owner's name - a die that decides activations and that nobody ever saw roll.
+
+`RefreshDie` now builds one `DieRoller.Roll` per die rather than one per player,
+so the private one is thrown with the rest. `Roll` gained `IsPrivate`, and the
+label under such a die reads `NAME · own units only` - it is physically an
+ordinary die on the table, but reading the board depends on knowing nobody
+else's units wake on it.
+
+### A package clash, and how it has to be resolved
+
+`com.unity.services.multiplayer` arrived in `Packages/manifest.json` after the
+previous entry, along with cloudcode, deployment, vivox and the Multiplayer
+Center quickstart - the Multiplayer Center's recommended set.
+
+**That package ships the Relay and Lobby SDKs itself, under the same namespaces
+and the same fully-qualified type names.** With the standalone
+`com.unity.services.relay` and `com.unity.services.lobby` also installed, every
+one of `Lobby`, `LobbyService`, `RelayServerEndpoint`, `CreateLobbyOptions` and
+the rest is ambiguous, and `OnlineSession` does not compile. Aliasing does not
+help: the ambiguity is between two assemblies declaring the same full name.
+
+They cannot coexist. The two standalone packages were removed and
+`Indoctrination.Net.asmdef` now references `Unity.Services.Multiplayer`. The
+source is unchanged apart from a comment saying where the namespaces come from
+and not to add the standalone pair back.
+
+### Verification
+
+- **Nothing Unity-dependent could be verified.** The Editor has held the project
+  open since partway through this work, so no reimport could run, which means
+  `Library/ScriptAssemblies` still holds the stale `Unity.Services.Lobbies.dll`
+  and `Unity.Services.Relay.dll` from the removed packages and CompileCheck still
+  reports them as ambiguous. That failure is a stale build artifact, not the
+  source.
+- RulesCheck was not affected by any of this and is unchanged.
+
+**Before trusting this entry:** close the Editor, let Unity reimport, then run
+CompileCheck, PlayModeTests and SmokeTest. If CompileCheck still reports CS0433
+after a clean reimport, the package removal did not take and the manifest needs
+looking at again.
+
 ## 2026-08-14 — Claude (online multiplayer: Relay + Lobby, join codes and a game browser)
 
 Play over the internet. Direct IP is gone from the title screen, as asked.

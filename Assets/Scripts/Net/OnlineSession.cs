@@ -7,6 +7,12 @@ using Unity.Netcode.Transports.UTP;
 using Unity.Networking.Transport.Relay;
 using Unity.Services.Authentication;
 using Unity.Services.Core;
+
+// These namespaces come from `com.unity.services.multiplayer`, not from the
+// standalone `com.unity.services.relay` and `com.unity.services.lobby`. The
+// Multiplayer package ships the same types under the same names, so installing
+// both makes every one of them ambiguous and nothing here compiles. The
+// standalone pair were removed; do not add them back.
 using Unity.Services.Lobbies;
 using Unity.Services.Lobbies.Models;
 using Unity.Services.Relay;

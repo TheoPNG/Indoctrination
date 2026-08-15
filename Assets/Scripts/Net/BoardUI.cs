@@ -2177,11 +2177,28 @@ namespace Indoctrination.Net
             // Every living player's die, not just yours - the table's whole
             // roll decides which units wake, so an opponent's number matters as
             // much as your own.
-            var rolls = view.players
-                .Where(player => player.isAlive && player.hasRolled && player.primaryDie > 0)
-                .Select(player => new DieRoller.Roll(
-                    player.name, player.primaryDie, player.playerId == view.viewerPlayerId))
-                .ToList();
+            //
+            // Private dice are thrown too. Standardized Uniforms grants a die
+            // that only its owner's units answer to, and it used to exist solely
+            // as a small number beside their name - a die that decides
+            // activations but that nobody ever sees rolled.
+            var rolls = new List<DieRoller.Roll>();
+
+            foreach (var player in view.players)
+            {
+                if (!player.isAlive || !player.hasRolled || player.primaryDie <= 0)
+                {
+                    continue;
+                }
+
+                var yours = player.playerId == view.viewerPlayerId;
+                rolls.Add(new DieRoller.Roll(player.name, player.primaryDie, yours));
+
+                foreach (var face in player.privateDice ?? Array.Empty<int>())
+                {
+                    rolls.Add(new DieRoller.Roll(player.name, face, yours, isPrivate: true));
+                }
+            }
 
             if (rolls.Count == 0)
             {
