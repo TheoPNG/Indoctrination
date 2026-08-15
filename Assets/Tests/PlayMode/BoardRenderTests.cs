@@ -1067,8 +1067,35 @@ namespace Indoctrination.Tests
             var stage = GameObject.Find("Activation Stage");
             Assert.IsNotNull(stage, "a completed Unit should open the locked full-screen stage");
             Assert.IsNull(stage.GetComponent<Button>(), "the stage itself must not be dismissible");
-            Assert.AreEqual(2, stage.transform.Find("All Player Tracks").childCount,
+            // Opponents across the top, you along the bottom - two bands, one
+            // track between them per player.
+            Assert.AreEqual(
+                2,
+                stage.transform.Find("All Player Tracks").childCount
+                + stage.transform.Find("Your Track").childCount,
                 "every player's large tracks must remain visible during the animation");
+            Assert.AreEqual(1, stage.transform.Find("Your Track").childCount,
+                "and your own belongs at your own edge of the table");
+
+            // Seated the way a table is seated. A damage card throws itself at
+            // whoever it hit, so which way it travels only means anything if
+            // opponents are one way and you are the other.
+            Canvas.ForceUpdateCanvases();
+            var card = (RectTransform)stage.transform.Find("Locked Card");
+            var yours = (RectTransform)stage.transform.Find("Your Track").GetChild(0);
+            var theirs = (RectTransform)stage.transform.Find("All Player Tracks").GetChild(0);
+
+            Assert.Less(TopOf(yours), card.position.y,
+                "your own track belongs below the card, at your edge of the table");
+            Assert.Greater(BottomOf(theirs), card.position.y,
+                "and everybody else's above it");
+
+            // World corners, not position and rect.height together: `position`
+            // is world space and `rect` is the untransformed local rectangle, so
+            // mixing them measures a box that is not on screen anywhere.
+            var menu = (RectTransform)stage.transform.Find("Choice");
+            Assert.Greater(BottomOf(yours), TopOf(menu),
+                "and it must not sit on top of the menu underneath it");
             var stagedCard = stage.transform.Find("Locked Card").GetComponentInChildren<BoardCardView>();
             Assert.IsFalse(stagedCard.GetComponent<Button>().interactable,
                 "the full-screen activation card must not open a collapsible preview");
@@ -1756,6 +1783,20 @@ namespace Indoctrination.Tests
             var shown = GameObject.Find("Peek Cards").GetComponentsInChildren<BoardCardView>();
             Assert.AreEqual(them.compound.Length, shown.Length,
                 "every card they have in play should be in the strip");
+
+            // Big enough to actually read. A card laid out at full size and then
+            // scaled is the only arrangement that survives; putting the card
+            // straight into the grid makes the grid resize its rect as well as
+            // the scale being applied, and it comes out a fraction of the size
+            // with its innards laid out for a shape it is not.
+            foreach (var view in shown)
+            {
+                var rect = (RectTransform)view.transform;
+                Assert.AreEqual(BoardCardView.Width, rect.rect.width, 0.5f,
+                    "the card should keep its own layout size and be scaled, not resized");
+                Assert.That(rect.rect.width * rect.localScale.x, Is.InRange(60f, 130f),
+                    "and be drawn at a size somebody can read");
+            }
 
             peek.Hide();
             yield return WaitForFrames(1);
@@ -2455,9 +2496,18 @@ namespace Indoctrination.Tests
             Assert.IsTrue(choiceRow.gameObject.activeInHierarchy,
                           "the question has to be on the stage while it is pending");
 
-            var options = choiceRow.GetComponentsInChildren<Button>();
-            Assert.GreaterOrEqual(options.Length, 2,
+            // A player question is answered by pressing the player's own track,
+            // not by picking their name out of a list - everything the decision
+            // needs is already drawn there.
+            var offered = stage.transform.Find("All Player Tracks")
+                .GetComponentsInChildren<Button>()
+                .Concat(stage.transform.Find("Your Track").GetComponentsInChildren<Button>())
+                .ToList();
+
+            Assert.GreaterOrEqual(offered.Count, 2,
                                   "both opponents should be offered as targets");
+            Assert.IsTrue(choiceRow.gameObject.activeInHierarchy,
+                          "and the menu should say so rather than sitting empty");
 
             // No prompt text of its own - the card is on screen saying what it does.
             var popup = GameObject.Find("Popup Panel");
@@ -2465,11 +2515,27 @@ namespace Indoctrination.Tests
                           "the board popup must not offer the same decision as the stage");
 
             // Answering it lets the sequence carry on.
-            options[0].onClick.Invoke();
+            offered[0].onClick.Invoke();
             yield return WaitForFrames(6);
 
             Assert.IsFalse(_manager.View.hasPendingChoice,
                            "answering on the stage has to actually answer the card");
+        }
+
+        /// <summary>The bottom edge of a rect, on screen.</summary>
+        private static float BottomOf(RectTransform rect)
+        {
+            var corners = new Vector3[4];
+            rect.GetWorldCorners(corners);
+            return corners[0].y;
+        }
+
+        /// <summary>The top edge of a rect, on screen.</summary>
+        private static float TopOf(RectTransform rect)
+        {
+            var corners = new Vector3[4];
+            rect.GetWorldCorners(corners);
+            return corners[1].y;
         }
 
         private GameState ServerGame()

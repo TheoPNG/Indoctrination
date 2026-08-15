@@ -2993,6 +2993,25 @@ namespace Indoctrination.Net
             switch (choice.kind)
             {
                 case nameof(ChoiceKind.Player):
+                    // Answered by pressing the player's own track rather than by
+                    // picking their name out of a list down here. Everything the
+                    // decision needs - their health, their block, their
+                    // followers - is already drawn on that track.
+                    _activationStage.OfferPlayerTargets(
+                        choice.playerOptions, id => manager.RequestAnswerPlayerRpc(id));
+
+                    if (_activationStage.HasPlayerTargets)
+                    {
+                        var pick = UIFactory.Label("Pick A Player", parent,
+                            "Click whose track to use", 17, TextAnchor.MiddleCenter, UITheme.Signal);
+                        AddFlexibleWidth(pick.rectTransform);
+                        break;
+                    }
+
+                    // No track to press - a player who is not on the stage, or a
+                    // stage that failed to build one. The list is still the way
+                    // through, and a choice with no way to answer it stalls the
+                    // whole game.
                     foreach (var optionId in choice.playerOptions)
                     {
                         var id = optionId;

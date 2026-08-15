@@ -22,12 +22,17 @@ namespace Indoctrination.Net
     public class PlayerPeek : MonoBehaviour
     {
         /// <summary>How wide a card is drawn in the strip, at most.</summary>
-        private const float CardWidth = 74f;
+        private const float CardWidth = 112f;
+
+        /// <summary>Most cards on one line before the strip wraps onto another.</summary>
+        private const int CardsAcross = 5;
+
+        private const float CardGap = 6f;
 
         /// <summary>Card height per unit of width, from the card's own proportions.</summary>
         private const float CardAspect = BoardCardView.Height / BoardCardView.Width;
 
-        private const float PanelWidth = 470f;
+        private const float PanelWidth = 640f;
 
         private RectTransform _panel;
         private Text _nameText;
@@ -92,7 +97,9 @@ namespace Indoctrination.Net
             // unscaled width, and the strip would be four times too wide.
             _cardRow = UIFactory.Group("Peek Cards", _panel);
             _cardGrid = _cardRow.gameObject.AddComponent<GridLayoutGroup>();
-            _cardGrid.spacing = new Vector2(5f, 5f);
+            _cardGrid.spacing = new Vector2(CardGap, CardGap);
+            _cardGrid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            _cardGrid.constraintCount = CardsAcross;
             _cardGrid.childAlignment = TextAnchor.UpperLeft;
             _cardGrid.cellSize = new Vector2(CardWidth, CardWidth * CardAspect);
             Row(_cardRow, (CardWidth * CardAspect) + 4f);
@@ -199,22 +206,40 @@ namespace Indoctrination.Net
                 return;
             }
 
-            // Narrower as more of them arrive, so a full compound still fits the
-            // panel rather than running off the side of it.
+            // Sized so a full line fits the panel, and wrapped onto more lines
+            // rather than shrunk indefinitely - the point of this is to be able
+            // to read what somebody has, and a compound of nine cards squeezed
+            // onto one line is not readable.
+            var columns = Mathf.Min(cards.Length, CardsAcross);
             var width = Mathf.Min(
-                CardWidth, (PanelWidth - 24f - (5f * (cards.Length - 1))) / cards.Length);
+                CardWidth, (PanelWidth - 24f - (CardGap * (columns - 1))) / columns);
+            var lines = Mathf.CeilToInt(cards.Length / (float)columns);
 
+            _cardGrid.constraintCount = columns;
             _cardGrid.cellSize = new Vector2(width, width * CardAspect);
 
             foreach (var card in cards)
             {
-                var view = BoardCardView.Create(_cardRow);
+                // The cell is what the grid sizes; the card keeps its own full
+                // size inside it and is scaled down. Putting the card straight
+                // into the grid makes the grid resize its rect to the cell as
+                // well as the scale being applied, so it comes out at a fraction
+                // of the size it should be with its innards laid out for a
+                // shape it is not.
+                var cell = UIFactory.Group("Peek Cell", _cardRow);
+
+                var view = BoardCardView.Create(cell);
+                var rect = (RectTransform)view.transform;
+                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+                rect.pivot = new Vector2(0.5f, 0.5f);
+
                 view.Populate(card, null, null);
                 view.ScaleTo(width);
                 view.SetPreviewEnabled(false);
             }
 
-            Row(_cardRow, (width * CardAspect) + 4f);
+            Row(_cardRow,
+                (lines * width * CardAspect) + ((lines - 1) * CardGap) + 4f);
         }
 
         /// <summary>

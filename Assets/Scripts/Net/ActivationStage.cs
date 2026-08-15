@@ -33,6 +33,9 @@ namespace Indoctrination.Net
         {
             public readonly Dictionary<int, PlayerSnapshot> Players = new();
             public readonly Dictionary<int, CardView> Cards = new();
+
+            /// <summary>Whoever is watching. Their track is drawn apart from the rest.</summary>
+            public int ViewerId = -1;
         }
 
         private sealed class Playback
@@ -54,6 +57,7 @@ namespace Indoctrination.Net
 
         private RectTransform _root;
         private RectTransform _hud;
+        private RectTransform _selfHud;
         private RectTransform _cardCell;
         private RectTransform _cardRect;
         private RectTransform _chipRow;
@@ -75,6 +79,9 @@ namespace Indoctrination.Net
         private ActivationView _choiceActivation;
         private readonly Queue<Playback> _pending = new();
         private readonly Dictionary<int, HudRow> _rows = new();
+
+        /// <summary>Tracks currently offered as targets, so they can be stood down again.</summary>
+        private readonly List<Button> _targets = new();
         private Snapshot _lastSnapshot;
         private int _batch = -1;
         private int _seen;
@@ -105,9 +112,10 @@ namespace Indoctrination.Net
             _root.GetComponent<Image>().raycastTarget = true;
             _group = root.gameObject.AddComponent<CanvasGroup>();
 
-            // Above the card, not below it. A damage card jolts upward, and the
-            // bars are what it is jolting at - the hit and the health it takes
-            // off should be the same gesture, read in one place.
+            // The table, seated the way it is seated: everybody else across the
+            // top, you along the bottom. A card that hits an opponent throws
+            // itself up the screen at them and one that hits you comes down at
+            // you, so which way the strike goes is which way the damage went.
             _hud = UIFactory.Group("All Player Tracks", root);
             _hud.anchorMin = new Vector2(0f, 1f);
             _hud.anchorMax = new Vector2(1f, 1f);
@@ -119,22 +127,35 @@ namespace Indoctrination.Net
             hudLayout.childForceExpandWidth = true;
             hudLayout.childForceExpandHeight = true;
 
+            // Your own track, at your own edge of the table. Sits above the
+            // menu, which keeps the very bottom of the stage.
+            _selfHud = UIFactory.Group("Your Track", root);
+            _selfHud.anchorMin = new Vector2(0f, 0.165f);
+            _selfHud.anchorMax = new Vector2(1f, 0.30f);
+            _selfHud.pivot = new Vector2(0.5f, 0.5f);
+            _selfHud.offsetMin = new Vector2(22f, 0f);
+            _selfHud.offsetMax = new Vector2(-22f, 0f);
+            var selfLayout = UIFactory.HorizontalLayout(
+                _selfHud, 14, new RectOffset(8, 8, 4, 4), controlWidth: true, controlHeight: true);
+            selfLayout.childForceExpandWidth = true;
+            selfLayout.childForceExpandHeight = true;
+
             _ownerLabel = UIFactory.Label(
                 "Controller", root, "", 24, TextAnchor.MiddleCenter, UITheme.Bone);
             _ownerLabel.fontStyle = FontStyle.Bold;
-            _ownerLabel.rectTransform.anchorMin = new Vector2(0.15f, 0.17f);
-            _ownerLabel.rectTransform.anchorMax = new Vector2(0.85f, 0.23f);
+            _ownerLabel.rectTransform.anchorMin = new Vector2(0.15f, 0.365f);
+            _ownerLabel.rectTransform.anchorMax = new Vector2(0.85f, 0.425f);
             _ownerLabel.rectTransform.offsetMin = _ownerLabel.rectTransform.offsetMax = Vector2.zero;
 
             _cardCell = UIFactory.Group("Locked Card", root);
-            _cardCell.anchorMin = _cardCell.anchorMax = new Vector2(0.5f, 0.47f);
+            _cardCell.anchorMin = _cardCell.anchorMax = new Vector2(0.5f, 0.64f);
             _cardCell.pivot = new Vector2(0.5f, 0.5f);
             UIFactory.SetSize(_cardCell, 225f, 312f);
 
             _detailLabel = UIFactory.Label(
                 "Activation Detail", root, "", 16, TextAnchor.MiddleCenter, UITheme.BoneDim);
-            _detailLabel.rectTransform.anchorMin = new Vector2(0.15f, 0.12f);
-            _detailLabel.rectTransform.anchorMax = new Vector2(0.85f, 0.165f);
+            _detailLabel.rectTransform.anchorMin = new Vector2(0.15f, 0.315f);
+            _detailLabel.rectTransform.anchorMax = new Vector2(0.85f, 0.36f);
             _detailLabel.rectTransform.offsetMin = _detailLabel.rectTransform.offsetMax = Vector2.zero;
 
             // Counters sit on the card itself, stacked like chips pushed onto it.
@@ -152,8 +173,8 @@ namespace Indoctrination.Net
             // exception: "Yes" alone means nothing, so those fill this in.
             _choicePrompt = UIFactory.Label(
                 "Choice Prompt", root, "", 17, TextAnchor.MiddleCenter, UITheme.Bone);
-            _choicePrompt.rectTransform.anchorMin = new Vector2(0.1f, 0.11f);
-            _choicePrompt.rectTransform.anchorMax = new Vector2(0.9f, 0.16f);
+            _choicePrompt.rectTransform.anchorMin = new Vector2(0.1f, 0.105f);
+            _choicePrompt.rectTransform.anchorMax = new Vector2(0.9f, 0.15f);
             _choicePrompt.rectTransform.offsetMin = _choicePrompt.rectTransform.offsetMax = Vector2.zero;
             _choicePrompt.gameObject.SetActive(false);
 
@@ -320,6 +341,45 @@ namespace Indoctrination.Net
         }
 
         /// <summary>
+        /// Offers a set of players as targets by making their own tracks
+        /// clickable.
+        ///
+        /// A card that asks who to hit used to put a row of names in the menu at
+        /// the bottom, which meant reading a name in a list, finding the same
+        /// name in the tracks above, and checking their health there before
+        /// choosing. Everything needed to make the choice is already drawn on
+        /// the track; this makes the track the thing you press.
+        /// </summary>
+        public void OfferPlayerTargets(IEnumerable<int> playerIds, Action<int> chosen)
+        {
+            foreach (var playerId in playerIds)
+            {
+                if (!_rows.TryGetValue(playerId, out var row))
+                {
+                    continue;
+                }
+
+                var id = playerId;
+                var image = row.Root.GetComponent<Image>();
+
+                var button = row.Root.gameObject.GetComponent<Button>()
+                             ?? row.Root.gameObject.AddComponent<Button>();
+                button.targetGraphic = image;
+                button.transition = Selectable.Transition.None;
+                button.onClick.RemoveAllListeners();
+                button.onClick.AddListener(() => chosen(id));
+
+                UITheme.Frame(image, 2.2f, UITheme.Signal);
+                BoardEffects.Instance.SetPulsing(image, true);
+
+                _targets.Add(button);
+            }
+        }
+
+        /// <summary>Whether any track is currently waiting to be clicked.</summary>
+        public bool HasPlayerTargets => _targets.Count > 0;
+
+        /// <summary>
         /// Holds the asking card on screen with nothing but its options beneath
         /// it. No prompt: the card is right there, and its own text says what it
         /// does far better than a restatement of it would.
@@ -423,11 +483,11 @@ namespace Indoctrination.Net
                 switch (category)
                 {
                     case ActivationCategory.Damage:
-                        yield return Jolt(46f, 0.55f);
+                        yield return Lunge(AimOf(playback, Hurt), 62f, 0.55f);
                         break;
 
                     case ActivationCategory.Followers:
-                        yield return Jolt(-22f, 0.60f);
+                        yield return Lunge(Vector2.down, 22f, 0.60f);
                         break;
 
                     case ActivationCategory.Health:
@@ -446,12 +506,16 @@ namespace Indoctrination.Net
 
             switch (category)
             {
+                case ActivationCategory.Damage:
+                    FlyGlyphsAt(playback, Hurt, "✖", new Color(0.96f, 0.18f, 0.30f));
+                    break;
+
                 case ActivationCategory.Health:
-                    FlyChangedGlyphs(playback, health: true);
+                    FlyGlyphsAt(playback, Healed, "♥", new Color(0.96f, 0.18f, 0.30f));
                     break;
 
                 case ActivationCategory.Block:
-                    FlyChangedGlyphs(playback, health: false);
+                    FlyGlyphsAt(playback, Blocked, "+", new Color(0.25f, 0.94f, 0.48f));
                     break;
 
                 default:
@@ -558,12 +622,28 @@ namespace Indoctrination.Net
 
         private void BuildHud(Snapshot snapshot)
         {
+            // Stop any pulse before the panels holding it are destroyed, or the
+            // effect keeps a reference to a graphic that no longer exists.
+            foreach (var target in _targets)
+            {
+                if (target != null)
+                {
+                    BoardEffects.Instance.SetPulsing(target.targetGraphic, false);
+                }
+            }
+
+            _targets.Clear();
+
             UIFactory.DestroyChildren(_hud);
+            UIFactory.DestroyChildren(_selfHud);
             _rows.Clear();
 
             foreach (var player in snapshot.Players.Values.OrderBy(player => player.Id))
             {
-                var panel = UIFactory.Panel($"Player {player.Id} Tracks", _hud,
+                // Yours along the bottom, everybody else's across the top.
+                var yours = player.Id == snapshot.ViewerId;
+                var panel = UIFactory.Panel($"Player {player.Id} Tracks",
+                    yours ? _selfHud : _hud,
                     new Color(0.075f, 0.061f, 0.105f, 0.98f));
                 UITheme.Frame(panel.GetComponent<Image>(), 1.3f, UITheme.Border);
                 var pin = panel.gameObject.AddComponent<LayoutElement>();
@@ -576,7 +656,7 @@ namespace Indoctrination.Net
                     panel, 5, new RectOffset(9, 9, 7, 7), controlHeight: true);
                 layout.childForceExpandWidth = true;
                 var name = UIFactory.Label("Name", panel,
-                    player.Name + (player.Alive ? "" : "  —  OUT"), 17,
+                    (yours ? "You" : player.Name) + (player.Alive ? "" : "  —  OUT"), 17,
                     TextAnchor.MiddleLeft, player.Alive ? UITheme.Bone : UITheme.BoneDim);
                 name.fontStyle = FontStyle.Bold;
                 PinHeight(name.rectTransform, 22f);
@@ -674,17 +754,62 @@ namespace Indoctrination.Net
             });
         }
 
-        private IEnumerator Jolt(float height, float duration)
+        /// <summary>
+        /// The card throws itself at something and comes back. The direction is
+        /// the point: a hit travels toward whoever took it, so a strike upward
+        /// is a strike at an opponent and a strike downward is one at you.
+        /// </summary>
+        private IEnumerator Lunge(Vector2 direction, float distance, float duration)
         {
             var origin = _cardRect.anchoredPosition;
+            var aim = direction.sqrMagnitude < 0.0001f ? Vector2.up : direction.normalized;
+
             yield return Tween(duration, t =>
             {
                 var movement = t < 0.32f
-                    ? Mathf.SmoothStep(0f, height, t / 0.32f)
-                    : Mathf.Lerp(height, 0f, Smooth((t - 0.32f) / 0.68f));
-                _cardRect.anchoredPosition = origin + Vector2.up * movement;
+                    ? Mathf.SmoothStep(0f, distance, t / 0.32f)
+                    : Mathf.Lerp(distance, 0f, Smooth((t - 0.32f) / 0.68f));
+                _cardRect.anchoredPosition = origin + (aim * movement);
             });
             _cardRect.anchoredPosition = origin;
+        }
+
+        /// <summary>How much worse off a player is; zero if they were not hurt.</summary>
+        private static int Hurt(PlayerSnapshot before, PlayerSnapshot after) =>
+            Mathf.Max(0, (before.Health + before.Block) - (after.Health + after.Block));
+
+        private static int Healed(PlayerSnapshot before, PlayerSnapshot after) =>
+            Mathf.Max(0, after.Health - before.Health);
+
+        private static int Blocked(PlayerSnapshot before, PlayerSnapshot after) =>
+            Mathf.Max(0, after.Block - before.Block);
+
+        /// <summary>
+        /// Which way to throw the card, from where it sits toward whoever this
+        /// activation landed on. Several targets average out, which for a card
+        /// that hits the whole table is a strike straight at the middle of it.
+        /// </summary>
+        private Vector2 AimOf(Playback playback, Func<PlayerSnapshot, PlayerSnapshot, int> measure)
+        {
+            var aim = Vector2.zero;
+            var found = 0;
+
+            foreach (var pair in playback.After.Players)
+            {
+                if (!playback.Before.Players.TryGetValue(pair.Key, out var before)
+                    || !_rows.TryGetValue(pair.Key, out var row)
+                    || measure(before, pair.Value) <= 0)
+                {
+                    continue;
+                }
+
+                aim += (Vector2)(row.Root.position - _cardCell.position);
+                found++;
+            }
+
+            // Nothing measurable to aim at - a card that dealt no damage anybody
+            // can see still has to do something, so it strikes upward as before.
+            return found == 0 ? Vector2.up : aim / found;
         }
 
         private IEnumerator ShakeCard(float duration)
@@ -709,7 +834,16 @@ namespace Indoctrination.Net
             _cardRect.localScale = Vector3.one * StageCardScale;
         }
 
-        private void FlyChangedGlyphs(Playback playback, bool health)
+        /// <summary>
+        /// Throws one glyph per point of whatever changed at the player it
+        /// changed for, so the number that is about to move on a bar is seen
+        /// arriving at that bar first.
+        /// </summary>
+        private void FlyGlyphsAt(
+            Playback playback,
+            Func<PlayerSnapshot, PlayerSnapshot, int> measure,
+            string glyph,
+            Color color)
         {
             foreach (var pair in playback.After.Players)
             {
@@ -719,18 +853,11 @@ namespace Indoctrination.Net
                     continue;
                 }
 
-                var amount = health
-                    ? pair.Value.Health - before.Health
-                    : pair.Value.Block - before.Block;
+                var amount = measure(before, pair.Value);
                 if (amount <= 0)
                 {
                     continue;
                 }
-
-                var glyph = health ? "♥" : "+";
-                var color = health
-                    ? new Color(0.96f, 0.18f, 0.30f)
-                    : new Color(0.25f, 0.94f, 0.48f);
 
                 // Aimed at the bar that is about to move, not the panel around
                 // it, so the glyph visibly lands on the thing it changes.
@@ -808,7 +935,7 @@ namespace Indoctrination.Net
 
         private static Snapshot Capture(GameView view)
         {
-            var snapshot = new Snapshot();
+            var snapshot = new Snapshot { ViewerId = view.viewerPlayerId };
             foreach (var player in view.players)
             {
                 var captured = new PlayerSnapshot

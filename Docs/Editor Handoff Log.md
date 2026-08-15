@@ -7,6 +7,76 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-14 — Claude (peek cards sized properly, activation stage seated like a table)
+
+### The peek was drawing cards a fifth of the size they should be
+
+My mistake from the previous entry. `BoardCardView` is laid out at its full
+180x252 and then **scaled** to fit. I put the card straight into the peek's
+`GridLayoutGroup`, so the grid resized its RectTransform to the cell *as well as*
+the scale being applied - the card came out at a fraction of its size with its
+innards laid out for a shape it was not. The battlefield gets this right by
+putting an empty `Cell` in the grid and the card inside it; the peek does that
+now too.
+
+Also made readable rather than merely present: panel 470 -> 640 wide, cards up to
+112 wide, and the strip wraps onto more lines past five cards instead of shrinking
+without limit.
+
+The test now asserts the card keeps its own 180-wide layout rect and is *drawn*
+between 60 and 130 wide, which is what actually failed here and what a count of
+card objects could never have caught.
+
+### The activation stage is now seated the way the table is
+
+- **Opponents across the top, you along the bottom.** `Snapshot` carries the
+  viewer's id and `BuildHud` routes each track to one band or the other. Your own
+  reads "You".
+- **A hit travels toward whoever took it.** `Jolt` became `Lunge(direction, ...)`,
+  and `AimOf` points it from the card at the tracks of everyone whose health or
+  block actually dropped, averaged. A card that hits the whole table strikes at
+  the middle of it; a card that hits nobody measurable still strikes upward as
+  before. So a strike up the screen is a strike at an opponent and a strike down
+  is one at you.
+- **Damage glyphs now fly too.** `FlyChangedGlyphs` only ever handled gains;
+  `FlyGlyphsAt` takes a measure, so damage, healing and block all throw glyphs at
+  the bar that is about to move.
+- **Player questions are answered by pressing the player's own track.**
+  `OfferPlayerTargets` makes the eligible tracks clickable, frames them in Signal
+  and pulses them; the menu says "Click whose track to use". Picking a name out
+  of a list meant reading a name, finding the same name in the tracks above, and
+  checking their health there before choosing - everything the decision needs is
+  already drawn on the track. **The name list is kept as a fallback** for when no
+  track exists, because a choice with no way to answer it stalls the whole game.
+
+The stage was re-flowed to make room: card centre 0.47 -> 0.64, owner and detail
+labels moved up with it, your track at 0.165-0.30, choice prompt back down with
+the menu it introduces.
+
+### A unit trap worth knowing
+
+My first version of the layout test compared `rect.position.y` against
+`rect.rect.height` - **world space against untransformed local space**. On this
+canvas the scale factor is about 0.57, so it measured a box that is not on screen
+anywhere and reported an overlap that did not exist. `GetWorldCorners` is the
+unit-safe way and is what the test uses now. Worth remembering before "fixing" a
+layout that a test says is broken.
+
+### Files
+
+- Updated `Assets/Scripts/Net/PlayerPeek.cs`, `ActivationStage.cs`, `BoardUI.cs`.
+- Updated `AQuestionMidActivationIsAskedOnTheStage` and
+  `UnitActivationsArePacedLockedAndRepeatInTableOrder` in
+  `Assets/Tests/PlayMode/BoardRenderTests.cs` for the new two-band stage, and
+  added layout assertions: your track below the card, opponents above it, and
+  clear of the menu.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 51 passed.
+- RulesCheck all green; SmokeTest passed.
+
 ## 2026-08-14 — Claude (the draft clock, hidden roll numbers, Asmodeus benched)
 
 Also: the three tests left unverified in the previous entry now run and pass.
