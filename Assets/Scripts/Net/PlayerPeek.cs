@@ -45,6 +45,21 @@ namespace Indoctrination.Net
         /// <summary>Which player is being shown, or -1 for nobody.</summary>
         public int ShowingFor { get; private set; } = -1;
 
+        /// <summary>
+        /// Whether the pointer is over the panel itself.
+        ///
+        /// The board decides when to hide this by asking whether the pointer is
+        /// still on the player's strip - so without this, moving toward the
+        /// panel to click a card left the strip and closed the thing being
+        /// reached for. Which is what "the hover is broken" was.
+        /// </summary>
+        public bool ContainsPointer(Vector2 screenPoint, Camera camera)
+        {
+            return gameObject.activeSelf
+                   && _panel != null
+                   && RectTransformUtility.RectangleContainsScreenPoint(_panel, screenPoint, camera);
+        }
+
         public static PlayerPeek CreateOn(Transform canvas)
         {
             var go = new GameObject("Player Peek", typeof(RectTransform));
@@ -60,11 +75,10 @@ namespace Indoctrination.Net
             var root = (RectTransform)transform;
             UIFactory.Stretch(root);
 
-            // Never takes a click. It appears under the pointer by definition, so
-            // anything it intercepted would be a click meant for the board.
-            var group = gameObject.AddComponent<CanvasGroup>();
-            group.blocksRaycasts = false;
-            group.interactable = false;
+            // It does take clicks, on its own cards. The panel is small and sits
+            // under the strip that summoned it, so what it covers is the top of
+            // the board rather than anything being played - and a card you can
+            // see but not open is worse than one you cannot see.
 
             _panel = UIFactory.Panel("Peek Panel", root, UITheme.SurfaceRaised);
             UITheme.Frame(_panel.GetComponent<Image>(), 1f, UITheme.Border);
@@ -233,9 +247,13 @@ namespace Indoctrination.Net
                 rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
                 rect.pivot = new Vector2(0.5f, 0.5f);
 
-                view.Populate(card, null, null);
+                // Clickable, opening the same full-size preview as a card on
+                // the board. Reading an opponent's compound is the whole point
+                // of this, and at 112 pixels wide the text on a card is a
+                // suggestion of text.
+                var opened = view;
+                view.Populate(card, null, () => CardPreview.Show(opened));
                 view.ScaleTo(width);
-                view.SetPreviewEnabled(false);
             }
 
             Row(_cardRow,

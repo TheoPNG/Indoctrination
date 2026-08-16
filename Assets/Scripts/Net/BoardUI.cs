@@ -107,8 +107,8 @@ namespace Indoctrination.Net
         /// rounding error - and any of those clips the top of a card.
         /// </summary>
         private const float HandFanTopMargin = 14f;
-        private const float DraftDropZoneHeight = 112f;
-        private const float DraftDropZoneMaxWidth = 620f;
+        private const float DraftDropZoneHeight = 54f;
+        private const float DraftDropZoneMaxWidth = 300f;
 
         /// <summary>
         /// How far above centre the popup sits. It clears the hand at full
@@ -211,7 +211,6 @@ namespace Indoctrination.Net
         private readonly HashSet<int> _cardsDealtIn = new();
 
         private Button _discardButton;
-        private PhaseBanner _phaseBanner;
         private Button _statusToggle;
         private bool _statusExpanded;
         private Button _drawButton;
@@ -277,7 +276,6 @@ namespace Indoctrination.Net
             BuildErrorLabel(canvas.transform);
 
             // Built last so they sit above the board they cover.
-            _phaseBanner = PhaseBanner.CreateOn(canvas.transform);
             CardPreview.CreateOn(canvas.transform);
             _activationStage = ActivationStage.CreateOn(canvas.transform);
             _shoutBanner = ShoutBanner.CreateOn(canvas.transform);
@@ -1216,38 +1214,26 @@ namespace Indoctrination.Net
             _handDropZone.gameObject.AddComponent<RectMask2D>();
             _handDropZone.GetComponent<Image>().raycastTarget = false;
 
-            // A flat shelf, not a shape. This was a full ellipse stretched to
-            // twice the zone's height and clipped to its top half, which read as
-            // a large blue bubble rising out of the floor - the roundest, most
-            // decorative thing on an otherwise hard-edged board.
+            // A small framed slot, not a shelf. It was a 620x112 tinted slab
+            // across the bottom of the board - the largest thing on screen, for
+            // a target you use once a turn. It only has to say "here", and it
+            // does not need to be big to say it.
             var dropArc = UIFactory.Panel(
                 "Drop Arc", _handDropZone,
-                new Color(UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.10f));
+                new Color(UITheme.Signal.r, UITheme.Signal.g, UITheme.Signal.b, 0.07f));
             dropArc.anchorMin = Vector2.zero;
             dropArc.anchorMax = Vector2.one;
-            dropArc.offsetMin = new Vector2(4f, 0f);
-            dropArc.offsetMax = new Vector2(-4f, 0f);
+            dropArc.offsetMin = new Vector2(2f, 2f);
+            dropArc.offsetMax = new Vector2(-2f, -2f);
             _handDropArc = dropArc.GetComponent<Image>();
             _handDropArc.raycastTarget = false;
-
-            // The whole affordance is one lit edge along the top - the line the
-            // card is being dropped across.
-            var dropEdge = UIFactory.Panel("Drop Edge", dropArc, UITheme.Signal);
-            dropEdge.anchorMin = new Vector2(0f, 1f);
-            dropEdge.anchorMax = new Vector2(1f, 1f);
-            dropEdge.pivot = new Vector2(0.5f, 1f);
-            dropEdge.sizeDelta = new Vector2(0f, 2f);
-            dropEdge.GetComponent<Image>().raycastTarget = false;
+            UITheme.Frame(_handDropArc, 1.4f, UITheme.SignalSoft);
 
             _handDropLabel = UIFactory.Label(
-                "Drop Label", _handDropZone, "DROP TO DRAFT", 13,
+                "Drop Label", _handDropZone, "Drop to draft", 13,
                 TextAnchor.MiddleCenter, UITheme.BoneDim);
-            _handDropLabel.fontStyle = FontStyle.Bold;
             _handDropLabel.raycastTarget = false;
-            _handDropLabel.rectTransform.anchorMin = new Vector2(0f, 0.10f);
-            _handDropLabel.rectTransform.anchorMax = new Vector2(1f, 0.52f);
-            _handDropLabel.rectTransform.offsetMin = new Vector2(14f, 0f);
-            _handDropLabel.rectTransform.offsetMax = new Vector2(-14f, 0f);
+            UIFactory.Stretch(_handDropLabel.rectTransform);
             _handDropZone.gameObject.SetActive(false);
 
             _handRow = UIFactory.Panel("Hand Row", root, Color.clear);
@@ -1442,12 +1428,10 @@ namespace Indoctrination.Net
                 _renderedPhase = view.phase;
             }
 
-            if (!string.Equals(previousPhase, view.phase, StringComparison.Ordinal)
-                && !string.IsNullOrEmpty(previousPhase)
-                && !view.isGameOver)
-            {
-                _phaseBanner.Announce(view.phase, PhaseHint(view), PhaseTint(view.phase));
-            }
+            // Phase changes are no longer announced. Every one threw a
+            // full-width banner over the board saying something the board
+            // already showed: the controls for the phase are right there, and
+            // the phase is written in the status line under them.
 
             _statusText.text = StatusLine(view);
 
@@ -1479,30 +1463,12 @@ namespace Indoctrination.Net
                 view,
                 (parent, prompt) => BuildActivationChoice(parent, prompt, manager, view),
                 BoardCardPosition,
-                colour => _resourceHud == null ? null : _resourceHud.PipPosition(colour));
+                colour => _resourceHud == null ? null : _resourceHud.PipPosition(colour),
+                () => !DiceRevealed);
         }
 
         /// <summary>One line saying what this phase wants, for the banner.</summary>
-        private static string PhaseHint(GameView view) => view.phase switch
-        {
-            nameof(TurnPhase.Draft) => "Pick a card",
-            nameof(TurnPhase.Rolling) => "Roll your die",
-            nameof(TurnPhase.Activation) => "Your units are firing",
-            nameof(TurnPhase.Resource) =>
-                $"Take {view.Viewer?.resourceAllowance ?? GameSettings.ResourcesPerTurn} resources",
-            nameof(TurnPhase.Buy) => "Play or recycle from your hand",
-            _ => ""
-        };
 
-        private static Color PhaseTint(string phase) => phase switch
-        {
-            nameof(TurnPhase.Draft) => new Color(0.588f, 0.573f, 0.827f),
-            nameof(TurnPhase.Rolling) => UITheme.Bone,
-            nameof(TurnPhase.Activation) => new Color(0.925f, 0.322f, 0.388f),
-            nameof(TurnPhase.Resource) => new Color(0.290f, 0.831f, 0.588f),
-            nameof(TurnPhase.Buy) => UITheme.Signal,
-            _ => UITheme.Bone
-        };
 
         /// <summary>
         /// Updates the opponents' bars, rebuilding them only when the set of
@@ -1567,6 +1533,14 @@ namespace Indoctrination.Net
             }
 
             var camera = UIFactory.UiCamera;
+
+            // Still open while the pointer is on the panel itself, so it can be
+            // walked into and its cards clicked. Closing the moment the pointer
+            // left the strip made the panel unreachable.
+            if (_playerPeek.ContainsPointer(pointer, camera))
+            {
+                return;
+            }
 
             foreach (var (playerId, bar) in _statBars)
             {
@@ -2717,7 +2691,7 @@ namespace Indoctrination.Net
                 return;
             }
 
-            var width = Mathf.Min(DraftDropZoneMaxWidth, Mathf.Max(300f, _gameRoot.rect.width - 80f));
+            var width = Mathf.Min(DraftDropZoneMaxWidth, Mathf.Max(200f, _gameRoot.rect.width - 80f));
             _handDropZone.sizeDelta = new Vector2(width, DraftDropZoneHeight);
 
             // The band stretches with its zone now, so there is no second size
@@ -3015,8 +2989,10 @@ namespace Indoctrination.Net
             // resource this game hands out. A second set of colour buttons in a
             // popup taught a different way to pick a colour for the one case
             // that is not the resource phase.
-            ActionLabel("Highest roll - take one from the left", 16);
-            return true;
+            // Nothing said out loud. The circles on the left light up, which is
+            // the same cue as every other resource this game hands out, and the
+            // tutorial covers what the lighting means.
+            return false;
         }
 
         /// <summary>Suspicious Chef's paid meal counter, offered from the card itself.</summary>

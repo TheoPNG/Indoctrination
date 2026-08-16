@@ -422,13 +422,14 @@ namespace Indoctrination.EditorTools
             // rising out of the floor, the one round thing on a hard-edged board.
             var dropZone = gameRoot.Find("Hand Drop Zone") as RectTransform;
             var dropArc = dropZone?.Find("Drop Arc") as RectTransform;
-            var dropEdge = dropArc?.Find("Drop Edge") as RectTransform;
-            Check("drafting has a wide flat drop shelf behind the hand",
+            // A small framed slot rather than a shelf. It was the largest thing
+            // on the board for a target used once a turn.
+            Check("drafting has a small framed drop target behind the hand",
                   dropZone != null
                   && dropArc != null
-                  && dropEdge != null
                   && !dropZone.GetComponent<Image>().raycastTarget
-                  && dropZone.rect.width > BoardCardView.Width * 2f
+                  && dropZone.rect.width < BoardCardView.Width * 2f
+                  && dropZone.rect.height < 70f
                   && dropArc.rect.height <= dropZone.rect.height + 0.5f
                   && dropArc.GetComponent<Image>().sprite == null,
                   dropZone == null ? "drop zone not found" : $"drop zone {dropZone.rect.size}");

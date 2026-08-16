@@ -7,6 +7,57 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-16 — Claude (visual overhaul, second pass: nine items)
+
+1. **Phase banners gone.** `PhaseBanner` deleted. Every phase change threw a
+   full-width announcement over the board saying something the board already
+   showed - the controls for the phase are right there, and the phase is written
+   in the status line under them.
+2. **The resource circles breathe.** New `BoardEffects.SetBreathing` grows and
+   shrinks a rect. The colour pulse stays, but a colour pulse on a coloured disc
+   is nearly invisible; size is what reads across a board.
+3. **No highest-roll banner.** The circles lighting up is the same cue as every
+   other resource this game hands out.
+4. **One gesture per kind of effect, each aimed at whoever it happened to.**
+   Damage is a fast jab (0.34s) throwing `✖`; healing is a long lift and release
+   (0.95s) throwing larger `♥`; Block swells and settles without travelling and
+   throws `+`. Meant to be told apart without reading a word.
+5. **Nothing activates while the dice are in the air.** The server advances into
+   Activation the instant the last die is rolled, which on this machine is while
+   the dice are still tumbling. Held on the **client**, through a
+   `diceStillRolling` callback - the wait is one machine watching its own
+   flourish, and the table must not be paced by the slowest player's animation.
+6. **Equality asks with two plain buttons** - `12 followers` / `7 health` -
+   rather than a yes/no whose "no" had to be explained inside the question. New
+   `EffectContext.AskPlayerOption`.
+7. **The draft target is a small framed slot**, 300x54, not a 620x112 tinted
+   shelf - it was the largest thing on the board for a target used once a turn.
+8. **A card that fires twice stays on screen.** The two firings arrive one server
+   beat apart, so they were never both in the queue to be merged and the card
+   left and arrived again as though a second copy had gone off. `Playback.Index`
+   plus `NextIsSameCard` lets a finished activation see that the server's next
+   one is the same card and simply hold.
+9. **The peek was unreachable.** It hid the moment the pointer left the player's
+   strip - which is what moving toward it to click something does. It now stays
+   while the pointer is over the panel itself (`ContainsPointer`), takes clicks,
+   and every card in it opens the full-size preview.
+
+### Files
+
+- Deleted `Assets/Scripts/Net/PhaseBanner.cs`.
+- Updated `BoardUI.cs`, `ActivationStage.cs`, `PlayerPeek.cs`, `ResourceHud.cs`,
+  `BoardEffects.cs`, `Core/Effects/RitualEffects.cs`, `Core/Effects/EffectContext.cs`.
+- Added `NothingActivatesWhileTheDiceAreStillRolling`, and extended the peek test
+  with clickability and `ContainsPointer`.
+- The drop-target assertions in `BoardRenderTests` and `AlphaSmokeTest` now
+  expect a small slot; the old ones asserted it was *wider* than two cards.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 58 passed.
+- RulesCheck all green; SmokeTest passed.
+
 ## 2026-08-15 — Claude (visual overhaul, first pass: twelve items)
 
 ### The board

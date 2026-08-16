@@ -43,6 +43,9 @@ namespace Indoctrination.Net
             public ActivationView Activation;
             public Snapshot Before;
             public Snapshot After;
+
+            /// <summary>Where this sat in the server's list, so what follows it is known.</summary>
+            public int Index;
         }
 
         private sealed class HudRow
@@ -97,6 +100,12 @@ namespace Indoctrination.Net
 
         /// <summary>Where a colour's circle sits on the board's own resource HUD.</summary>
         private Func<ResourceColor, Vector3?> _resourceSpot;
+
+        /// <summary>Whether the dice are still in the air.</summary>
+        private Func<bool> _diceStillRolling;
+
+        /// <summary>The server's whole activation list for this batch.</summary>
+        private ActivationView[] _allActivations;
 
         public static ActivationStage CreateOn(Transform parent)
         {
@@ -206,11 +215,13 @@ namespace Indoctrination.Net
             GameView view,
             Action<RectTransform, Text> choiceBuilder = null,
             Func<int, Vector3?> originResolver = null,
-            Func<ResourceColor, Vector3?> resourceSpot = null)
+            Func<ResourceColor, Vector3?> resourceSpot = null,
+            Func<bool> diceStillRolling = null)
         {
             _choiceBuilder = choiceBuilder;
             _originResolver = originResolver;
             _resourceSpot = resourceSpot;
+            _diceStillRolling = diceStillRolling;
             var finishingLethalActivation = view != null
                                             && view.activationBatch == _batch
                                             && view.activationCompletedCount > _seen;
@@ -220,6 +231,11 @@ namespace Indoctrination.Net
                 ResetPresentation();
                 return;
             }
+
+            // Kept so a finished activation can look at what the server says
+            // comes next, which is how a card that fires twice knows to stay on
+            // screen rather than leaving and arriving again.
+            _allActivations = view.activations;
 
             var snapshot = Capture(view);
             if (view.activationBatch != _batch)
@@ -250,7 +266,8 @@ namespace Indoctrination.Net
                 {
                     Activation = view.activations[index],
                     Before = _lastSnapshot ?? snapshot,
-                    After = snapshot
+                    After = snapshot,
+                    Index = index
                 });
                 _lastSnapshot = snapshot;
             }
@@ -272,6 +289,17 @@ namespace Indoctrination.Net
                 : null;
 
             _choiceSnapshot = snapshot;
+
+            // Dice first, always. The server advances into Activation the
+            // instant the last die is rolled, which on this machine is while the
+            // dice are still tumbling - so a unit would rise over the top of a
+            // roll nobody had seen the end of. Held here rather than in the
+            // server: the wait is one client watching its own animation, and the
+            // table must not be paced by the slowest machine's flourish.
+            if (_diceStillRolling != null && _diceStillRolling())
+            {
+                return;
+            }
 
             if (!_playing && (_pending.Count > 0 || _choiceActivation != null) && Application.isPlaying)
             {
@@ -330,7 +358,9 @@ namespace Indoctrination.Net
                 {
                     // The last one's After carries the full result of every
                     // firing, so the bars move once, to where they end up.
-                    first.After = _pending.Dequeue().After;
+                    var merged = _pending.Dequeue();
+                    first.After = merged.After;
+                    first.Index = merged.Index;
                     repeats++;
                 }
 
@@ -492,22 +522,29 @@ namespace Indoctrination.Net
             // animating to a number the server never actually reported.
             for (var strike = 0; strike < repeats; strike++)
             {
+                // Each kind of thing a card does has its own gesture, and each
+                // one travels toward whoever it happened to. A hit is a jab; a
+                // heal is a long lift and release; a block swells and settles.
+                // They are meant to be told apart without reading a word.
                 switch (category)
                 {
                     case ActivationCategory.Damage:
-                        yield return Lunge(AimOf(playback, Hurt), 62f, 0.55f);
+                        yield return Lunge(AimOf(playback, Hurt), 66f, 0.34f);
+                        FlyGlyphsAt(playback, Hurt, "✖", new Color(0.96f, 0.18f, 0.30f), 34);
+                        break;
+
+                    case ActivationCategory.Health:
+                        yield return Lunge(AimOf(playback, Healed), 40f, 0.95f);
+                        FlyGlyphsAt(playback, Healed, "♥", new Color(0.96f, 0.30f, 0.42f), 40);
+                        break;
+
+                    case ActivationCategory.Block:
+                        yield return Swell(0.62f);
+                        FlyGlyphsAt(playback, Blocked, "+", new Color(0.25f, 0.94f, 0.48f), 34);
                         break;
 
                     case ActivationCategory.Followers:
                         yield return Lunge(Vector2.down, 22f, 0.60f);
-                        break;
-
-                    case ActivationCategory.Health:
-                        yield return ShakeCard(0.55f);
-                        break;
-
-                    case ActivationCategory.Block:
-                        yield return ShakeCard(0.50f);
                         break;
 
                     default:
@@ -516,23 +553,11 @@ namespace Indoctrination.Net
                 }
             }
 
-            switch (category)
+            if (category is not (ActivationCategory.Damage
+                or ActivationCategory.Health
+                or ActivationCategory.Block))
             {
-                case ActivationCategory.Damage:
-                    FlyGlyphsAt(playback, Hurt, "✖", new Color(0.96f, 0.18f, 0.30f));
-                    break;
-
-                case ActivationCategory.Health:
-                    FlyGlyphsAt(playback, Healed, "♥", new Color(0.96f, 0.18f, 0.30f));
-                    break;
-
-                case ActivationCategory.Block:
-                    FlyGlyphsAt(playback, Blocked, "+", new Color(0.25f, 0.94f, 0.48f));
-                    break;
-
-                default:
-                    FlyChangedResources(playback);
-                    break;
+                FlyChangedResources(playback);
             }
 
             yield return AnimateStats(playback.Before, playback.After, category switch
@@ -545,6 +570,19 @@ namespace Indoctrination.Net
             });
 
             yield return new WaitForSeconds(0.40f);
+
+            // A unit woken by two matching dice fires twice, and the two firings
+            // reach this machine one server beat apart - so they are never both
+            // in the queue to be merged, and the card left and arrived again as
+            // though a second copy of it had gone off. If the server's next
+            // activation is this same card, it simply stays where it is and
+            // strikes again.
+            if (NextIsSameCard(playback))
+            {
+                _heldCardInstanceId = playback.Activation.cardInstanceId;
+                yield break;
+            }
+
             yield return Tween(0.35f, t =>
             {
                 var eased = Smooth(t);
@@ -553,6 +591,27 @@ namespace Indoctrination.Net
                 _cardRect.localScale = Vector3.one
                                        * (StageCardScale * Mathf.Lerp(1f, 0.55f, eased));
             });
+        }
+
+        /// <summary>Whether the activation after this one is the same card firing again.</summary>
+        private bool NextIsSameCard(Playback playback)
+        {
+            if (_allActivations == null)
+            {
+                return false;
+            }
+
+            for (var index = playback.Index + 1; index < _allActivations.Length; index++)
+            {
+                if (_allActivations[index].skipped)
+                {
+                    continue;
+                }
+
+                return _allActivations[index].cardInstanceId == playback.Activation.cardInstanceId;
+            }
+
+            return false;
         }
 
         private void BuildCard(ActivationView activation, Snapshot after)
@@ -840,6 +899,21 @@ namespace Indoctrination.Net
             _cardRect.anchoredPosition = origin;
         }
 
+        /// <summary>
+        /// Swells and settles back. Block is not an attack and not a gift, so it
+        /// neither travels nor strikes - it just becomes briefly more solid.
+        /// </summary>
+        private IEnumerator Swell(float duration)
+        {
+            yield return Tween(duration, t =>
+            {
+                var wave = Mathf.Sin(t * Mathf.PI);
+                _cardRect.localScale = Vector3.one * (StageCardScale * (1f + (0.10f * wave)));
+            });
+
+            _cardRect.localScale = Vector3.one * StageCardScale;
+        }
+
         private IEnumerator GrowAndSettle()
         {
             yield return Tween(0.5f, t =>
@@ -859,7 +933,8 @@ namespace Indoctrination.Net
             Playback playback,
             Func<PlayerSnapshot, PlayerSnapshot, int> measure,
             string glyph,
-            Color color)
+            Color color,
+            int size = 36)
         {
             foreach (var pair in playback.After.Players)
             {
@@ -881,7 +956,7 @@ namespace Indoctrination.Net
 
                 for (var i = 0; i < Mathf.Min(amount, 6); i++)
                 {
-                    StartCoroutine(FlyGlyph(glyph, color, target, i * 0.055f));
+                    StartCoroutine(FlyGlyph(glyph, color, target, i * 0.055f, size));
                 }
             }
         }
@@ -929,14 +1004,15 @@ namespace Indoctrination.Net
             }
         }
 
-        private IEnumerator FlyGlyph(string glyph, Color color, Vector3 target, float delay)
+        private IEnumerator FlyGlyph(
+            string glyph, Color color, Vector3 target, float delay, int size = 36)
         {
             if (delay > 0f)
             {
                 yield return new WaitForSeconds(delay);
             }
 
-            var label = UIFactory.Label("Healing Glyph", _root, glyph, 36,
+            var label = UIFactory.Label("Healing Glyph", _root, glyph, size,
                 TextAnchor.MiddleCenter, color);
             var rect = label.rectTransform;
             rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);

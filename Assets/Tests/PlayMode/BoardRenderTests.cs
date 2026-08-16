@@ -198,17 +198,22 @@ namespace Indoctrination.Tests
 
             var dropZone = GameObject.Find("Hand Drop Zone")?.GetComponent<RectTransform>();
             Assert.IsNotNull(dropZone, "a legal pick should expose the draft target");
-            Assert.Greater(dropZone.rect.width, 400f, "the draft target should be substantially wider than one card");
+            // Big enough to hit without aiming, small enough not to be the
+            // largest thing on the board. It was a 620x112 slab for a target you
+            // use once a turn.
+            Assert.That(dropZone.rect.width, Is.InRange(180f, 340f),
+                "the draft target should be an easy target, not a shelf");
+            Assert.That(dropZone.rect.height, Is.InRange(40f, 70f),
+                "and no taller than it needs to be");
 
-            // A flat shelf that fills its zone, not an oversized ellipse clipped
-            // down to a semicircle - that read as a blue bubble on a board with
-            // no other round shapes on it.
+            // A small framed slot that fits its zone, not an oversized ellipse
+            // clipped down to a semicircle and not a shelf across the board.
             var dropArc = dropZone.Find("Drop Arc").GetComponent<Image>();
             Assert.IsNull(dropArc.sprite, "the drop target should be a plain band, not a disc");
             Assert.LessOrEqual(dropArc.rectTransform.rect.height, dropZone.rect.height + 0.5f,
                 "the band should fit its zone rather than overflow and be clipped");
-            Assert.IsNotNull(dropArc.transform.Find("Drop Edge"),
-                "the affordance is a lit edge along the top of the shelf");
+            Assert.IsNotNull(dropArc.GetComponent<Outline>(),
+                "the affordance is the frame around the slot");
 
             var restingGlow = dropArc.color.a;
 
@@ -1899,6 +1904,30 @@ namespace Indoctrination.Tests
                     "and be drawn at a size somebody can read");
             }
 
+            // Every card opens full size. At 112 pixels wide the text on a card
+            // is a suggestion of text, and reading an opponent's compound is the
+            // whole point of this.
+            foreach (var view in shown)
+            {
+                Assert.IsNotNull(view.GetComponent<Button>(),
+                    "a card in the peek should open in full view when clicked");
+            }
+
+            // And the panel holds while the pointer is on it. The board hides
+            // this by asking whether the pointer is still on the player's strip,
+            // so without this, moving toward a card to click it closes the panel
+            // being reached for.
+            var panel = (RectTransform)GameObject.Find("Peek Panel").transform;
+            var corners = new Vector3[4];
+            panel.GetWorldCorners(corners);
+            var middle = (corners[0] + corners[2]) * 0.5f;
+
+            Assert.IsTrue(
+                peek.ContainsPointer(
+                    RectTransformUtility.WorldToScreenPoint(UIFactory.UiCamera, middle),
+                    UIFactory.UiCamera),
+                "the peek should count the pointer as still on it");
+
             peek.Hide();
             yield return WaitForFrames(1);
             Assert.AreEqual(-1, peek.ShowingFor, "and it goes away again");
@@ -2246,6 +2275,66 @@ namespace Indoctrination.Tests
                     $"the rightmost hand card runs {rect.xMax - tray.xMax:0.#}px past the "
                     + $"right of the tray (card {rect}, tray {tray})");
             }
+        }
+
+        /// <summary>
+        /// Nothing activates while the dice are still in the air.
+        ///
+        /// The server advances into Activation the instant the last die is
+        /// rolled, which on this machine is while the dice are still tumbling -
+        /// so without this a unit rises over the top of a roll nobody has seen
+        /// the end of.
+        ///
+        /// Driven through a stage of its own, because on a machine that cannot
+        /// show dice the board correctly never waits, so the board's own stage
+        /// would never exercise the gate.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator NothingActivatesWhileTheDiceAreStillRolling()
+        {
+            yield return StartGame();
+
+            yield return AdvanceTo(TurnPhase.Rolling);
+
+            // Something in play to wake up, and a roll that wakes it.
+            var game = ServerGame();
+            game.Players[0].Compound.Add(
+                new CardInstance(-601, CardDatabase.Instance.Get(CardIds.SolarPanels)));
+
+            ApplyAsHost(_ => game.RollPrimaryDice());
+            ApplyAsHost(_ =>
+            {
+                foreach (var player in game.LivingPlayers.ToList())
+                {
+                    game.SetPrimaryDie(player, 6);
+                }
+
+                game.AdvancePhase();
+            });
+
+            yield return WaitForFrames(2);
+            ExpireNextActivation();
+            yield return WaitForFrames(2);
+
+            Assert.Greater(_manager.View.activationCompletedCount, 0,
+                "something should have activated to have anything to show");
+
+            var canvas = Object.FindAnyObjectByType<Canvas>();
+            var stage = ActivationStage.CreateOn(canvas.transform);
+
+            stage.Present(_manager.View, diceStillRolling: () => true);
+            yield return WaitForFrames(3);
+
+            Assert.IsFalse(stage.gameObject.activeSelf,
+                "a unit must not rise while the dice are still rolling");
+
+            stage.Present(_manager.View, diceStillRolling: () => false);
+            yield return WaitForFrames(3);
+
+            Assert.IsTrue(stage.gameObject.activeSelf,
+                "and it should go ahead once they have stopped");
+
+            Object.Destroy(stage.gameObject);
         }
 
         /// <summary>

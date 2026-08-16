@@ -104,7 +104,11 @@ namespace Indoctrination.Net
                     button.onClick.AddListener(() => onPicked(chosen));
                 }
 
+                // Size, not colour. A colour pulse on a coloured disc is nearly
+                // invisible; growing and shrinking is what reads across the
+                // board as "these are waiting for you".
                 BoardEffects.Instance.SetPulsing(_discs[color], pickable);
+                BoardEffects.Instance.SetBreathing(_roots[color], pickable);
             }
         }
 

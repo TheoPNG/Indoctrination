@@ -165,6 +165,14 @@ namespace Indoctrination.Core.Effects
         public ChoiceRequest AskPlayerYesNo(string prompt, int playerId) =>
             ChoiceRequest.YesNo(prompt, playerId);
 
+        /// <summary>
+        /// Offers a player other than the controller a set of plain choices.
+        /// Used by Equality, where "yes" and "no" name two different losses and
+        /// neither word says which.
+        /// </summary>
+        public ChoiceRequest AskPlayerOption(string prompt, int playerId, IReadOnlyList<string> options) =>
+            ChoiceRequest.Option(prompt, playerId, options);
+
         // -------------------------------------------------------------- Damage
 
         public void DealDamage(int targetPlayerId, int amount) =>

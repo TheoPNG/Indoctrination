@@ -176,12 +176,17 @@ namespace Indoctrination.Core.Effects
                 var followerCost = player.Followers / 2;
                 var healthCost = player.Health / 2;
 
-                var choice = c.AskPlayerYesNo(
-                    $"Equality - lose {followerCost} followers? (No loses {healthCost} health)",
-                    player.PlayerId);
+                // Two plain offers rather than a yes/no whose "no" has to be
+                // explained in the question. The card is on screen saying what
+                // it does; the buttons only have to say what they cost.
+                var followers = $"{followerCost} followers";
+                var health = $"{healthCost} health";
+
+                var choice = c.AskPlayerOption("Equality", player.PlayerId,
+                    new[] { followers, health });
                 yield return choice;
 
-                if (choice.ChoseYes)
+                if (choice.ChosenOption == followers)
                 {
                     c.PlayerLosesFollowers(player.PlayerId, followerCost);
                 }

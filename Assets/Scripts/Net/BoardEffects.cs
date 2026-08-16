@@ -274,6 +274,51 @@ namespace Indoctrination.Net
         /// left, and stops cleanly when it is not. Idempotent, so calling it every
         /// refresh neither stacks pulses nor restarts the one already running.
         /// </summary>
+        /// <summary>
+        /// Breathes a control in and out of size while it is waiting to be
+        /// pressed. A colour pulse says "this is different"; a size pulse says
+        /// "press this", which is what the resource circles need it to say.
+        /// </summary>
+        public void SetBreathing(RectTransform target, bool breathing, float swell = 1.14f)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            if (_breathing.TryGetValue(target, out var running))
+            {
+                if (running != null)
+                {
+                    StopCoroutine(running);
+                }
+
+                target.localScale = Vector3.one;
+                _breathing.Remove(target);
+            }
+
+            if (breathing)
+            {
+                _breathing[target] = StartCoroutine(BreatheRoutine(target, swell));
+            }
+        }
+
+        private readonly Dictionary<RectTransform, Coroutine> _breathing = new();
+
+        private IEnumerator BreatheRoutine(RectTransform target, float swell)
+        {
+            var elapsed = 0f;
+            while (target != null)
+            {
+                elapsed += Time.deltaTime;
+
+                // Slow enough to read as breathing rather than flashing.
+                var wave = (Mathf.Sin(elapsed * 3.0f) + 1f) * 0.5f;
+                target.localScale = Vector3.one * Mathf.Lerp(1f, swell, wave);
+                yield return null;
+            }
+        }
+
         public void SetPulsing(Graphic graphic, bool pulsing)
         {
             if (graphic == null)
