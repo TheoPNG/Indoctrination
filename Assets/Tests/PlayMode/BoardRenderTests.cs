@@ -2278,6 +2278,89 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// Version comparison, which is the whole update check.
+        ///
+        /// Compared part by part as numbers. Comparing them as text says 0.10.0
+        /// is older than 0.9.0, which is the classic way to ship an update
+        /// nobody is ever offered - and it would fail silently, because "no
+        /// update" looks exactly like "up to date".
+        /// </summary>
+        [Test]
+        public void ANewerVersionIsRecognisedEvenPastNine()
+        {
+            Assert.IsTrue(UpdateCheck.IsNewer("0.2.0", "0.1.0"));
+            Assert.IsTrue(UpdateCheck.IsNewer("0.1.1", "0.1.0"));
+            Assert.IsTrue(UpdateCheck.IsNewer("1.0.0", "0.9.9"));
+
+            // The one text comparison gets wrong.
+            Assert.IsTrue(UpdateCheck.IsNewer("0.10.0", "0.9.0"),
+                "0.10 is later than 0.9 - as text it reads as earlier");
+            Assert.IsTrue(UpdateCheck.IsNewer("0.1.10", "0.1.9"));
+
+            Assert.IsFalse(UpdateCheck.IsNewer("0.1.0", "0.1.0"), "the same build is not an update");
+            Assert.IsFalse(UpdateCheck.IsNewer("0.1.0", "0.2.0"), "nor is an older one");
+            Assert.IsFalse(UpdateCheck.IsNewer("0.9.0", "0.10.0"));
+
+            // Missing parts count as zero, so a two-part version still compares.
+            Assert.IsTrue(UpdateCheck.IsNewer("0.2", "0.1.9"));
+            Assert.IsFalse(UpdateCheck.IsNewer("0.1", "0.1.0"));
+
+            // Nothing here may throw on rubbish - a malformed feed must read as
+            // "no update", never as a crash on startup.
+            Assert.IsFalse(UpdateCheck.IsNewer("", "0.1.0"));
+            Assert.IsFalse(UpdateCheck.IsNewer(null, "0.1.0"));
+            Assert.IsFalse(UpdateCheck.IsNewer("garbage", "0.1.0"));
+            Assert.IsTrue(UpdateCheck.IsNewer("0.2.0-rc1", "0.1.0"),
+                "a suffix should not stop the numbers being read");
+        }
+
+        /// <summary>
+        /// Try again can be turned down, and turning it down lets the table go.
+        ///
+        /// The offer holds the Rolling phase open for everybody, because the
+        /// reroll only becomes legal once every die is down - which is the same
+        /// instant the phase would otherwise close. That is right, but it left
+        /// the holder no way to say no: the table waited on them until the clock
+        /// ran out, every turn the card was in play.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TryAgainCanBeDeclinedSoThePhaseMovesOn()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Rolling);
+
+            var game = ServerGame();
+            game.Players[0].Compound.Add(
+                new CardInstance(-701, CardDatabase.Instance.Get(CardIds.TryAgain)));
+
+            ApplyAsHost(_ => game.RollPrimaryDice());
+            yield return WaitForFrames(3);
+
+            Assert.IsTrue(_manager.View.Viewer.canReroll,
+                "holding Try again should leave the offer open");
+            Assert.AreEqual(nameof(TurnPhase.Rolling), _manager.View.phase,
+                "and the phase should wait rather than closing over it");
+
+            // It has to be reachable from the phase's own controls, not only
+            // from a popup inside the card in your compound.
+            Canvas.ForceUpdateCanvases();
+            Assert.IsNotNull(FindButtonNamed("Reroll"), WhyUnusable("Reroll"));
+
+            var keep = FindButtonNamed("Keep Roll");
+            Assert.IsNotNull(keep, WhyUnusable("Keep Roll"));
+
+            keep.onClick.Invoke();
+            yield return WaitForFrames(4);
+
+            Assert.IsFalse(_manager.View.Viewer.canReroll,
+                "keeping your roll should close the offer");
+            Assert.IsNull(_manager.LastError);
+
+            // And with nothing owed, the phase is free to move.
+            Assert.IsFalse(game.CanReroll(0), "the rules should agree it is spent");
+        }
+
+        /// <summary>
         /// Nothing activates while the dice are still in the air.
         ///
         /// The server advances into Activation the instant the last die is

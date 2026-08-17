@@ -129,6 +129,11 @@ namespace Indoctrination.Net
         private RectTransform _browserList;
         private OnlineSession _online;
         private Text _joinCodeLabel;
+        private RectTransform _updateRow;
+        private Text _updateLabel;
+        private Text _versionLabel;
+        private RectTransform _clockRow;
+        private Text _clockLabel;
         private InputField _nameField;
         private Text _lobbyPlayersText;
         private Button _startGameButton;
@@ -267,6 +272,8 @@ namespace Indoctrination.Net
             backdropImage.raycastTarget = false;
 
             _online = OnlineSession.CreateOn(transform);
+            UpdateCheck.CreateOn(transform);
+            UpdateCheck.UpdateFound += ShowUpdateNotice;
 
             _connectPanel = BuildConnectPanel(canvas.transform);
             _browserPanel = BuildBrowserPanel(canvas.transform);
@@ -367,6 +374,8 @@ namespace Indoctrination.Net
 
         private void OnDestroy()
         {
+            UpdateCheck.UpdateFound -= ShowUpdateNotice;
+
             if (_subscribedManager != null)
             {
                 _subscribedManager.Changed -= Refresh;
@@ -493,13 +502,16 @@ namespace Indoctrination.Net
             {
                 // Nothing is decided for anybody without the board saying so first,
                 // and with the clocks off there is nothing to say.
+                // Says who it is waiting on, not only how long. A clock with no
+                // name on it is a clock you assume is yours, and during the
+                // draft it usually is not.
                 _timerText.text = !view.timersEnabled || view.isGameOver
                     ? ""
                     : view.hasPendingChoice
-                        ? $"{_choiceSecondsLeft:0}s until this is answered for you"
+                        ? $"{WaitingOn(view, view.pendingChoice.askedOfPlayerId)}  ·  {_choiceSecondsLeft:0}s"
                         : view.phase == nameof(TurnPhase.Draft)
-                            ? $"{_secondsLeft:0}s until a pick is made for you"
-                            : $"{_secondsLeft:0}s until the phase moves on";
+                            ? $"{WaitingOn(view, view.currentDrafterId)}  ·  {_secondsLeft:0}s"
+                            : $"{_secondsLeft:0}s left this phase";
             }
         }
 
@@ -565,6 +577,29 @@ namespace Indoctrination.Net
             UIFactory.ButtonWithLabel(
                 "Quit Button", box, "Quit", OpenQuitPrompt, UITheme.ButtonQuiet, 200, 30);
 
+            // Says nothing until there is something to say. Sitting under the
+            // buttons rather than over them: a new build is worth knowing about
+            // and is never worth blocking a game to tell you.
+            _updateRow = UIFactory.Group("Update Row", box);
+            AddFixedHeight(_updateRow, 30);
+            var updateLayout = UIFactory.HorizontalLayout(_updateRow, 8, new RectOffset(0, 0, 0, 0));
+            updateLayout.childAlignment = TextAnchor.MiddleCenter;
+
+            _updateLabel = UIFactory.Label(
+                "Update Label", _updateRow, "", 13, TextAnchor.MiddleRight, UITheme.Signal);
+            AddFixedWidth(_updateLabel.rectTransform, 190);
+
+            UIFactory.ButtonWithLabel(
+                "Get Update", _updateRow, "Get it", UpdateCheck.OpenDownloadPage,
+                UITheme.Affirm, 90, 28);
+
+            _updateRow.gameObject.SetActive(false);
+
+            _versionLabel = UIFactory.Label(
+                "Version", box, $"v{UpdateCheck.CurrentVersion}", 11,
+                TextAnchor.MiddleCenter, UITheme.BoneDim);
+            AddFixedHeight(_versionLabel.rectTransform, 16);
+
             return panel;
         }
 
@@ -578,6 +613,27 @@ namespace Indoctrination.Net
             _online?.CloseAsync();
             NetworkManager.Singleton?.Shutdown();
             SetOnlineStatus("");
+        }
+
+        /// <summary>
+        /// Says a newer build exists, once, on the title screen. Never mid-game
+        /// and never as something to dismiss - it is information, not an
+        /// interruption.
+        /// </summary>
+        private void ShowUpdateNotice()
+        {
+            if (_updateRow == null)
+            {
+                return;
+            }
+
+            _updateRow.gameObject.SetActive(true);
+            _updateLabel.text = $"v{UpdateCheck.AvailableVersion} is out";
+
+            if (!string.IsNullOrEmpty(UpdateCheck.Notes))
+            {
+                _updateLabel.text += $"  -  {UpdateCheck.Notes}";
+            }
         }
 
         // ---------------------------------------------------------- Online
@@ -888,6 +944,25 @@ namespace Indoctrination.Net
 
             // Bots fill out a table that is short of players, whether that is a
             // solo playtest or three friends wanting a fourth.
+            // How long a phase runs for, the host's call. A table that wants to
+            // think and a table that wants to move fast are different tables.
+            _clockRow = UIFactory.Group("Clock Row", box);
+            AddFixedHeight(_clockRow, 32);
+            var clockLayout = UIFactory.HorizontalLayout(_clockRow, 6, new RectOffset(0, 0, 0, 0));
+            clockLayout.childAlignment = TextAnchor.MiddleCenter;
+
+            UIFactory.ButtonWithLabel(
+                "Clock Down", _clockRow, "-10s", () => NudgeClock(-10f),
+                UITheme.ButtonQuiet, 70, 30);
+
+            _clockLabel = UIFactory.Label(
+                "Clock Length", _clockRow, "", 14, TextAnchor.MiddleCenter, UITheme.Bone);
+            AddFixedWidth(_clockLabel.rectTransform, 96);
+
+            UIFactory.ButtonWithLabel(
+                "Clock Up", _clockRow, "+10s", () => NudgeClock(10f),
+                UITheme.ButtonQuiet, 70, 30);
+
             _addBotButton = UIFactory.ButtonWithLabel(
                 "Add Bot", box, "Add Bot",
                 () => NetworkGameManager.Instance?.RequestAddBotRpc(),
@@ -978,6 +1053,11 @@ namespace Indoctrination.Net
             {
                 var code = _online == null ? "" : _online.JoinCode;
                 _joinCodeLabel.text = string.IsNullOrEmpty(code) ? "" : $"Code:  {code}";
+            }
+
+            if (_clockLabel != null)
+            {
+                _clockLabel.text = $"{lobby.phaseSeconds:0}s per phase";
             }
 
             _addBotButton.interactable = lobby.playerNames.Length < lobby.maxPlayers;
@@ -1125,13 +1205,7 @@ namespace Indoctrination.Net
                 UITheme.BoneDim);
             AddFixedWidth(_handCountLabel.rectTransform, 70);
 
-            // The discard is public information and Rituals fly into it, so there
-            // is somewhere to go and look. A small button rather than a shelf
-            // that pushes the board around when it opens.
-            _discardButton = UIFactory.ButtonWithLabel(
-                "Discard", dockTop, "View discard", ShowDiscard, UITheme.ButtonQuiet, 120, 34);
-
-            BuildChatCorner(root);
+            BuildBottomBar(root);
 
             // Pips and drag ghosts are drawn above everything, so one crossing
             // the board is never hidden behind a panel it passes over.
@@ -1507,6 +1581,23 @@ namespace Indoctrination.Net
         /// before the throw does.
         /// </summary>
         private bool DiceRevealed => _dieRoller == null || _dieRoller.Settled;
+
+        /// <summary>
+        /// Whose move it is, in the second person when it is yours. "Your pick"
+        /// and "Asher's pick" are read very differently at a glance, and the
+        /// clock is the one place the difference matters.
+        /// </summary>
+        private static string WaitingOn(GameView view, int playerId)
+        {
+            if (playerId < 0)
+            {
+                return "Waiting";
+            }
+
+            return playerId == view.viewerPlayerId
+                ? "Your move"
+                : $"{FindPlayer(view, playerId)?.name ?? "Somebody"}'s move";
+        }
 
         /// <summary>
         /// Shows an opponent's whole position while the pointer is on their
@@ -2210,6 +2301,8 @@ namespace Indoctrination.Net
 
             _shoutRow.gameObject.SetActive(canChat);
             _shoutButton.interactable = canChat;
+            _shoutButton.GetComponentInChildren<Text>().color =
+                canChat ? UITheme.Bone : UITheme.BoneDim;
         }
 
         /// <summary>
@@ -2220,26 +2313,51 @@ namespace Indoctrination.Net
         /// Down here it is next to nothing, and it is the corner people already
         /// expect a chat box to be in.
         /// </summary>
-        private void BuildChatCorner(RectTransform root)
+        private void BuildBottomBar(RectTransform root)
         {
-            _shoutRow = UIFactory.Group("Shout Row", root.parent);
-            _shoutRow.anchorMin = _shoutRow.anchorMax = new Vector2(1f, 0f);
-            _shoutRow.pivot = new Vector2(1f, 0f);
-            UIFactory.SetSize(_shoutRow, 250f, 30f);
-            _shoutRow.anchoredPosition = new Vector2(-BoardSafeInset, BoardSafeInset);
+            // One row along the bottom right, everything on the same baseline
+            // and the same height. The discard button used to live in the dock
+            // along the top and the chat box in a corner of its own, which put
+            // two controls of the same kind at opposite ends of the board.
+            var bar = UIFactory.Group("Bottom Bar", root.parent);
+            bar.anchorMin = bar.anchorMax = new Vector2(1f, 0f);
+            bar.pivot = new Vector2(1f, 0f);
+            UIFactory.SetSize(bar, 420f, BottomBarHeight);
+            bar.anchoredPosition = new Vector2(-BoardSafeInset, BoardSafeInset);
 
-            var layout = UIFactory.HorizontalLayout(_shoutRow, 4, new RectOffset(0, 0, 0, 0));
+            var layout = UIFactory.HorizontalLayout(bar, 6, new RectOffset(0, 0, 0, 0));
             layout.childAlignment = TextAnchor.MiddleRight;
 
+            // The discard is public information and Rituals fly into it, so
+            // there is somewhere to go and look.
+            _discardButton = UIFactory.ButtonWithLabel(
+                "Discard", bar, "View discard", ShowDiscard,
+                UITheme.ButtonQuiet, 120, BottomBarHeight);
+
+            _shoutRow = UIFactory.Group("Shout Row", bar);
+            var shoutPin = _shoutRow.gameObject.AddComponent<LayoutElement>();
+            shoutPin.minWidth = shoutPin.preferredWidth = 244f;
+            shoutPin.minHeight = shoutPin.preferredHeight = BottomBarHeight;
+            shoutPin.flexibleWidth = 0f;
+
+            var shoutLayout = UIFactory.HorizontalLayout(_shoutRow, 4, new RectOffset(0, 0, 0, 0));
+            shoutLayout.childAlignment = TextAnchor.MiddleRight;
+
             _shoutField = UIFactory.TextInput("Shout Field", _shoutRow, "");
-            AddFixedWidthHeight(_shoutField.GetComponent<RectTransform>(), 176, 30);
+            AddFixedWidthHeight(
+                _shoutField.GetComponent<RectTransform>(), 204, BottomBarHeight);
             _shoutField.characterLimit = NetworkGameManager.MaxShoutLength;
             _shoutField.onEndEdit.AddListener(SubmitShout);
 
-            _shoutButton = UIFactory.ButtonWithLabel(
-                "Shout", _shoutRow, "Say", () => SubmitShout(_shoutField.text),
-                UITheme.ButtonQuiet, 66, 30);
+            // A return mark rather than the word "Say" - it is the key you were
+            // going to press anyway, and the field beside it says what it does.
+            _shoutButton = UIFactory.IconButton(
+                "Shout", _shoutRow, "↵", () => SubmitShout(_shoutField.text),
+                UITheme.Bone, BottomBarHeight);
         }
+
+        /// <summary>Everything in the bottom-right row is this tall.</summary>
+        private const float BottomBarHeight = 32f;
 
         /// <summary>
         /// Where a card is sitting on the board right now, so the activation
@@ -2966,6 +3084,28 @@ namespace Indoctrination.Net
                 return true;
             }
 
+            // Try again, where the phase is actually waiting for it. The offer
+            // lived only inside the card's own popup in your compound - so the
+            // table stalled on an action you had to go and find, every turn the
+            // card was in play. Declining is offered beside it, because "no
+            // thanks" was not previously a move at all.
+            if (you is { canReroll: true })
+            {
+                UIFactory.SetSize(_popupPanel, RollingPopupWidth, RollingPopupHeight + 96f);
+                ActionLabel($"You rolled {you.primaryDie}. Try again?", 15);
+
+                UIFactory.ButtonWithLabel(
+                    "Reroll", _actionPanel, "Reroll", () => manager.RequestRerollRpc(),
+                    UITheme.Affirm, RollButtonWidth * 0.6f, RollButtonHeight * 0.72f);
+
+                UIFactory.ButtonWithLabel(
+                    "Keep Roll", _actionPanel, "Keep it",
+                    () => manager.RequestDeclineRerollRpc(),
+                    UITheme.ButtonQuiet, RollButtonWidth * 0.6f, RollButtonHeight * 0.72f);
+
+                return true;
+            }
+
             if (!view.diceRolled || view.highRollResourceClaimed)
             {
                 return false;
@@ -3093,7 +3233,7 @@ namespace Indoctrination.Net
             // last die lands, or the reroll could never be reached.
             if (you.canReroll)
             {
-                return "Try again is open - reroll from the card, or ready up";
+                return "Try again is open - reroll or keep your roll";
             }
 
             if (view.phase == nameof(TurnPhase.Resource) && !you.collectedResources)
@@ -3267,6 +3407,22 @@ namespace Indoctrination.Net
         private void OpenQuitPrompt()
         {
             _quitPrompt?.Open();
+        }
+
+        /// <summary>
+        /// Moves the phase clock by ten seconds. Host only - the button is there
+        /// for everybody but the server refuses anybody else, so a guest pressing
+        /// it changes nothing rather than desyncing the table.
+        /// </summary>
+        private void NudgeClock(float delta)
+        {
+            var manager = NetworkGameManager.Instance;
+            if (manager == null)
+            {
+                return;
+            }
+
+            manager.RequestSetPhaseSecondsRpc(manager.PhaseSeconds + delta);
         }
 
         private void ToggleDrawOffer()

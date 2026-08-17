@@ -58,6 +58,13 @@ namespace Indoctrination.Net
         /// </summary>
         private bool _timersEnabled;
 
+        /// <summary>
+        /// How long a phase - or one player's draft pick - is given before it is
+        /// taken for them. The host's setting, not a constant, because how long
+        /// a table wants to think is a property of that table.
+        /// </summary>
+        private float _phaseSeconds = GameSettings.PhaseTimeoutSeconds;
+
         /// <summary>Time.time when the current phase began, for the timeout.</summary>
         private float _phaseStartedAt;
 
@@ -130,6 +137,52 @@ namespace Indoctrination.Net
             {
                 SendStateTo(clientId);
             }
+
+            if (IsServer)
+            {
+                // Every client says which build it is, and is told which build
+                // the table is on. See DeclareVersionRpc.
+                AskForVersionRpc(RpcTarget.Single(clientId, RpcTargetUse.Temp));
+            }
+        }
+
+        /// <summary>
+        /// The version handshake.
+        ///
+        /// This game is server-authoritative, so two players on different builds
+        /// do not simply see different things - they disagree about the rules,
+        /// and that shows up as cards behaving wrongly rather than as anybody
+        /// being out of date. Nobody would guess the cause. The check costs one
+        /// message and turns a whole class of baffling bug into one sentence.
+        ///
+        /// A warning rather than a refusal. Only the host knows whether a
+        /// difference matters, and locking somebody out of a playtest over a
+        /// build number would be worse than the bugs.
+        /// </summary>
+        [Rpc(SendTo.SpecifiedInParams)]
+        private void AskForVersionRpc(RpcParams rpcParams)
+        {
+            DeclareVersionRpc(Application.version);
+        }
+
+        [Rpc(SendTo.Server)]
+        private void DeclareVersionRpc(string version, RpcParams rpcParams = default)
+        {
+            if (string.Equals(version, Application.version, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var name = SeatIndexOf(rpcParams.Receive.SenderClientId) is var seat && seat >= 0
+                ? _seats[seat].Name
+                : "Somebody";
+
+            var warning = $"{name} is on v{version}; this table is on v{Application.version}. "
+                          + "Different builds can disagree about the rules.";
+
+            Debug.LogWarning(warning);
+            ReportError(warning, rpcParams.Receive.SenderClientId);
+            ReportError(warning, NetworkManager.ServerClientId);
         }
 
         private void OnClientDisconnected(ulong clientId)
@@ -546,6 +599,44 @@ namespace Indoctrination.Net
             ConfirmShoutUnlockedRpc(RpcTarget.Single(rpcParams.Receive.SenderClientId, RpcTargetUse.Temp));
         }
 
+        /// <summary>
+        /// Sets how long a phase is given. Host only, clamped to something a
+        /// table can actually play with - a five second draft is not a setting,
+        /// it is a way to lose your picks.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void RequestSetPhaseSecondsRpc(float seconds, RpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != NetworkManager.ServerClientId)
+            {
+                return;
+            }
+
+            _phaseSeconds = Mathf.Clamp(seconds, MinPhaseSeconds, MaxPhaseSeconds);
+            _clockSecondsForClients = _phaseSeconds;
+            _phaseStartedAt = Time.time;
+
+            if (_game != null)
+            {
+                BroadcastState();
+            }
+            else
+            {
+                BroadcastLobby();
+            }
+        }
+
+        /// <summary>The band the host may set the clock to.</summary>
+        public const float MinPhaseSeconds = 10f;
+
+        public const float MaxPhaseSeconds = 180f;
+
+        /// <summary>The clock length as last broadcast, so the lobby can show it.</summary>
+        private float _clockSecondsForClients = GameSettings.PhaseTimeoutSeconds;
+
+        /// <summary>How long a phase is currently given.</summary>
+        public float PhaseSeconds => _clockSecondsForClients;
+
         [Rpc(SendTo.SpecifiedInParams)]
         private void ConfirmShoutUnlockedRpc(RpcParams rpcParams)
         {
@@ -601,7 +692,8 @@ namespace Indoctrination.Net
             {
                 playerNames = _seats.Select(seat => seat.Name).ToArray(),
                 minPlayers = GameSettings.MinPlayers,
-                maxPlayers = GameSettings.MaxPlayers
+                maxPlayers = GameSettings.MaxPlayers,
+                phaseSeconds = _phaseSeconds
             };
 
             SyncLobbyRpc(JsonUtility.ToJson(lobby));
@@ -692,6 +784,7 @@ namespace Indoctrination.Net
 
             _timersEnabled = enabled;
             _phaseStartedAt = Time.time;
+            _clockSecondsForClients = _phaseSeconds;
             _choiceStartedAt = _game?.PendingChoice == null ? -1f : Time.time;
 
             if (_game != null)
@@ -869,6 +962,13 @@ namespace Indoctrination.Net
                     AdvancePhase();
                 }
             });
+        }
+
+        /// <summary>Turns down Try again's reroll, so the phase stops waiting.</summary>
+        [Rpc(SendTo.Server)]
+        public void RequestDeclineRerollRpc(RpcParams rpcParams = default)
+        {
+            Apply(rpcParams, playerId => _game.DeclineReroll(playerId));
         }
 
         [Rpc(SendTo.Server)]
@@ -1109,7 +1209,7 @@ namespace Indoctrination.Net
             // card questions reach zero seconds and can never answer themselves.
             if (_game.Phase == TurnPhase.Draft)
             {
-                if (Time.time - _phaseStartedAt >= GameSettings.PhaseTimeoutSeconds)
+                if (Time.time - _phaseStartedAt >= _phaseSeconds)
                 {
                     TakeDraftPickForAbsentPlayer();
                 }
@@ -1122,7 +1222,7 @@ namespace Indoctrination.Net
                 return;
             }
 
-            if (Time.time - _phaseStartedAt < GameSettings.PhaseTimeoutSeconds)
+            if (Time.time - _phaseStartedAt < _phaseSeconds)
             {
                 return;
             }
@@ -1291,7 +1391,7 @@ namespace Indoctrination.Net
             // running the entire time; it just was not being sent.
             var phaseRemaining = !_timersEnabled || _game.Phase == TurnPhase.GameOver
                 ? 0f
-                : Mathf.Max(0f, GameSettings.PhaseTimeoutSeconds - (Time.time - _phaseStartedAt));
+                : Mathf.Max(0f, _phaseSeconds - (Time.time - _phaseStartedAt));
 
             var choiceRemaining = !_timersEnabled || _game.PendingChoice == null || _choiceStartedAt < 0f
                 ? 0f

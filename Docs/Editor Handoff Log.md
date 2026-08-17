@@ -7,6 +7,97 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-16 — Claude (Try again, bottom bar, host clock, and an update check)
+
+### Try again, looked at properly
+
+Two real problems, both about flow rather than rules.
+
+**It was unreachable where it mattered.** The reroll was offered only inside the
+card's own popup, opened from your compound - while the Rolling phase
+*deliberately waits* on anyone holding it. So the table stalled on an action you
+had to go and find. It is now in the action panel next to Ready, where the phase
+is actually waiting.
+
+**There was no way to say no.** `CanReroll` stayed true until the reroll was used
+or the clock ran out, so a player holding the card held the table up every single
+turn whether or not they meant to. New `GameState.DeclineReroll` spends the same
+once-per-turn slot the reroll does, so "Keep it" closes the offer and the phase
+moves.
+
+**A reroll re-threw every die on the table.** `DieRoller.Show` keyed on a
+signature of the whole table's roll, so changing one number rebuilt and re-threw
+all of them - showing something that did not happen. `Show` now works out which
+dice actually changed and throws only those; the rest stay exactly where they
+landed and act as obstacles for the ones coming in, so a rerolled die bounces off
+them.
+
+### The rest of the batch
+
+- Chat's "Say" is a `↵` icon - it is the key you were going to press.
+- **One bottom bar.** The discard button came down out of the top dock to sit
+  beside the chat box, everything 32px on one baseline. Two controls of the same
+  kind were at opposite ends of the board.
+- **The clock says who it is waiting on** - "Your move · 18s", "Asher's move ·
+  18s". A clock with no name on it is a clock you assume is yours, and during the
+  draft it usually is not.
+- **The host sets the clock**, ±10s in the lobby, clamped 10-180s.
+  `PhaseTimeoutSeconds` was a constant; it is now `_phaseSeconds` on the manager,
+  carried to clients on the lobby view.
+- **Max health is 15**, equal to the starting health.
+- **Block stopped twitching.** `Populate` called `Pop()` on the block segment
+  every time it ran while any Block stood - and the board refreshes on every
+  message from the server, so it pulsed continuously. It now reacts only when the
+  number changes.
+
+### The update check
+
+`Assets/Scripts/Net/UpdateCheck.cs`. On startup it fetches `Docs/latest.json`
+over the web, and if the version there is ahead of `Application.version` the
+title screen says so and offers a button to the download page. **Deliberately not
+a self-installer** - a macOS app that replaces its own bundle needs signing and
+notarisation to get past Gatekeeper, which is a paid Apple account rather than an
+afternoon's work.
+
+Fails silently in every direction: no network, no feed, malformed feed. None of
+those is a reason a card game cannot be played, so nothing in it can stop the
+game starting.
+
+`Tools/Release/run.sh <version> [notes]` bumps `bundleVersion`, rewrites the
+feed, and builds. Pushing the feed is what tells every copy there is a new build,
+so it goes out *after* the release is attached.
+
+**Also added: a version handshake.** This game is server-authoritative, so two
+players on different builds disagree about the rules - which reads as the game
+being broken rather than as somebody being out of date, and nobody would guess
+the cause. On connect, the client declares its version and a mismatch warns both
+ends by name. A warning, not a refusal: only the host knows whether a difference
+matters, and locking somebody out of a playtest over a build number is worse than
+the bugs.
+
+### Files
+
+- Added `Assets/Scripts/Net/UpdateCheck.cs`, `Tools/Release/run.sh`,
+  `Docs/latest.json`.
+- Updated `Core/GameState.cs`, `Core/GameSettings.cs`, `Net/NetworkGameManager.cs`,
+  `Net/GameView.cs`, `Net/BoardUI.cs`, `Net/DieRoller.cs`, `Net/StatBar.cs`.
+- Added `TryAgainCanBeDeclinedSoThePhaseMovesOn` and
+  `ANewerVersionIsRecognisedEvenPastNine` (0.10.0 vs 0.9.0 - as text that reads
+  backwards, and it would fail silently, because "no update" looks exactly like
+  "up to date").
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 61 passed.
+- RulesCheck all green; SmokeTest passed.
+
+### Follow-up status
+
+- `UpdateCheck.FeedUrl` points at `TheoPNG/Indoctrination` on GitHub. It has to
+  be reachable without a login for this to work at all.
+- Bloodstone still unreproduced; Asmodeus still benched.
+
 ## 2026-08-16 — Claude (visual overhaul, second pass: nine items)
 
 1. **Phase banners gone.** `PhaseBanner` deleted. Every phase change threw a

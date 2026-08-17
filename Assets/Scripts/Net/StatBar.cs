@@ -41,6 +41,9 @@ namespace Indoctrination.Net
 
         private bool _built;
 
+        /// <summary>Last Block drawn, so it only reacts to a change.</summary>
+        private int _lastBlock = -1;
+
         private void Awake() => Build();
 
         /// <summary>
@@ -244,10 +247,17 @@ namespace Indoctrination.Net
             blockPin.minWidth = blockPin.preferredWidth = blockWidth;
             _blockText.text = player.block > 0 ? $"+{player.block}" : "";
             _blockTrack.gameObject.SetActive(player.block > 0);
-            if (player.block > 0)
+
+            // Only when the number actually moves. This popped on every refresh
+            // while any Block was standing, and the board refreshes on every
+            // message from the server - so a player holding Block had a segment
+            // twitching at them continuously for no reason at all.
+            if (player.block > 0 && player.block != _lastBlock)
             {
                 BoardEffects.Instance.Pop(_blockTrack);
             }
+
+            _lastBlock = player.block;
 
             _followerText.text = $"{player.followers}/{GameSettings.FollowersToWin}";
             _followerText.fontSize = 10;

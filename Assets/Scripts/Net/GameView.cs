@@ -294,5 +294,8 @@ namespace Indoctrination.Net
         public string[] playerNames = Array.Empty<string>();
         public int minPlayers;
         public int maxPlayers;
+
+        /// <summary>How long the host has set a phase to run for.</summary>
+        public float phaseSeconds;
     }
 }

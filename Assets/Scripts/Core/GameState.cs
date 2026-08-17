@@ -1520,6 +1520,24 @@ namespace Indoctrination.Core
                    && !_oncePerTurn.Contains($"reroll:{playerId}");
         }
 
+        /// <summary>
+        /// Turns the reroll down for this turn.
+        ///
+        /// Try again's offer holds the Rolling phase open for everybody, because
+        /// the reroll only becomes legal once every die is down - which is the
+        /// same instant the phase would otherwise close. That is right, but it
+        /// left the holder no way to say "no thanks": the table waited on them
+        /// every turn until the clock ran out. Declining spends the same
+        /// once-per-turn slot the reroll does, so the offer closes and the phase
+        /// can move.
+        /// </summary>
+        public void DeclineReroll(int playerId)
+        {
+            RequirePhase(TurnPhase.Rolling);
+            RequireAlive(playerId);
+            TakeOncePerTurn($"reroll:{playerId}");
+        }
+
         public void RerollPrimaryDie(int playerId)
         {
             RequirePhase(TurnPhase.Rolling);

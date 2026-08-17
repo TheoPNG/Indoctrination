@@ -291,6 +291,16 @@ namespace Indoctrination.Net
         }
 
 
+        /// <summary>
+        /// How a die's owner reads under it. Also what `Show` compares against
+        /// to work out whether a die on the table is still the same die.
+        /// </summary>
+        private static string OwnerLabelFor(Roll roll)
+        {
+            return (roll.IsViewer ? "YOU" : roll.Name)
+                   + (roll.IsPrivate ? "  ·  own units only" : "");
+        }
+
         /// <summary>One die, as the board wants it thrown.</summary>
         public readonly struct Roll
         {
@@ -333,6 +343,26 @@ namespace Indoctrination.Net
                 return;
             }
 
+            // Which dice this actually changes. A reroll - Try again, Baal,
+            // Close enough - alters one number on a table that has already been
+            // thrown, and re-throwing the lot to show it says something that did
+            // not happen. The dice that did not change stay exactly where they
+            // landed, and the ones that did are thrown again around them.
+            var settling = _showing.Length > 0 && _dice.Count > 0;
+            var changed = new List<int>();
+
+            for (var i = 0; i < rolls.Count; i++)
+            {
+                if (!settling
+                    || i >= _dice.Count
+                    || !_dice[i].Die.gameObject.activeSelf
+                    || _dice[i].Owner != OwnerLabelFor(rolls[i])
+                    || _dice[i].Value != rolls[i].Value)
+                {
+                    changed.Add(i);
+                }
+            }
+
             _showing = signature;
             _settled = false;
             gameObject.SetActive(true);
@@ -345,7 +375,11 @@ namespace Indoctrination.Net
             }
 
             BuildDice(rolls);
-            _rolling = StartCoroutine(Throw());
+
+            // Everything changed, or there was nothing on the table - an
+            // ordinary roll, thrown as a whole.
+            _rolling = StartCoroutine(
+                changed.Count == rolls.Count ? Throw() : Throw(changed));
         }
 
         /// <summary>
@@ -499,8 +533,7 @@ namespace Indoctrination.Net
                 // actually using, so it is also the check that the die on the
                 // table agrees with it, but printing it during the throw
                 // announces the result before the die gets there.
-                thrown.Owner = (rolls[i].IsViewer ? "YOU" : rolls[i].Name)
-                               + (rolls[i].IsPrivate ? "  ·  own units only" : "");
+                thrown.Owner = OwnerLabelFor(rolls[i]);
                 thrown.Label.text = thrown.Owner;
                 thrown.Label.color = rolls[i].IsViewer ? UITheme.Signal : UITheme.Bone;
             }
@@ -641,11 +674,22 @@ namespace Indoctrination.Net
         /// What you watch is a real, unrepeatable, physically simulated roll,
         /// and it lands on the right number without anything touching it.
         /// </summary>
-        private IEnumerator Throw()
+        private IEnumerator Throw(IReadOnlyList<int> only = null)
         {
             _dismissArea.gameObject.SetActive(false);
 
-            var live = _dice.Where(die => die.Die.gameObject.activeSelf).ToList();
+            var onTable = _dice.Where(die => die.Die.gameObject.activeSelf).ToList();
+
+            // Only the dice being re-thrown are simulated. The rest stay
+            // kinematic exactly where they came to rest, which also makes them
+            // obstacles for the ones coming in - a rerolled die bounces off the
+            // table's other dice, as it should.
+            var live = only == null
+                ? onTable
+                : only.Where(index => index >= 0 && index < _dice.Count)
+                    .Select(index => _dice[index])
+                    .Where(die => die.Die.gameObject.activeSelf)
+                    .ToList();
             if (live.Count == 0)
             {
                 _rolling = null;
@@ -679,13 +723,13 @@ namespace Indoctrination.Net
 
             // Now, and not before: the dice have stopped, so the numbers can be
             // read off them and are no longer a spoiler.
-            foreach (var thrown in live)
+            foreach (var thrown in onTable)
             {
                 thrown.Label.text = $"{thrown.Owner}  ·  {thrown.Value}";
             }
 
             PlaceLabels();
-            PlaceDismissArea(live);
+            PlaceDismissArea(onTable);
             _settled = true;
             _rolling = null;
         }
