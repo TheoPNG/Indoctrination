@@ -2696,6 +2696,84 @@ namespace Indoctrination.Net
                 .ToList();
 
             RestoreFanOrder();
+            FitFanInsideTray(fanSlots.Select(item => item.Slot));
+        }
+
+        /// <summary>
+        /// Measures the fan once it is built and shrinks it if it does not fit.
+        ///
+        /// The size and the spread are both computed before anything is laid
+        /// out, from card proportions, rotation, overlap and the space
+        /// available - and that arithmetic has now been wrong about the edges
+        /// three times running. It is easier to be right afterwards than in
+        /// advance: this reads the corners the cards actually occupy, and if the
+        /// fan is wider than the tray it scales the whole thing down about its
+        /// own centre until it is not.
+        ///
+        /// Rotation is why measuring beforehand keeps missing. A tilted card's
+        /// corners reach further than its width, the outermost cards are the
+        /// most tilted, and the hover lift makes whichever card is under the
+        /// pointer larger still - so the widest the fan ever gets is not a
+        /// number available when the sizes are chosen.
+        /// </summary>
+        private void FitFanInsideTray(IEnumerable<RectTransform> slots)
+        {
+            var tray = _handRow.rect.width;
+            if (tray <= 1f)
+            {
+                return;
+            }
+
+            var min = float.MaxValue;
+            var max = float.MinValue;
+            var corners = new Vector3[4];
+
+            foreach (var slot in slots)
+            {
+                if (slot == null)
+                {
+                    continue;
+                }
+
+                slot.GetWorldCorners(corners);
+                foreach (var corner in corners)
+                {
+                    var local = _handRow.InverseTransformPoint(corner).x;
+                    min = Mathf.Min(min, local);
+                    max = Mathf.Max(max, local);
+                }
+            }
+
+            if (min > max)
+            {
+                return;
+            }
+
+            // The tray's own edges, in the same space. Its pivot is centred, so
+            // half its width each way.
+            var edge = tray * 0.5f;
+            var overhang = Mathf.Max(-edge - min, max - edge);
+            if (overhang <= 0f)
+            {
+                return;
+            }
+
+            // Enough headroom that a hover lift on the outermost card does not
+            // put it straight back over the edge.
+            var span = max - min;
+            var scale = Mathf.Clamp((tray - (HandFanSideMargin * 2f)) / span, 0.5f, 1f);
+
+            foreach (var slot in slots)
+            {
+                if (slot == null)
+                {
+                    continue;
+                }
+
+                slot.anchoredPosition = new Vector2(
+                    slot.anchoredPosition.x * scale, slot.anchoredPosition.y);
+                slot.localScale = new Vector3(scale, scale, 1f);
+            }
         }
 
         /// <summary>
