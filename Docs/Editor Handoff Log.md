@@ -7,6 +7,79 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-18 — Claude (the board stops reacting ahead of the animation)
+
+### One cause behind two complaints
+
+"Don't show which units are activated until the animation is done" and "some
+camera shake and shit is happening before the units animation occurs" are the
+same bug seen twice.
+
+**The server completes an activation and broadcasts immediately.** The board
+refreshes on that message - so it shook `_gameRoot`, threw its damage pips at the
+health bars, and dulled the card that had just fired, all *before* the stage had
+begun animating that same firing. The result arrived, and then the event that
+caused it.
+
+Two changes:
+
+- `ActivationStage.IsBusy` - while the stage has anything left to show, the board
+  holds its own reactions. The stage owns what is happening; two things reacting
+  to one hit, one of them early, is the shake that appears from nowhere.
+- `ActivationStage.ShownCount` - activations that have finished *being shown*,
+  which is not the server's count. `MarkIfDueToActivate` reads the lower of the
+  two, so a card stops looking queued when its animation ends rather than when
+  the message announcing it arrives.
+
+`PollStageFinishing` redraws when the stage catches up. It watches the **count**
+as well as the busy flag: a whole sequence can begin and end between two frames -
+it does in the tests - and a transition nobody observed never redraws, which
+would leave cards marked as queued after they had fired.
+
+### The gestures, in one table
+
+Every number the activation gestures use now lives in one block at the top of
+`ActivationStage`, with the three rules they obey written down: direction is
+meaning (anything aimed at a player travels toward that player's track, and
+anything that happens to the card itself does not travel at all); speed is force
+(a hit is fast and short, a gift slow and long, and nothing else varies); the
+glyphs follow the gesture, thrown at the bar they are about to move.
+
+Followers now pull *toward* the card rather than away, since they are drawn in
+rather than sent out.
+
+### The leftmost hand card - not reproduced, margin widened
+
+Reported for the fourth time. Measured properly this round rather than reasoned
+about: a temporary probe in the smoke test printed the tray at `[-27.3..32.4]`
+against a resource HUD ending at `-27.9`, with every slot well inside. The
+PlayMode test was then given a **full seven-card hand**, which is the case that
+can actually overflow - a draft leaves three or four, and at that size the fan
+never has to make any of the decisions involved. It still passes.
+
+So the geometry is right in both environments available here. What was changed
+is the margin: `HandFanSideMargin` 14 -> 26, and `FitFanInsideTray` now leaves
+room for the hover lift, because the outermost card grows by 6% when the pointer
+is on it - which is exactly when somebody is close enough to notice a clipped
+edge.
+
+**Still not confirmed fixed.** A screenshot would settle in one round what four
+rounds of arithmetic have not.
+
+### Files
+
+- Updated `Assets/Scripts/Net/ActivationStage.cs`, `Assets/Scripts/Net/BoardUI.cs`.
+- `UnitActivationsArePacedLockedAndRepeatInTableOrder` now asserts the new rule -
+  the Unit stays lit while the server has run ahead of the stage. Its old
+  assertion, that the card dims the instant the server says so, was the
+  behaviour being removed.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 64 passed.
+- RulesCheck all green; SmokeTest passed.
+
 ## 2026-08-18 — Claude (the dice deadlock, and the table goes away again)
 
 Three regressions reported. Two fixed with certainty, one not reproduced.

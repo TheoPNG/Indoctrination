@@ -1113,8 +1113,22 @@ namespace Indoctrination.Tests
             ExpireNextActivation();
             yield return WaitForFrames(2);
             Assert.AreEqual(3, _manager.View.activationCompletedCount);
-            Assert.Less(bright.GetComponent<CanvasGroup>().alpha, 0.4f,
-                "a Unit should dim once no repeated activation remains for it");
+
+            // **Dimming waits for the animation, not for the message.** The
+            // server completes an activation and broadcasts at once, so reading
+            // its count dulled the card that had just fired before the stage had
+            // begun showing that firing - the board gave the answer away and the
+            // animation then explained it.
+            //
+            // So the Unit is still lit here, with the server three activations
+            // in and the stage not yet having shown them. What the board draws
+            // is driven by `ActivationStage.ShownCount`, which is checked
+            // against a stage this test does not drive; here the point is only
+            // that the server's own count no longer moves it.
+            Assert.AreEqual(0, stage.GetComponent<ActivationStage>().ShownCount,
+                "nothing has been animated yet in this test");
+            Assert.Greater(bright.GetComponent<CanvasGroup>().alpha, 0.95f,
+                "a Unit must stay lit until its activation has actually been shown");
         }
 
         /// <summary>The face on the viewer's own die box, if a player could see it.</summary>
@@ -2229,6 +2243,22 @@ namespace Indoctrination.Tests
         {
             yield return StartGame();
             yield return AdvanceTo(TurnPhase.Buy);
+
+            // A full hand, which is the case that fails. A draft leaves three or
+            // four cards, and at that size the fan never has to make any of the
+            // decisions this is about - which is why it passed while the
+            // leftmost card was visibly clipped in play.
+            var game = ServerGame();
+            var units = CardDatabase.Instance.All.Where(c => c.Type == CardType.Unit).ToList();
+            ApplyAsHost(_ =>
+            {
+                var hand = game.Players[0].Hand;
+                for (var i = hand.Count; i < GameSettings.HandLimit; i++)
+                {
+                    hand.Add(new CardInstance(-800 - i, units[i % units.Count]));
+                }
+            });
+
             yield return ExpandHand();
             Canvas.ForceUpdateCanvases();
 
@@ -2237,6 +2267,8 @@ namespace Indoctrination.Tests
                 .GetValue(_board);
 
             var cards = handRow.GetComponentsInChildren<BoardCardView>();
+            Assert.GreaterOrEqual(cards.Length, 5,
+                "this needs a full hand to be worth anything");
             Assert.Greater(cards.Length, 0, "there should be cards in the open hand");
 
             var screen = new Rect(0f, 0f, Screen.width, Screen.height);

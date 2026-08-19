@@ -88,8 +88,18 @@ namespace Indoctrination.Net
         /// </summary>
         private const float HandFanMaxAngle = 4f;
 
-        /// <summary>Clear space kept at each end of the fan.</summary>
-        private const float HandFanSideMargin = 14f;
+        /// <summary>
+        /// Clear space kept at each end of the fan.
+        ///
+        /// Generous on purpose. The outermost card is the most tilted, so its
+        /// corner reaches furthest, and it grows again by `HandHoverLift` when
+        /// the pointer is on it - which is exactly when somebody is looking at
+        /// it closely enough to notice a clipped edge.
+        /// </summary>
+        private const float HandFanSideMargin = 26f;
+
+        /// <summary>How much a hovered card grows, from `BoardEffects.Hover`.</summary>
+        private const float HandHoverLift = 1.06f;
 
         /// <summary>
         /// How far the cards may be pushed over one another before the fan is
@@ -386,6 +396,7 @@ namespace Indoctrination.Net
             }
 
             PollDiceSettling();
+            PollStageFinishing();
         }
 
         /// <summary>
@@ -417,6 +428,39 @@ namespace Indoctrination.Net
         }
 
         private bool _diceWereSettled = true;
+
+        /// <summary>
+        /// Redraws once when the stage finishes its sequence.
+        ///
+        /// Nothing arrives from the server at that moment - the sequence ended
+        /// on this machine - so without this the board would keep showing cards
+        /// as queued until the next message happened to come in.
+        /// </summary>
+        private void PollStageFinishing()
+        {
+            var busy = StagePlaying;
+            var shown = _activationStage == null ? 0 : _activationStage.ShownCount;
+
+            // Watches the count as well as the busy flag. A whole sequence can
+            // begin and end between two frames - it does in the tests - and a
+            // transition nobody observed is a transition that never redraws,
+            // leaving cards marked as queued after they have fired.
+            if (busy == _stageWasBusy && shown == _stageShown)
+            {
+                return;
+            }
+
+            _stageWasBusy = busy;
+            _stageShown = shown;
+
+            if (!busy && _gameRoot.gameObject.activeSelf)
+            {
+                Refresh();
+            }
+        }
+
+        private bool _stageWasBusy;
+        private int _stageShown;
 
         private void OnDestroy()
         {
@@ -1569,8 +1613,12 @@ namespace Indoctrination.Net
             ShowRitualIfOneJustResolved(view);
 
             // Shaken only for a blow that actually landed, so the board is still
-            // when nothing happened and the jolt means something when it comes.
-            if (_somethingHitThisRefresh)
+            // when nothing happened and the jolt means something when it comes -
+            // and never while the stage is mid-sequence, where the blow has its
+            // own gesture aimed at whoever took it. Two things reacting to one
+            // hit, one of them before the other, is the shaking that appears
+            // from nowhere before a unit animates.
+            if (_somethingHitThisRefresh && !StagePlaying)
             {
                 BoardEffects.Instance.Shake(_gameRoot);
             }
@@ -1627,6 +1675,12 @@ namespace Indoctrination.Net
         /// before the throw does.
         /// </summary>
         private bool DiceRevealed => _dieRoller == null || _dieRoller.Settled;
+
+        /// <summary>
+        /// Whether the activation stage is mid-sequence. While it is, the stage
+        /// owns everything that is happening and the board stays still.
+        /// </summary>
+        private bool StagePlaying => _activationStage != null && _activationStage.IsBusy;
 
         /// <summary>
         /// Whose move it is, in the second person when it is yours. "Your pick"
@@ -2434,8 +2488,18 @@ namespace Indoctrination.Net
         {
             if (view.phase == nameof(TurnPhase.Activation))
             {
+                // Measured against what has been *shown*, not what the server
+                // has completed. The server finishes an activation and
+                // broadcasts at once, so reading its count dulled the card that
+                // had just fired before the stage had begun showing that firing
+                // - the board gave the answer away and the animation then
+                // explained it.
+                var shown = _activationStage == null
+                    ? view.activationCompletedCount
+                    : Mathf.Min(view.activationCompletedCount, _activationStage.ShownCount);
+
                 var stillQueued = card.Card != null && view.activations
-                    .Skip(Mathf.Clamp(view.activationCompletedCount, 0, view.activations.Length))
+                    .Skip(Mathf.Clamp(shown, 0, view.activations.Length))
                     .Any(activation => activation.cardInstanceId == card.Card.instanceId
                                        && !activation.skipped);
                 card.SetActivationState(presenting: true, queued: stillQueued);
@@ -2806,7 +2870,9 @@ namespace Indoctrination.Net
 
             // Enough headroom that a hover lift on the outermost card does not
             // put it straight back over the edge.
-            var span = max - min;
+            // Room for the hover lift as well, so the card being looked at does
+            // not grow straight back over the edge it was just pulled inside.
+            var span = (max - min) * HandHoverLift;
             var scale = Mathf.Clamp((tray - (HandFanSideMargin * 2f)) / span, 0.5f, 1f);
 
             foreach (var slot in slots)

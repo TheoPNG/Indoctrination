@@ -205,6 +205,28 @@ namespace Indoctrination.Net
 
         private const float ChipSize = 30f;
 
+        // ------------------------------------------------------------------
+        //  One table for every number the gestures use, so they stay in
+        //  proportion to each other. Changing a gesture means changing a line
+        //  here, not hunting a literal through the sequence.
+        // ------------------------------------------------------------------
+
+        /// <summary>A hit: short and fast.</summary>
+        private const float StrikeReach = 66f;
+
+        private const float StrikeSeconds = 0.34f;
+
+        /// <summary>A gift: further and slower, so it reads as given rather than thrown.</summary>
+        private const float GiftReach = 40f;
+
+        private const float GiftSeconds = 0.95f;
+
+        private const int GlyphSize = 34;
+
+        private static readonly Color DamageInk = new(0.96f, 0.18f, 0.30f);
+        private static readonly Color HealInk = new(0.96f, 0.30f, 0.42f);
+        private static readonly Color BlockInk = new(0.25f, 0.94f, 0.48f);
+
         /// <summary>How wide and tall one player's track is drawn.</summary>
         private const float TrackWidth = 300f;
 
@@ -242,6 +264,7 @@ namespace Indoctrination.Net
             {
                 _batch = view.activationBatch;
                 _seen = 0;
+                ShownCount = 0;
                 _pending.Clear();
                 _lastSnapshot = snapshot;
             }
@@ -319,6 +342,7 @@ namespace Indoctrination.Net
         {
             _batch = -1;
             _seen = 0;
+            ShownCount = 0;
             _lastSnapshot = null;
             _choiceActivation = null;
             _heldCardInstanceId = -1;
@@ -365,6 +389,10 @@ namespace Indoctrination.Net
                 }
 
                 yield return Play(first, repeats);
+
+                // Counted once the animation has been seen, not when the server
+                // said it happened.
+                ShownCount = first.Index + 1;
             }
 
             _playing = false;
@@ -420,6 +448,27 @@ namespace Indoctrination.Net
 
         /// <summary>Whether any track is currently waiting to be clicked.</summary>
         public bool HasPlayerTargets => _targets.Count > 0;
+
+        /// <summary>
+        /// Whether the stage has anything left to show.
+        ///
+        /// The board holds its own reactions while this is true. The server
+        /// completes an activation and broadcasts immediately, so without it the
+        /// board shook, threw its damage pips and dulled the card that had just
+        /// fired - all before the stage had begun the animation of that same
+        /// firing. The result arrived, and then the event.
+        /// </summary>
+        public bool IsBusy => _playing || _pending.Count > 0 || _choiceActivation != null;
+
+        /// <summary>
+        /// How many activations have actually finished being *shown*.
+        ///
+        /// Not the same as the server's completed count, which runs ahead. The
+        /// board uses this to decide which cards are still queued, so a card
+        /// stops looking queued when its animation ends rather than when the
+        /// message announcing it arrives.
+        /// </summary>
+        public int ShownCount { get; private set; }
 
         /// <summary>
         /// Holds the asking card on screen with nothing but its options beneath
@@ -526,25 +575,46 @@ namespace Indoctrination.Net
                 // one travels toward whoever it happened to. A hit is a jab; a
                 // heal is a long lift and release; a block swells and settles.
                 // They are meant to be told apart without reading a word.
+                // ------------------------------------------------------------
+                //  THE GESTURES. One per kind of thing a card can do, and they
+                //  are meant to be told apart without reading a word.
+                //
+                //  Three rules hold them together:
+                //
+                //   1. **Direction is meaning.** Anything aimed at a player
+                //      travels toward that player's track - up the screen at an
+                //      opponent, down at you. Anything that happens to the card
+                //      itself does not travel at all.
+                //   2. **Speed is force.** A hit is fast and short. A gift is
+                //      slow and long. Nothing else varies; it is the only thing
+                //      distinguishing a jab from a lift.
+                //   3. **The glyphs follow the gesture**, thrown at the bar they
+                //      are about to move, so the number arriving and the number
+                //      changing are the same event.
+                // ------------------------------------------------------------
                 switch (category)
                 {
                     case ActivationCategory.Damage:
-                        yield return Lunge(AimOf(playback, Hurt), 66f, 0.34f);
-                        FlyGlyphsAt(playback, Hurt, "✖", new Color(0.96f, 0.18f, 0.30f), 34);
+                        yield return Lunge(AimOf(playback, Hurt), StrikeReach, StrikeSeconds);
+                        FlyGlyphsAt(playback, Hurt, "✖", DamageInk, GlyphSize);
                         break;
 
                     case ActivationCategory.Health:
-                        yield return Lunge(AimOf(playback, Healed), 40f, 0.95f);
-                        FlyGlyphsAt(playback, Healed, "♥", new Color(0.96f, 0.30f, 0.42f), 40);
+                        yield return Lunge(AimOf(playback, Healed), GiftReach, GiftSeconds);
+                        FlyGlyphsAt(playback, Healed, "♥", HealInk, GlyphSize + 6);
                         break;
 
                     case ActivationCategory.Block:
-                        yield return Swell(0.62f);
-                        FlyGlyphsAt(playback, Blocked, "+", new Color(0.25f, 0.94f, 0.48f), 34);
+                        // Block guards; it does not reach. It swells where it
+                        // stands and lets the shields go from there.
+                        yield return Swell(GiftSeconds * 0.7f);
+                        FlyGlyphsAt(playback, Blocked, "+", BlockInk, GlyphSize);
                         break;
 
                     case ActivationCategory.Followers:
-                        yield return Lunge(Vector2.down, 22f, 0.60f);
+                        // Followers are drawn in rather than sent out, so this
+                        // is the one gesture that pulls toward the card.
+                        yield return Lunge(Vector2.down, GiftReach * 0.55f, GiftSeconds * 0.72f);
                         break;
 
                     default:
