@@ -312,12 +312,58 @@ namespace Indoctrination.Net
                 return;
             }
 
-            camera.transform.position = new Vector3(0f, 12f, 0f);
-            camera.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
-            camera.orthographic = true;
-            camera.orthographicSize = 6f;
+            // **Perspective, not orthographic.** This is the foundation of
+            // everything three-dimensional here and it is worth being clear
+            // about why: under an orthographic camera a tilted object is only a
+            // squashed object. Nothing recedes, nothing foreshortens, and a card
+            // laid back on a table looks like a shorter card. The dice have been
+            // real 3D objects with real physics for a while and still read flat
+            // for exactly this reason.
+            //
+            // Tilted very slightly rather than straight down, so the table has a
+            // far edge and a near edge instead of being a plan view.
+            camera.transform.position = new Vector3(0f, CameraHeight, -CameraSetBack);
+            camera.transform.rotation = Quaternion.Euler(CameraPitch, 0f, 0f);
+            camera.orthographic = false;
+            camera.fieldOfView = CameraFieldOfView;
+            camera.nearClipPlane = 0.3f;
+            camera.farClipPlane = 400f;
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = UITheme.Void;
+        }
+
+        /// <summary>
+        /// Where the camera sits over the table.
+        ///
+        /// The board itself is a screen-space canvas and is unaffected by any of
+        /// this - Unity sizes a camera-space canvas to fill the view whatever the
+        /// projection. These numbers are what the *scene* is seen through: the
+        /// dice today, and the cards once they are objects rather than pictures.
+        /// </summary>
+        private const float CameraHeight = 11.5f;
+
+        private const float CameraSetBack = 3.4f;
+
+        private const float CameraPitch = 74f;
+
+        private const float CameraFieldOfView = 52f;
+
+        /// <summary>
+        /// How tall the camera's view is, in world units, at a given distance
+        /// in front of it. The scene needs this wherever it used to read
+        /// `orthographicSize`, which no longer means anything.
+        /// </summary>
+        public static float VisibleHeightAt(float distance)
+        {
+            var camera = Camera.main;
+            if (camera == null)
+            {
+                return 12f;
+            }
+
+            return camera.orthographic
+                ? camera.orthographicSize * 2f
+                : 2f * distance * Mathf.Tan(camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
         }
 
         private void Update()

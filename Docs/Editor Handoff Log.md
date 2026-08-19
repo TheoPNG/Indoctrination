@@ -7,6 +7,87 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-18 — Claude (hand fan corrected after layout; 3D groundwork begins)
+
+Bloodstone is **confirmed working** by Theodore in play. The open question from
+two entries ago is closed; the eight stone checks stay.
+
+### The hand fan, fixed by measuring instead of predicting
+
+The card size and the spread were both computed before anything was laid out,
+from card proportions, rotation, overlap and the space available. **That
+arithmetic was wrong about the edges three times running.**
+
+Rotation is why. A tilted card's corners reach further than its width; the
+outermost cards are the most tilted; and the hover lift makes whichever card is
+under the pointer larger still. The widest the fan ever gets is simply not a
+number available at the moment the sizes are chosen.
+
+`FitFanInsideTray` runs after the fan is built, reads the corners the cards
+actually occupy through `GetWorldCorners`, and scales the whole fan about its
+own centre if it overhangs. The test was also strengthened to check rotated
+corners rather than upright rects - it had been asserting on a box the cards do
+not occupy.
+
+**The lesson is general:** where a layout is the product of several interacting
+measurements, correcting it afterwards is more reliable than predicting it, and
+much easier to be sure of.
+
+### 3D groundwork
+
+Asked to "begin making everything 3D for vibes". This is step one, and it is the
+step everything else depends on.
+
+**The camera is perspective now, not orthographic.** Worth being explicit about
+why this had to come first: under an orthographic camera a tilted object is only
+a squashed object. Nothing recedes and nothing foreshortens, so a card laid back
+on a table is just a shorter card. The dice have been real 3D objects with real
+physics for days and still read flat for exactly this reason.
+
+It also sits slightly back and pitched 74 degrees rather than straight down, so
+the table has a near edge and a far edge instead of being a plan view.
+
+- `BoardUI.VisibleHeightAt(distance)` replaces every reading of
+  `orthographicSize`, which no longer means anything. Under perspective the
+  size that fills a share of the screen depends on how far away the thing is.
+- `DieRoller.TargetDieSize` measures at the table's distance from the camera.
+- **The table is visible.** It was an invisible collider with dice floating over
+  a flat colour; it now has lit felt built in code, and the light casts soft
+  shadows - which is most of what says a thing is resting on a surface rather
+  than hovering in front of one.
+- The board itself is unaffected. A camera-space canvas is sized by Unity to
+  fill the view whatever the projection, so the whole interface lays out exactly
+  as before.
+
+**What is not done.** The cards are still flat pictures on a canvas. Making them
+objects on the table is the next step and a much larger one - it means the
+compound rows, the hand and the drag handling stop being uGUI and become meshes
+with their own hit-testing. Doing that in one go would have been a rewrite with
+nothing runnable in between; this way the foundation is in and testable, and the
+cards can follow a row at a time.
+
+### Files
+
+- Updated `Assets/Scripts/Net/BoardUI.cs`, `Assets/Scripts/Net/DieRoller.cs`.
+- Added `TheBoardIsSeenThroughAPerspectiveCamera`. It drives
+  `SetUpOverheadCamera` by reflection against a camera it makes itself, because
+  the fixture builds a board without one and the setting would otherwise never
+  be exercised. Perspective is exactly the sort of thing that gets quietly
+  reverted, so it is worth pinning.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 63 passed.
+- RulesCheck all green; SmokeTest passed.
+- `./Tools/Build/run.sh` produced a working player.
+
+### Follow-up status
+
+- Asmodeus still benched; RulesCheck prints the list every run.
+- Toolbar glyphs are still placeholders.
+- Online play still unverified against live Relay/Lobby.
+
 ## 2026-08-16 — Claude (Try again, bottom bar, host clock, and an update check)
 
 ### Try again, looked at properly

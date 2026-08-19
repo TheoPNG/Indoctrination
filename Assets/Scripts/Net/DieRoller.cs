@@ -82,13 +82,55 @@ namespace Indoctrination.Net
         /// </summary>
         private static float TargetDieSize()
         {
+            // Measured at the table, not at the camera. Under perspective a die
+            // is a fixed size in the world and the camera decides how big it
+            // looks, so the size that fills a given share of the screen depends
+            // on how far away the table is - which is the number this asks for.
             var camera = Camera.main;
-            var visibleHeight = camera != null && camera.orthographic
-                ? camera.orthographicSize * 2f
-                : 12f;
+            var distance = camera == null
+                ? 12f
+                : Mathf.Max(1f, Vector3.Distance(
+                    camera.transform.position, new Vector3(0f, StageHeight, 0f)));
 
-            return visibleHeight * DieShareOfView;
+            return BoardUI.VisibleHeightAt(distance) * DieShareOfView;
         }
+
+        /// <summary>
+        /// The felt the dice land on. Built in code like everything else here,
+        /// so there is no asset to keep in step with the theme.
+        /// </summary>
+        private static Material TableMaterial()
+        {
+            if (_table != null)
+            {
+                return _table;
+            }
+
+            // URP's own lit shader. `Shader.Find` on a shader nothing in the
+            // scene already uses returns null in a build unless it is in Always
+            // Included Shaders, so this falls back rather than rendering the
+            // table magenta.
+            var shader = Shader.Find("Universal Render Pipeline/Lit")
+                         ?? Shader.Find("Standard")
+                         ?? Shader.Find("Sprites/Default");
+
+            _table = new Material(shader) { hideFlags = HideFlags.DontSave };
+            _table.color = new Color(0.055f, 0.075f, 0.070f);
+
+            if (_table.HasProperty("_Smoothness"))
+            {
+                _table.SetFloat("_Smoothness", 0.12f);
+            }
+
+            if (_table.HasProperty("_Metallic"))
+            {
+                _table.SetFloat("_Metallic", 0f);
+            }
+
+            return _table;
+        }
+
+        private static Material _table;
 
         /// <summary>Longest a single simulated throw is allowed to run.</summary>
         private const float MaxTumbleSeconds = 6f;
@@ -250,7 +292,14 @@ namespace Indoctrination.Net
             floor.transform.SetParent(stage.transform, false);
             floor.transform.localScale = new Vector3(TableHalfWidth * 2f, 0.5f, TableHalfWidth * 2f);
             floor.transform.localPosition = new Vector3(0f, -0.25f, 0f);
-            floor.GetComponent<MeshRenderer>().enabled = false;
+            // Visible now. It was an invisible collider under dice floating over
+            // a flat colour; with a perspective camera there is a surface for
+            // them to be on, and it is the first thing in this game that is
+            // actually a place rather than a picture.
+            var felt = floor.GetComponent<MeshRenderer>();
+            felt.enabled = true;
+            felt.sharedMaterial = TableMaterial();
+            felt.shadowCastingMode = ShadowCastingMode.Off;
             floor.GetComponent<BoxCollider>().material = _contact;
 
             // Rails, so a hard throw cannot put a die off the table and out of
@@ -282,7 +331,13 @@ namespace Indoctrination.Net
             lightObject.transform.localRotation = Quaternion.Euler(50f, -30f, 0f);
             var light = lightObject.AddComponent<Light>();
             light.type = LightType.Directional;
-            light.intensity = 1.6f;
+            light.intensity = 1.35f;
+            light.color = new Color(1f, 0.96f, 0.90f);
+
+            // Shadows are most of what says a thing is resting on a surface
+            // rather than hovering in front of one.
+            light.shadows = LightShadows.Soft;
+            light.shadowStrength = 0.55f;
 
             // The dice are scene objects, not children of the board, so hiding
             // the board's own object would leave them lying there. The stage is

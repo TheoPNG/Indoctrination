@@ -2278,6 +2278,59 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// The scene is seen through a perspective camera.
+        ///
+        /// This is the foundation of anything three-dimensional here, and it is
+        /// the sort of setting that gets quietly reverted. Under an orthographic
+        /// camera a tilted object is only a squashed object: nothing recedes and
+        /// nothing foreshortens, so a card laid back on a table is just a
+        /// shorter card and the dice - real objects with real physics - still
+        /// read flat.
+        /// </summary>
+        [Test]
+        public void TheBoardIsSeenThroughAPerspectiveCamera()
+        {
+            // The fixture builds a board without a scene camera, so the setup
+            // this is about never runs there. Given one and asked to run, it is
+            // the same code the game uses.
+            var host = new GameObject("Test Main Camera") { tag = "MainCamera" };
+            var camera = host.AddComponent<Camera>();
+
+            try
+            {
+                typeof(BoardUI)
+                    .GetMethod("SetUpOverheadCamera", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, null);
+
+                Assert.IsFalse(camera.orthographic,
+                    "an orthographic camera cannot show depth, however 3D the objects are");
+
+                // Looking down at a table, not along a corridor.
+                Assert.That(camera.transform.eulerAngles.x, Is.InRange(55f, 85f),
+                    "the camera should be looking down at the table");
+                Assert.Greater(camera.transform.position.y, 4f, "and from above it");
+
+                // Everything in the scene has to stay in front of the board's
+                // own plane, or it is drawn behind the canvas and invisible -
+                // which took two attempts to work out the first time.
+                Assert.Less(
+                    Vector3.Distance(camera.transform.position, Vector3.zero),
+                    UIFactory.CanvasPlaneDistance,
+                    "the table has to be nearer the camera than the board is");
+
+                // And the maths the scene uses in place of orthographicSize.
+                var height = BoardUI.VisibleHeightAt(10f);
+                Assert.Greater(height, 0f, "the view has to have a measurable height");
+                Assert.Greater(BoardUI.VisibleHeightAt(20f), height,
+                    "which grows with distance under perspective - the point of it");
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+            }
+        }
+
+        /// <summary>
         /// Version comparison, which is the whole update check.
         ///
         /// Compared part by part as numbers. Comparing them as text says 0.10.0
