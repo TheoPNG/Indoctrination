@@ -7,6 +7,64 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-18 — Claude (found it: the card was clipping itself)
+
+### The leftmost hand card, after four failed attempts
+
+A screenshot settled in one round what four rounds of arithmetic could not.
+
+The giveaway: the text was cut on a **straight vertical line** while the card was
+**tilted**, and the card's own background was untouched. An upright cut through
+rotated content is one thing - an axis-aligned clip.
+
+`BoardCardView` put a **`RectMask2D` on every card**, to keep long effect text
+inside the card's edge. `RectMask2D` clips to an upright rectangle in canvas
+space and **cannot account for rotation at all**. The hand fan tilts its cards by
+design, and the outermost cards most of all - so the leftmost card had its
+contents sliced by an upright rectangle while its frame stayed whole.
+
+**The fan's geometry was right every time.** Every fix aimed at it - the overlap
+tightening, `FitFanInsideTray`, the widened margins - was aimed at the wrong
+thing, because the symptom looked like an overflow and the tests measured
+overflow and found none. The card was clipping itself.
+
+Swapped for a stencil `Mask`, which follows the transform, rotation included. It
+costs a little more to draw, which is the right trade for content that is rotated
+on purpose.
+
+`RotatedCardsAreNotClippedByAnUprightMask` pins it: no card in the fan may have a
+`RectMask2D` anywhere above it, and the fan must actually be tilting cards, so
+the check cannot pass by there being nothing to clip.
+
+**Worth remembering:** a straight cut through rotated content is always an
+axis-aligned mask. And when a test measuring the obvious cause keeps passing, the
+cause is not the obvious one - measuring harder is not the answer, looking is.
+
+### The peek right after a draft
+
+Reported as not showing opponents' cards. It was working: straight after a draft
+everybody is holding cards and nobody has played any, so the compound really is
+empty. An empty strip reads as a broken panel.
+
+It now says why - "Nothing in play yet - 4 cards held, face down" - so the panel
+is visibly working and the reason is stated.
+
+**Opponents' hands are secret by design and this did not change that.**
+`GameViewBuilder` never puts another player's hand in your copy, and RulesCheck
+asserts it. Making hands public is a rules decision, not a display one; asked
+rather than assumed.
+
+### Files
+
+- Updated `Assets/Scripts/Net/BoardCardView.cs`, `Assets/Scripts/Net/PlayerPeek.cs`.
+- Added `RotatedCardsAreNotClippedByAnUprightMask`.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 65 passed.
+- RulesCheck all green; SmokeTest passed.
+
 ## 2026-08-18 — Claude (the board stops reacting ahead of the animation)
 
 ### One cause behind two complaints

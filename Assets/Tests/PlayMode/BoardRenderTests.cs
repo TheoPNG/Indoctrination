@@ -2602,6 +2602,53 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// Nothing rotated is clipped by an axis-aligned mask.
+        ///
+        /// `RectMask2D` clips to an upright rectangle in canvas space and cannot
+        /// account for rotation at all. The cards in the hand are tilted by
+        /// design, and each card carried a `RectMask2D` of its own to keep long
+        /// effect text inside its edge - so a tilted card had its contents
+        /// sliced by an upright rectangle while its own background stayed whole.
+        ///
+        /// **That is what "the first card in my hand is cut off" was**, through
+        /// four attempts at the fan's arithmetic. The geometry was right every
+        /// time; the card was clipping itself. A stencil `Mask` follows the
+        /// transform and does not have the problem.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RotatedCardsAreNotClippedByAnUprightMask()
+        {
+            yield return StartGame();
+            yield return AdvanceTo(TurnPhase.Buy);
+            yield return ExpandHand();
+            Canvas.ForceUpdateCanvases();
+
+            var handRow = (RectTransform)typeof(BoardUI)
+                .GetField("_handRow", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(_board);
+
+            var cards = handRow.GetComponentsInChildren<BoardCardView>();
+            Assert.Greater(cards.Length, 0, "there should be cards in the open hand");
+
+            var tilted = 0;
+            foreach (var card in cards)
+            {
+                var slot = (RectTransform)card.transform.parent;
+                var angle = Mathf.DeltaAngle(0f, slot.localEulerAngles.z);
+                if (Mathf.Abs(angle) > 0.5f)
+                {
+                    tilted++;
+                }
+
+                Assert.IsEmpty(card.GetComponentsInParent<RectMask2D>(true),
+                    $"a hand card tilted {angle:0.#} degrees is inside an upright mask, "
+                    + "which will slice its contents on a straight vertical line");
+            }
+
+            Assert.Greater(tilted, 0, "the fan should actually be tilting cards");
+        }
+
+        /// <summary>
         /// The card under the pointer comes out from under its neighbours.
         ///
         /// The fan overlaps on purpose, so without this the card being looked at

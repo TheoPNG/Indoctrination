@@ -89,7 +89,20 @@ namespace Indoctrination.Net
 
             // Effect text can run long; clipping it at the card's edge keeps every
             // card the same rectangle instead of growing to fit its own content.
-            gameObject.AddComponent<RectMask2D>();
+            //
+            // **A stencil `Mask`, not a `RectMask2D`.** RectMask2D clips to an
+            // axis-aligned rectangle in canvas space and cannot account for
+            // rotation at all - so a card tilted in the hand fan had its
+            // contents sliced by an upright rectangle while its own background
+            // stayed whole. That is the leftmost hand card that read as "cut
+            // off" through four separate attempts to fix the fan's arithmetic:
+            // the geometry was always right, and the card was clipping itself.
+            //
+            // A stencil mask follows the transform, rotation included. It costs
+            // a little more to draw, which is worth it for content that is
+            // rotated by design.
+            var clip = gameObject.AddComponent<Mask>();
+            clip.showMaskGraphic = true;
 
             _button = gameObject.AddComponent<Button>();
             _button.targetGraphic = _background;

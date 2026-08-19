@@ -119,7 +119,7 @@ namespace Indoctrination.Net
             Row(_cardRow, (CardWidth * CardAspect) + 4f);
 
             _emptyText = UIFactory.Label(
-                "Peek Empty", _panel, "Nothing in play", 12, TextAnchor.MiddleLeft, UITheme.BoneDim);
+                "Peek Empty", _panel, "", 12, TextAnchor.MiddleLeft, UITheme.BoneDim);
             Row(_emptyText.rectTransform, 18f);
 
             gameObject.SetActive(false);
@@ -217,6 +217,15 @@ namespace Indoctrination.Net
 
             if (cards.Length == 0)
             {
+                // Says why rather than nothing. Straight after a draft everybody
+                // is holding cards and nobody has played any, so an empty strip
+                // reads as the panel being broken - when what it is showing is
+                // that this player has nothing on the table yet, and that their
+                // hand is theirs.
+                _emptyText.text = player.handCount > 0
+                    ? $"Nothing in play yet - {player.handCount} "
+                      + $"card{(player.handCount == 1 ? "" : "s")} held, face down"
+                    : "Nothing in play, nothing in hand";
                 return;
             }
 
