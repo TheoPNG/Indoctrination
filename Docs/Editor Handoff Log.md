@@ -7,6 +7,72 @@ Use this file as a running handoff between editors. Add a dated entry after each
 > purpose - live in [`AGENTS.md`](../AGENTS.md) at the repo root. Read that
 > first; this file is the chronological record, not the rulebook.
 
+## 2026-08-18 — Claude (the dice deadlock, and the table goes away again)
+
+Three regressions reported. Two fixed with certainty, one not reproduced.
+
+### The board could stop dead, permanently
+
+**This is the important one.** `Throw` has an early exit when there is nothing to
+throw, and it returned **without setting `_settled`**:
+
+    if (live.Count == 0) { _rolling = null; yield break; }
+
+Both the unit activations and the high-roll offer wait on `DieRoller.Settled`.
+So one roll with nothing to re-throw left `Settled` false for the rest of the
+game and **no unit ever woke again**. That path became reachable when re-rolls
+started throwing only the dice that changed - a signature that moves without any
+die's number moving, such as a player leaving the table, produces an empty list.
+
+Three changes, because one of them being enough is what got us here:
+
+1. That exit sets `_settled = true`. Nothing to throw is a finished throw.
+2. `Show` no longer starts a throw at all for an empty change list.
+3. **`Update` asserts the invariant**: `_rolling == null` implies settled. Any
+   future exit that forgets is now harmless instead of fatal.
+
+Worth stating plainly: **anything the game waits on needs an exit that cannot be
+missed.** A flourish that fails to finish is worse than a flourish that fails to
+start, because the second one is visible.
+
+### The table is invisible again
+
+Yesterday's felt was wrong. A drawn table is a slab between the dice and the
+board, and the dice are meant to land on the cards - not on furniture that
+arrives to hold them. The floor is back to being a collider nothing draws, and
+the light's shadows went with it: a shadow with nothing under it lands on the
+board.
+
+The perspective camera stays. That was the part worth keeping.
+
+### The opponent peek - not reproduced
+
+Reported as no longer showing opponents' cards on hover. **The hover path had
+never been tested** - the existing test drives `Show` directly, which proves the
+panel can be filled in and says nothing about whether hovering reaches it.
+
+`PointingAtAnOpponentStripOpensTheirPeek` closes that gap: it takes a real stat
+bar, converts its centre to a screen point, and drives `PollOpponentPeek`
+through reflection. It passes.
+
+**But the test cannot see the difference that matters.** With no scene camera
+the fixture's canvas is `ScreenSpaceOverlay`; the game's is `ScreenSpaceCamera`
+through a perspective camera, and that is exactly what changed underneath this.
+So the pass is real but narrow. Waiting on a description of what actually
+happens - panel absent, or panel present and empty - rather than changing code
+on a guess.
+
+### Files
+
+- Updated `Assets/Scripts/Net/DieRoller.cs`.
+- Added `PointingAtAnOpponentStripOpensTheirPeek`.
+
+### Verification
+
+- CompileCheck clean.
+- PlayModeTests: all 64 passed.
+- RulesCheck all green; SmokeTest passed.
+
 ## 2026-08-18 — Claude (hand fan corrected after layout; 3D groundwork begins)
 
 Bloodstone is **confirmed working** by Theodore in play. The open question from

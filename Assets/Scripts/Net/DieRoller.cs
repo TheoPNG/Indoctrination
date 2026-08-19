@@ -95,43 +95,6 @@ namespace Indoctrination.Net
             return BoardUI.VisibleHeightAt(distance) * DieShareOfView;
         }
 
-        /// <summary>
-        /// The felt the dice land on. Built in code like everything else here,
-        /// so there is no asset to keep in step with the theme.
-        /// </summary>
-        private static Material TableMaterial()
-        {
-            if (_table != null)
-            {
-                return _table;
-            }
-
-            // URP's own lit shader. `Shader.Find` on a shader nothing in the
-            // scene already uses returns null in a build unless it is in Always
-            // Included Shaders, so this falls back rather than rendering the
-            // table magenta.
-            var shader = Shader.Find("Universal Render Pipeline/Lit")
-                         ?? Shader.Find("Standard")
-                         ?? Shader.Find("Sprites/Default");
-
-            _table = new Material(shader) { hideFlags = HideFlags.DontSave };
-            _table.color = new Color(0.055f, 0.075f, 0.070f);
-
-            if (_table.HasProperty("_Smoothness"))
-            {
-                _table.SetFloat("_Smoothness", 0.12f);
-            }
-
-            if (_table.HasProperty("_Metallic"))
-            {
-                _table.SetFloat("_Metallic", 0f);
-            }
-
-            return _table;
-        }
-
-        private static Material _table;
-
         /// <summary>Longest a single simulated throw is allowed to run.</summary>
         private const float MaxTumbleSeconds = 6f;
 
@@ -224,6 +187,23 @@ namespace Indoctrination.Net
             return roller;
         }
 
+        /// <summary>
+        /// Nothing rolling means the roll is over.
+        ///
+        /// The board waits on <see cref="Settled"/> before letting units
+        /// activate or handing out the high roll, so any path out of the throw
+        /// that forgets to set it stops the game permanently - and one of them
+        /// did exactly that. This makes it an invariant rather than something
+        /// every future exit has to remember.
+        /// </summary>
+        private void Update()
+        {
+            if (_rolling == null && !_settled)
+            {
+                _settled = true;
+            }
+        }
+
         private void Build(RectTransform root)
         {
             UIFactory.Stretch(root);
@@ -292,14 +272,11 @@ namespace Indoctrination.Net
             floor.transform.SetParent(stage.transform, false);
             floor.transform.localScale = new Vector3(TableHalfWidth * 2f, 0.5f, TableHalfWidth * 2f);
             floor.transform.localPosition = new Vector3(0f, -0.25f, 0f);
-            // Visible now. It was an invisible collider under dice floating over
-            // a flat colour; with a perspective camera there is a surface for
-            // them to be on, and it is the first thing in this game that is
-            // actually a place rather than a picture.
-            var felt = floor.GetComponent<MeshRenderer>();
-            felt.enabled = true;
-            felt.sharedMaterial = TableMaterial();
-            felt.shadowCastingMode = ShadowCastingMode.Off;
+            // Invisible, deliberately. A drawn table is a slab between the dice
+            // and the board, and the dice are supposed to land on the cards, not
+            // on furniture that arrives to hold them. All this is is something
+            // for the physics to stop against.
+            floor.GetComponent<MeshRenderer>().enabled = false;
             floor.GetComponent<BoxCollider>().material = _contact;
 
             // Rails, so a hard throw cannot put a die off the table and out of
@@ -336,8 +313,9 @@ namespace Indoctrination.Net
 
             // Shadows are most of what says a thing is resting on a surface
             // rather than hovering in front of one.
-            light.shadows = LightShadows.Soft;
-            light.shadowStrength = 0.55f;
+            // No shadows. They were there to sell a surface that is no longer
+            // drawn, and a shadow with nothing under it lands on the board.
+            light.shadows = LightShadows.None;
 
             // The dice are scene objects, not children of the board, so hiding
             // the board's own object would leave them lying there. The stage is
@@ -430,6 +408,15 @@ namespace Indoctrination.Net
             }
 
             BuildDice(rolls);
+
+            if (changed.Count == 0)
+            {
+                // The signature moved but no die's number did - a player left
+                // the table, say. Nothing to throw, and nothing to wait for.
+                _settled = true;
+                PlaceLabels();
+                return;
+            }
 
             // Everything changed, or there was nothing on the table - an
             // ordinary roll, thrown as a whole.
@@ -747,6 +734,11 @@ namespace Indoctrination.Net
                     .ToList();
             if (live.Count == 0)
             {
+                // Nothing to throw is a finished throw. Leaving `_settled` false
+                // here stopped the board dead: activations and the high roll
+                // both wait on it, so a roll with nothing to re-throw meant no
+                // unit ever woke again for the rest of the game.
+                _settled = true;
                 _rolling = null;
                 yield break;
             }

@@ -2278,6 +2278,62 @@ namespace Indoctrination.Tests
         }
 
         /// <summary>
+        /// Pointing at an opponent's strip opens their peek.
+        ///
+        /// The existing peek test drives `Show` directly, which proves the panel
+        /// can be filled in but says nothing about whether hovering ever reaches
+        /// it. That gap is where it broke: everything between the pointer and
+        /// the panel - which rect is tested, against which camera - was
+        /// unexercised.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator PointingAtAnOpponentStripOpensTheirPeek()
+        {
+            yield return StartGame();
+            yield return WaitForFrames(3);
+            Canvas.ForceUpdateCanvases();
+
+            var bars = (System.Collections.IDictionary)typeof(BoardUI)
+                .GetField("_statBars", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(_board);
+
+            Assert.Greater(bars.Count, 0, "there should be an opponent strip to point at");
+
+            StatBar bar = null;
+            foreach (StatBar candidate in bars.Values)
+            {
+                bar = candidate;
+                break;
+            }
+
+            var rect = (RectTransform)bar.transform;
+            var corners = new Vector3[4];
+            rect.GetWorldCorners(corners);
+            var middle = (corners[0] + corners[2]) * 0.5f;
+            var pointer = RectTransformUtility.WorldToScreenPoint(UIFactory.UiCamera, middle);
+
+            var poll = typeof(BoardUI)
+                .GetMethod("PollOpponentPeek", BindingFlags.NonPublic | BindingFlags.Instance);
+
+            poll.Invoke(_board, new object[] { pointer });
+            yield return WaitForFrames(2);
+
+            var peek = Object.FindAnyObjectByType<PlayerPeek>(FindObjectsInactive.Include);
+            Assert.GreaterOrEqual(peek.ShowingFor, 0,
+                "pointing at an opponent's strip should open their peek");
+
+            var panel = GameObject.Find("Peek Panel");
+            Assert.IsNotNull(panel, "and the panel should be on screen");
+            Assert.IsTrue(panel.activeInHierarchy);
+
+            // Pointing at nothing closes it again.
+            poll.Invoke(_board, new object[] { new Vector2(-500f, -500f) });
+            yield return WaitForFrames(2);
+
+            Assert.AreEqual(-1, peek.ShowingFor, "and pointing away should close it");
+        }
+
+        /// <summary>
         /// The scene is seen through a perspective camera.
         ///
         /// This is the foundation of anything three-dimensional here, and it is
